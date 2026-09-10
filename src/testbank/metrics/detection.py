@@ -125,8 +125,16 @@ def ap_from_stats(stats) -> float:
     # Envolvente monotona decreciente: la precision en un recall dado es la
     # mejor alcanzable a ese recall o mas alla.
     precision = np.maximum.accumulate(precision[::-1])[::-1]
-    interpolated = np.interp(
-        _RECALL_POINTS, recall, precision, left=precision[0], right=0.0
+
+    # `searchsorted`, no `np.interp`. Con falsos positivos DESPUES del ultimo
+    # acierto -- que es lo normal con la confianza de inferencia baja -- el
+    # recall se queda clavado y el vector tiene valores repetidos. `np.interp`
+    # con x duplicadas devuelve la ULTIMA, que es la precision mas baja del
+    # tramo, y hunde el AP. Aqui se toma la PRIMERA posicion con recall >= r,
+    # que junto con la envolvente da el maximo de la cola, que es la definicion.
+    positions = np.searchsorted(recall, _RECALL_POINTS, side="left")
+    interpolated = np.where(
+        positions < precision.size, precision[np.minimum(positions, precision.size - 1)], 0.0
     )
     return float(interpolated.mean())
 

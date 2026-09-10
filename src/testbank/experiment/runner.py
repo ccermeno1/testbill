@@ -51,6 +51,14 @@ class RunOutcome:
             f"  mAP50-95     {_interval(metrics.get('map50_95'))}",
             f"  cobertura p5 {_interval(metrics.get('coverage_p5'))}",
         ]
+        decided = (metrics.get("detection") or {}).get("at_decision_confidence")
+        if decided:
+            lines.append(
+                f"  a confianza {metrics['detection']['decision_confidence']:.2f}: "
+                f"{decided['true_positives']} aciertos, "
+                f"{decided['false_positives']} falsos positivos, "
+                f"deteccion {decided['detection_rate']:.3f}"
+            )
         for scene in ("single", "fan"):
             entry = contamination.get(scene)
             if entry and entry.get("n"):

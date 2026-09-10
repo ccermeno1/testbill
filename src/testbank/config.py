@@ -129,6 +129,19 @@ class MetricsConfig(StrictModel):
     coverage_target: float = Field(default=0.98, gt=0.0, le=1.0)
     coverage_percentile: float = Field(default=5.0, ge=0.0, le=100.0)
     contamination: ContaminationConfig = ContaminationConfig()
+    #: Confianza a la que se REPORTAN los recuentos de aciertos y falsos
+    #: positivos. Distinta de `detector.confidence_threshold` (0.01), que es la
+    #: de inferencia y esta baja a proposito para que la curva precision-recall
+    #: tenga su cola: el AP la necesita entera.
+    #:
+    #: Con ese 0.01, el recuento crudo da 1099 falsos positivos frente a 116
+    #: aciertos, y no porque el modelo dispare a todo -- son detecciones de
+    #: confianza 0.02 que el AP ya penaliza. El numero mide cuantas cajas dejo
+    #: pasar el NMS, no calidad, y no mejora al entrenar mas.
+    #:
+    #: Este umbral responde la otra pregunta, la que se lee: cuantos falsos
+    #: positivos habria AL DESPLEGAR. Las dos cifras se reportan, etiquetadas.
+    report_confidence: float = Field(default=0.25, gt=0.0, lt=1.0)
     bootstrap_samples: int = 2000
     #: La unidad de remuestreo es la imagen, no la deteccion: varios billetes de
     #: una misma imagen estan correlacionados y remuestrear detecciones estrecha

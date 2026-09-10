@@ -473,3 +473,59 @@ def test_el_informe_lleva_las_dos_escenas_con_su_veredicto():
     assert by_scene["fan"]["threshold"] == 0.92
     assert by_scene["single"]["threshold"] == 0.01
     assert "passes" in report["contamination"]
+
+
+# --- los dos umbrales de confianza ----------------------------------------
+
+
+def test_los_recuentos_se_dan_a_las_dos_confianzas():
+    """A 0.01 el recuento mide cuantas cajas dejo pasar el NMS, no calidad.
+
+    La cola de baja confianza es imprescindible para el AP y ruinosa como
+    titular, asi que se reportan las dos cifras etiquetadas.
+    """
+    truth = quad(cx=0.3)
+    items = [
+        image(
+            [truth],
+            [
+                Prediction(truth, 0.9),                    # acierto
+                Prediction(quad(cx=0.8, cy=0.8), 0.02),    # cola de ruido
+                Prediction(quad(cx=0.8, cy=0.2), 0.03),    # cola de ruido
+            ],
+            sample_id=f"i{i}",
+        )
+        for i in range(3)
+    ]
+    report = evaluate(items, _fast_config())
+    detection = report["detection"]
+
+    assert detection["decision_confidence"] == 0.25
+    assert detection["with_ignored"]["false_positives"] == 6
+    assert detection["at_decision_confidence"]["false_positives"] == 0
+    assert detection["at_decision_confidence"]["true_positives"] == 3
+    # El AP se calcula con la cola entera y no se ve afectado por el reporte.
+    assert report["map50"]["value"] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_los_falsos_positivos_de_la_cola_no_hunden_el_ap():
+    """Regresion: con `np.interp` y recall repetido, el AP salia hundido.
+
+    Tres aciertos perfectos alcanzan recall 1.0 con precision 1.0. Los falsos
+    positivos posteriores no pueden bajar el AP: la precision en un recall dado
+    es la MEJOR alcanzable a ese recall o mas alla, y ese maximo ya se logro.
+    """
+    truth = quad(cx=0.3)
+    limpio = [image([truth], [Prediction(truth, 0.9)], sample_id=f"i{i}") for i in range(3)]
+    con_cola = [
+        image(
+            [truth],
+            [Prediction(truth, 0.9)] + [
+                Prediction(quad(cx=0.8, cy=0.2 + 0.15 * k), 0.02) for k in range(4)
+            ],
+            sample_id=f"i{i}",
+        )
+        for i in range(3)
+    ]
+    assert average_precision(limpio) == pytest.approx(1.0, abs=1e-9)
+    assert average_precision(con_cola) == pytest.approx(1.0, abs=1e-9)

@@ -40,6 +40,19 @@ from testbank.metrics.detection import (
 from testbank.metrics.matching import match_image
 
 
+def _filter_by_score(item, minimum: float):
+    """Misma imagen con solo las predicciones que superan `minimum`."""
+    from testbank.metrics.core import ImageEval
+
+    return ImageEval(
+        sample_id=item.sample_id,
+        size=item.size,
+        truths=item.truths,
+        predictions=tuple(p for p in item.predictions if p.score >= minimum),
+        ignored=item.ignored,
+    )
+
+
 def _percentile(values, q: float) -> float:
     return float(np.percentile(values, q)) if len(values) else float("nan")
 
@@ -137,6 +150,15 @@ def evaluate(items, config: Config | None = None, *, split: str = "valid") -> di
     with_ignored = counts_from_stats(stats[match_iou])
     without_ignored = counts_from_stats(stats_no_ignore)
 
+    # Los recuentos a la confianza de DECISION: la pregunta que se lee es
+    # cuantos falsos positivos habria al desplegar, no cuantas cajas dejo pasar
+    # el NMS con el umbral bajo que necesita la curva precision-recall.
+    decision = config.metrics.report_confidence
+    decided = [_filter_by_score(item, decision) for item in items]
+    decided_counts = counts_from_stats(
+        image_stats(decided, iou_threshold=match_iou)
+    )
+
     crop_by_margin = {}
     for margin, per_image in crops.items():
         flat = [s for group in per_image for s in group]
@@ -212,6 +234,20 @@ def evaluate(items, config: Config | None = None, *, split: str = "valid") -> di
         },
         "detection": {
             "match_iou": match_iou,
+            #: Confianza a la que se hizo la inferencia. Es la que usa el AP.
+            "inference_confidence": config.detector.confidence_threshold,
+            #: Confianza a la que se leen los recuentos de abajo.
+            "decision_confidence": decision,
+            "at_decision_confidence": {
+                "true_positives": decided_counts.true_positives,
+                "false_positives": decided_counts.false_positives,
+                "ignored": decided_counts.ignored,
+                "detection_rate": decided_counts.detection_rate,
+                "note": (
+                    "Lo que se veria al desplegar con este umbral. Es la cifra "
+                    "que hay que leer."
+                ),
+            },
             "with_ignored": {
                 "true_positives": with_ignored.true_positives,
                 "false_positives": with_ignored.false_positives,
@@ -224,6 +260,11 @@ def evaluate(items, config: Config | None = None, *, split: str = "valid") -> di
                 "detection_rate": without_ignored.detection_rate,
             },
             "note": (
+                "`with_ignored` y `without_ignored` estan a la confianza de "
+                "INFERENCIA, baja a proposito para que el AP tenga la cola de "
+                "la curva: ahi el recuento de falsos positivos mide cuantas "
+                "cajas dejo pasar el NMS, no calidad, y no mejora entrenando "
+                "mas. Para leer, usa `at_decision_confidence`. "
                 "La diferencia de false_positives entre las dos entradas es el "
                 "coste de nuestra propia politica de anotacion: detecciones "
                 "correctas sobre billetes que el filtro de area dejo fuera. Un "
