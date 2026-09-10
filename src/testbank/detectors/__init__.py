@@ -5,7 +5,10 @@ Importar los adaptadores aqui es lo que los registra. El de Ultralytics importa
 exige tener el paquete instalado.
 """
 
-from testbank.detectors import ultralytics_obb  # noqa: F401  (registra)
+from testbank.detectors import (
+    ultralytics_obb,  # noqa: F401  (registra)
+    yolox_obb,  # noqa: F401  (registra)
+)
 from testbank.detectors.base import (
     BaseDetector,
     Detector,

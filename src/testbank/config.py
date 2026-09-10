@@ -191,6 +191,55 @@ class OutOfBoundsPolicy(str, Enum):
     KEEP = "keep"
 
 
+class AngleWeightConfig(StrictModel):
+    """Atenua la perdida de angulo en cajas casi cuadradas.
+
+    El problema: la representacion `(cx, cy, w, h, theta)` es ambigua cuando
+    `w ~ h`. La caja `(w, h, t)` y la caja `(h, w, t+90)` son el MISMO
+    rectangulo, pero `(sin 2t, cos 2t)` las manda a puntos opuestos del circulo.
+    El modelo recibiria dos objetivos contradictorios para la misma caja.
+
+    No es teorico: 145 de 762 anotaciones del export (19%) tienen ratio < 1.1.
+    Es el mismo 19% que dispara el aviso de ancla inestable.
+
+    La solucion aqui es barata y encaja con la politica de anotacion: si el
+    rectangulo es casi cuadrado, el angulo apenas cambia el recorte, asi que no
+    tiene sentido castigar al modelo por no acertarlo. Se le baja el peso.
+
+    Va en la config y no clavado en el codigo PARA PODER MEDIRLO: con
+    `enabled=False` se entrena sin atenuador y se compara. Es un experimento,
+    no una constante enterrada.
+
+    OJO al interpretar: ese 19% es sospechoso de ser artefacto del
+    redimensionado a 416x416, no del dominio. Ver el README.
+    """
+
+    enabled: bool = True
+    #: Por encima de este ratio el peso es 1: el angulo esta bien definido.
+    ratio_threshold: float = Field(default=1.1, gt=1.0)
+    #: Peso en el cuadrado perfecto (ratio 1). Cero lo ignora del todo.
+    min_weight: float = Field(default=0.0, ge=0.0, le=1.0)
+    #: Como sube el peso entre el cuadrado y el umbral. Ver `DECAYS`.
+    decay: str = "smoothstep"
+
+    @field_validator("decay")
+    @classmethod
+    def _known_decay(cls, value: str) -> str:
+        from testbank.models.angle_weight import DECAYS
+
+        if value not in DECAYS:
+            raise ValueError(
+                f"forma de decaimiento desconocida {value!r}; hay {sorted(DECAYS)}"
+            )
+        return value
+
+
+class LossConfig(StrictModel):
+    """Pesos de las pérdidas del candidato propio. Se registran con la ejecucion."""
+
+    angle_weight: AngleWeightConfig = AngleWeightConfig()
+
+
 class DetectorConfig(StrictModel):
     """Lo que se le pasa al entrenador de turno. Va en la config y se registra:
     dos ejecuciones con epochs distintos no son comparables."""
@@ -206,6 +255,7 @@ class DetectorConfig(StrictModel):
     confidence_threshold: float = Field(default=0.01, gt=0.0, lt=1.0)
     #: IoU del NMS rotado.
     nms_iou: float = Field(default=0.5, gt=0.0, lt=1.0)
+    loss: LossConfig = LossConfig()
     out_of_bounds: OutOfBoundsPolicy = OutOfBoundsPolicy.CLIP
     #: Solo con `out_of_bounds = pad`. Fraccion del lado anadida en CADA borde.
     #: 0.25 cubre el desbordamiento maximo medido (0.231).

@@ -258,6 +258,96 @@ modelo puede detectar correctamente billetes que no están anotados y contarán
 como falsos positivos. Si ves precisión hundida en esas imágenes, mira las
 visualizaciones antes de concluir que el modelo falla.
 
+## Ángulo y cajas casi cuadradas
+
+La cabeza OBB propia predice el ángulo como **`(sin 2θ, cos 2θ)`**, no como un
+escalar en radianes. Un rectángulo girado θ y otro girado θ+180° son el mismo
+rectángulo; regresar θ directamente castigaría al modelo por acertar —predecir
+179° con verdad 1° daría un error enorme siendo 2° de error real—. Con el ángulo
+doblado, los dos caen en el mismo punto del círculo y la ambigüedad desaparece
+por construcción.
+
+**Eso resuelve la periodicidad de 180°, pero no el intercambio de lados.** Cuando
+`w ≈ h`, la caja `(w, h, θ)` y la caja `(h, w, θ+90°)` describen el mismo
+rectángulo y la codificación las manda a puntos opuestos: dos objetivos
+contradictorios para la misma caja.
+
+Por eso la pérdida de ángulo se **atenúa** cuando el ratio de la caja verdadera
+es bajo. Si el rectángulo es casi cuadrado, el ángulo apenas cambia el recorte
+—la política de anotación ya dice que un rectángulo aproximado basta—, así que no
+tiene sentido gastar capacidad castigando algo que ni está bien definido ni
+altera el resultado.
+
+Todo es parametrizable en `detector.loss.angle_weight`: `enabled`,
+`ratio_threshold`, `min_weight` y `decay` (`linear`, `smoothstep`, `quadratic`,
+`step`). Va en la config y no clavado en el código **para poder medirlo**: la
+pregunta «cuánto aporta esto» se responde entrenando con y sin, y ambas
+ejecuciones quedan registradas con su config.
+
+Se descartó la representación gaussiana (GWD/KLD), que absorbería la ambigüedad
+de forma natural, porque se aleja del IoU rotado por shapely con el que medimos.
+Esa trazabilidad pesa más que la elegancia de la formulación.
+
+### [SOSPECHA] Ese 19% probablemente es un artefacto
+
+El atenuador existe porque **145 de 762 anotaciones (19%)** tienen ratio < 1.1 —
+el mismo 19% que dispara el aviso de ancla inestable. Pero hay motivos para creer
+que ese número **no describe el dominio, sino el export**:
+
+| | |
+|---|---|
+| Ratio real de un billete de euro | **~1.95:1** en todas las denominaciones |
+| Mediana de ratio medida | **1.45** |
+| Imágenes a 416×416 | 489 de 502 |
+
+Un billete es 1.95:1 en el mundo. Que la mediana salga en 1.45 apunta a la
+deformación del redimensionado a cuadrado, no a que los billetes aparezcan
+escorzados. Las imágenes llegaron ya redimensionadas en origen, así que la
+distorsión no se puede deshacer desde aquí.
+
+**Si en algún momento se resuben los originales sin redimensionar**, hay que
+volver a medir la distribución de ratios. Es bastante probable que el 19% se
+desplome y que el atenuador deje de hacer falta — en cuyo caso `enabled=False`
+y a otra cosa. Medirlo antes de quitarlo, no al revés.
+
+## Entorno para RTMDet-R
+
+RTMDet-R es Apache 2.0 y apto para producción, pero **no entra en el entorno
+principal**. MMCV lleva operadores compilados —NMS rotado, IoU rotado— enlazados
+contra la ABI binaria de una versión concreta de PyTorch. Por eso OpenMMLab
+publica un índice de ruedas por versión de torch, y no son la misma rueda con
+otro nombre: son compilaciones distintas.
+
+Medido sobre este proyecto (Windows, Python 3.11):
+
+| índice | ruedas cp311 |
+|---|---|
+| `torch2.14.0` | no existe |
+| `torch2.4.0` | solo `manylinux` |
+| **`torch2.1.0`** | **`win_amd64` sí** |
+| `torch2.0.0` | `win_amd64` sí |
+
+Así que hace falta un entorno aparte con torch 2.1. Verificado de punta a punta:
+MMCV instala desde rueda sin compilar, `mmcv._ext` carga, `box_iou_rotated`
+calcula, y YOLO26-obb entrena una época sin problemas en torch 2.1.
+
+```bash
+uv venv .venv-torch21 --python 3.11
+VIRTUAL_ENV=.venv-torch21 uv pip install torch==2.1.0 torchvision==0.16.0   "numpy==1.26.4" packaging "setuptools<81"
+VIRTUAL_ENV=.venv-torch21 uv pip install --only-binary=:all:   --find-links https://download.openmmlab.com/mmcv/dist/cpu/torch2.1.0/index.html   mmcv==2.1.0
+```
+
+**`numpy<2` va clavado a propósito, y es la parte frágil.** Nadie declara ese
+conflicto: `mmcv` y `mmengine` piden `numpy` sin tope, y torch 2.1 es anterior a
+NumPy 2, así que no lo restringe. El resolutor sube NumPy tan tranquilo y
+`torch.from_numpy` empieza a fallar con *"Numpy is not available"*. No lo detecta
+ninguna herramienta de dependencias — solo revienta al ejecutar. Cualquier
+instalación posterior en ese entorno puede volver a romperlo en silencio.
+
+**Al comparar candidatos de los dos entornos**, ten presente que corren con torch
+distinto. El `run.json` registra la versión, así que la diferencia es visible en
+`compare`, pero sigue siendo una comparación entre entornos distintos.
+
 ## Licencias
 
 Sin código AGPL ni GPL en producción. El registro distingue **dos ejes

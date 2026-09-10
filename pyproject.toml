@@ -25,6 +25,24 @@ torch = ["torch>=2.2"]
 # Aislado tras el adaptador; ningun otro modulo puede importarlo (test_isolation.py).
 ultralytics = ["ultralytics>=8.3"]
 
+# RTMDet-R. Apache-2.0 y apto para produccion, pero exige un entorno APARTE:
+# MMCV lleva operadores compilados contra la ABI de PyTorch, y en Windows +
+# Python 3.11 la ultima rueda precompilada es la de torch 2.1. Medido:
+#   torch 2.14 -> el indice de OpenMMLab no existe
+#   torch 2.4  -> solo manylinux, sin win_amd64
+#   torch 2.1  -> win_amd64 SI     <- unico que sirve
+#
+# `numpy<2` va CLAVADO a proposito. Nadie declara ese conflicto: mmcv y mmengine
+# piden `numpy` sin tope y torch 2.1 es anterior a NumPy 2, asi que el resolutor
+# sube NumPy tan tranquilo y `torch.from_numpy` empieza a fallar con "Numpy is
+# not available". No lo detecta ninguna herramienta; solo revienta al ejecutar.
+#
+# Receta verificada (ver README, seccion "Entorno para RTMDet-R"):
+#   uv venv .venv-torch21 --python 3.11
+#   VIRTUAL_ENV=.venv-torch21 uv pip install torch==2.1.0 torchvision==0.16.0 #     "numpy==1.26.4" packaging "setuptools<81"
+#   VIRTUAL_ENV=.venv-torch21 uv pip install --only-binary=:all: #     --find-links https://download.openmmlab.com/mmcv/dist/cpu/torch2.1.0/index.html #     mmcv==2.1.0
+rtmdet = ["mmcv==2.1.0", "mmdet>=3.3", "numpy<2", "torch==2.1.0"]
+
 [project.scripts]
 testbank = "testbank.cli:main"
 
