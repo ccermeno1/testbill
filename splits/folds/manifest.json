@@ -1,7 +1,7 @@
 {
   "k": 5,
   "seed": 20260910,
-  "group_strategy": "none",
+  "group_strategy": "manifest",
   "pool_size": 452,
   "fold_sizes": [
     91,
@@ -10,5 +10,5 @@
     90,
     90
   ],
-  "created_utc": "2026-09-10T17:14:31+00:00"
+  "created_utc": "2026-09-10T19:07:44+00:00"
 }

@@ -100,7 +100,7 @@ def _draw_quad(
         direction = point - centroid
         norm = np.linalg.norm(direction) or 1.0
         label_pos = point + direction / norm * 15.0
-        cx, cy = int(round(label_pos[0])), int(round(label_pos[1]))
+        cx, cy = round(label_pos[0]), round(label_pos[1])
         radius = 12 if i == 0 else 9
         cv2.circle(canvas, (cx, cy), radius, (18, 18, 18), -1, cv2.LINE_AA)
         cv2.circle(
@@ -341,7 +341,7 @@ def render_contact_sheet(
         cells.append(
             cv2.resize(
                 image,
-                (cell_width, max(1, int(round(image.shape[0] * scale)))),
+                (cell_width, max(1, round(image.shape[0] * scale))),
                 interpolation=cv2.INTER_AREA,
             )
         )

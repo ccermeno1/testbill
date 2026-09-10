@@ -1,8 +1,9 @@
 """Interfaz de linea de comandos.
 
-Toda lectura de particiones pasa por SplitLoader. Test esta sellado: ningun
-comando de aqui lo abre salvo `evaluate-test`, que llegara con el motor de
-experimentos y registrara cada acceso.
+Toda lectura de particiones pasa por SplitLoader. Test esta sellado: el unico
+comando que lo abre es `evaluate-test`, que exige una razon por escrito, la
+registra en runs/test_evaluations.jsonl y ensena los accesos anteriores antes
+de evaluar.
 """
 
 from __future__ import annotations
@@ -16,19 +17,35 @@ from testbank.checks.visibility import check_samples
 from testbank.config import Config, OutOfBoundsPolicy
 from testbank.data.datasets import DEFAULT_DATASET, datasets
 from testbank.data.discover import LayoutMode, detect_layout
+from testbank.data.duplicates import (
+    DEFAULT_THRESHOLD,
+    find_duplicates,
+    write_manifest,
+)
 from testbank.data.splits import (
+    TEST_LOG_PATH,
     GroupConfig,
     GroupStrategy,
+    SplitError,
     SplitLoader,
     extend_splits,
     make_folds,
     materialize_splits,
+    read_test_accesses,
 )
+from testbank.dataio.export import export, exporters
+from testbank.dataio.export import get as get_exporter
+from testbank.dataio.formats import get as get_format
 from testbank.dataio.image_sizes import SizeIndex
 from testbank.detectors import detectors
 from testbank.detectors import get as get_detector
 from testbank.experiment.compare import compare, write_csv
-from testbank.experiment.runner import run_candidate
+from testbank.experiment.run import load_run
+from testbank.experiment.runner import (
+    TEST_METRICS,
+    evaluate_on_test,
+    run_candidate,
+)
 from testbank.viz.inspect import fixed_validation_sample, inspect_samples
 
 #: Cuantas entradas se listan por pantalla antes de resumir. El informe JSON las
@@ -93,12 +110,21 @@ def cmd_extend_splits(args, config: Config) -> int:
 
 
 def cmd_make_folds(args, config: Config) -> int:
+    groups = None
+    if args.group_key or args.group_manifest:
+        groups = GroupConfig(
+            strategy=GroupStrategy(args.group_key or GroupStrategy.MANIFEST.value),
+            regex=args.group_regex,
+            manifest_path=Path(args.group_manifest) if args.group_manifest else None,
+            independence_confirmed=True,
+        )
     summary = make_folds(
         args.splits_dir or config.data.splits_dir,
         k=args.k or config.splits.folds,
         seed=args.seed if args.seed is not None else config.splits.seed,
         data_root=args.data_root,
         overwrite=args.overwrite,
+        groups=groups,
     )
     print(f"{summary['k']} pliegues sobre {summary['pool_size']} muestras de train+valid")
     print(f"  tamanos: {summary['fold_sizes']}")
@@ -150,6 +176,112 @@ def cmd_check_visibility(args, config: Config) -> int:
         print(f"\nInforme JSON: {args.json_out}")
     # Aviso, no error fatal.
     return 0
+
+
+def cmd_find_duplicates(args, config: Config) -> int:
+    loader = SplitLoader(args.splits_dir or config.data.splits_dir, args.data_root)
+    # Se miran las TRES particiones, test incluido. No es romper el sello: no se
+    # leen anotaciones ni se evalua nada, solo se comprueba si una toma de test
+    # esta tambien en train. Justamente eso es lo que hay que saber.
+    samples, split_of = [], {}
+    for split in ("train", "valid", "test"):
+        for sample in loader.load(split, allow_test=True):
+            samples.append(sample)
+            split_of[sample.sample_id] = split
+
+    report = find_duplicates(samples, split_of=split_of, threshold=args.threshold)
+    for line in report.summary_lines():
+        print(line)
+
+    if report.crossing:
+        print("\nPares que cruzan particiones:")
+        for pair in report.crossing[:_MAX_LISTED]:
+            print(f"  {pair.describe()}")
+        if len(report.crossing) > _MAX_LISTED:
+            print(f"  ... y {len(report.crossing) - _MAX_LISTED} mas")
+        print(
+            "\n  La particion adoptada NO se recalcula: la decide el export. "
+            "Esto es un aviso para leer los numeros sabiendolo."
+        )
+
+    if args.manifest_out:
+        path = write_manifest(report, args.manifest_out)
+        print(f"\nManifiesto de grupos: {path}")
+        print(
+            "  Usalo en los pliegues, que si generamos nosotros:\n"
+            f"    testbank make-folds --group-key manifest --group-manifest {path}"
+        )
+    return 0
+
+
+def cmd_export(args, config: Config) -> int:
+    loader = SplitLoader(args.splits_dir or config.data.splits_dir, args.data_root)
+    splits = args.splits or ["train", "valid"]
+    samples = {split: list(loader.load(split)) for split in splits}
+
+    result = export(
+        args.format,
+        samples,
+        config,
+        out_dir=Path(args.out_dir) if args.out_dir else None,
+    )
+    print(f"Formato:      {result.name}")
+    print(f"Raiz:         {result.root}")
+    print(f"Punto entrada: {result.entry_point}")
+    print(f"  {result.report.describe()}")
+    if get_format(get_exporter(args.format).annotation_format).lossy:
+        print(
+            "  AVISO: este formato es LOSSY -- pierde la orientacion. Sirve "
+            "para diagnostico, no para entrenar un detector OBB."
+        )
+    return 0
+
+
+def cmd_evaluate_test(args, config: Config) -> int:
+    """El unico camino al conjunto sellado. Deja constancia siempre."""
+    run_directory = Path(args.run)
+    record = load_run(run_directory)
+    weights = Path(args.weights) if args.weights else _only_weights(run_directory)
+
+    previous = read_test_accesses()
+    if previous:
+        print(f"AVISO: el test ya se ha abierto {len(previous)} vez/veces:")
+        for entry in previous[-_MAX_LISTED:]:
+            print(
+                f"  {entry.get('utc', '?')}  {entry.get('run', '?')}  "
+                f"-- {entry.get('reason', '')}"
+            )
+        print(
+            "  Cada evaluacion adicional gasta el conjunto: elegir entre varias "
+            "es ajustar al test aunque no se toque el modelo.\n"
+        )
+
+    outcome = evaluate_on_test(
+        get_detector(record["detector"]["name"]),
+        config,
+        run_directory=run_directory,
+        weights=weights,
+        reason=args.reason,
+        splits_dir=args.splits_dir or config.data.splits_dir,
+        data_root=args.data_root,
+    )
+    print(outcome.summary())
+    print(
+        f"\nAcceso numero {outcome.entry['access_number']}, "
+        f"registrado en {TEST_LOG_PATH}"
+    )
+    print(f"Metricas: {run_directory / TEST_METRICS}")
+    return 0
+
+
+def _only_weights(run_directory: Path) -> Path:
+    found = sorted((run_directory / "weights").glob("*"))
+    if len(found) != 1:
+        raise SplitError(
+            f"{run_directory}: se esperaba un unico fichero de pesos, hay "
+            f"{len(found)}; indica cual con --weights"
+        )
+    return found[0]
 
 
 def cmd_train(args, config: Config) -> int:
@@ -255,6 +387,14 @@ def build_parser() -> argparse.ArgumentParser:
     extend.add_argument("--seed", type=int, default=None)
 
     folds = subparsers.add_parser("make-folds", help="pliegues agrupados sobre train+valid")
+    folds.add_argument(
+        "--group-key",
+        choices=[s.value for s in GroupStrategy],
+        default=None,
+        help="agrupacion para los pliegues; sustituye a la de la particion",
+    )
+    folds.add_argument("--group-regex", default=None)
+    folds.add_argument("--group-manifest", default=None)
     folds.add_argument("--k", type=int, default=None)
     folds.add_argument("--seed", type=int, default=None)
     folds.add_argument("--overwrite", action="store_true")
@@ -306,6 +446,35 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("list", help="detectores y datasets registrados")
 
+    duplicates = subparsers.add_parser(
+        "find-duplicates", help="casi-duplicados y manifiesto de grupos"
+    )
+    duplicates.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
+    duplicates.add_argument(
+        "--manifest-out",
+        default=None,
+        help="escribe {identificador: grupo} para --group-manifest",
+    )
+
+    exporter = subparsers.add_parser(
+        "export", help="escribe el dataset en el formato de otro entrenador"
+    )
+    exporter.add_argument("format", choices=exporters())
+    exporter.add_argument("--splits", nargs="+", default=None)
+    exporter.add_argument("--out-dir", default=None)
+
+    evaluate = subparsers.add_parser(
+        "evaluate-test",
+        help="rompe el sello del test y deja constancia; usar una sola vez",
+    )
+    evaluate.add_argument("run", help="directorio de la ejecucion en runs/")
+    evaluate.add_argument(
+        "--reason",
+        required=True,
+        help="por que se abre el test; queda en el registro para siempre",
+    )
+    evaluate.add_argument("--weights", default=None)
+
     comparison = subparsers.add_parser(
         "compare", help="tabla comparativa de las ejecuciones de runs/"
     )
@@ -327,6 +496,9 @@ _COMMANDS = {
     "make-folds": cmd_make_folds,
     "check-visibility": cmd_check_visibility,
     "train": cmd_train,
+    "find-duplicates": cmd_find_duplicates,
+    "export": cmd_export,
+    "evaluate-test": cmd_evaluate_test,
     "list": cmd_list,
     "compare": cmd_compare,
     "inspect": cmd_inspect,

@@ -8,9 +8,9 @@ from testbank.data.discover import LayoutError, LayoutMode, detect_layout
 from testbank.data.splits import (
     GroupConfig,
     GroupStrategy,
+    SealedTestSetError,
     SplitError,
     SplitLoader,
-    SealedTestSetError,
     extend_splits,
     make_folds,
     materialize_splits,
@@ -302,3 +302,53 @@ def test_pliegues_cubren_train_mas_valid_y_excluyen_test(tmp_path):
         assert not ids & sealed, "un pliegue toca el conjunto sellado"
         seen |= ids
     assert len(seen) == 30
+
+
+def test_los_pliegues_aceptan_su_propia_agrupacion(tmp_path):
+    """La particion adoptada viene dada por el export, pero los PLIEGUES los
+    construimos nosotros: si sabemos de casi-duplicados, no hay razon para
+    partirlos aqui aunque el export los reparta."""
+    import json
+
+    from testbank.data.splits import GroupConfig, GroupStrategy, make_folds
+
+    root = roboflow_root(tmp_path, counts=(8, 4, 2))
+    splits_dir = tmp_path / "splits"
+    materialize_splits(root, splits_dir)
+
+    # Todas las de train+valid en dos grupos: ningun pliegue puede partirlos.
+    ids = [
+        line
+        for name in ("train", "valid")
+        for line in (splits_dir / f"{name}.txt").read_text().splitlines()
+        if line and not line.startswith("#")
+    ]
+    manifest = tmp_path / "grupos.json"
+    manifest.write_text(
+        json.dumps({sid: ("A" if i % 2 else "B") for i, sid in enumerate(ids)}),
+        encoding="utf-8",
+    )
+
+    make_folds(
+        splits_dir,
+        k=2,
+        data_root=root,
+        overwrite=True,
+        groups=GroupConfig(
+            strategy=GroupStrategy.MANIFEST,
+            manifest_path=manifest,
+            independence_confirmed=True,
+        ),
+    )
+
+    grupos = json.loads(manifest.read_text(encoding="utf-8"))
+    fold_of = {}
+    for fold in (splits_dir / "folds").glob("fold_*.txt"):
+        for line in fold.read_text().splitlines():
+            if line and not line.startswith("#"):
+                fold_of[line] = fold.stem
+
+    reparto = {}
+    for sid, grupo in grupos.items():
+        reparto.setdefault(grupo, set()).add(fold_of[sid])
+    assert all(len(v) == 1 for v in reparto.values()), reparto

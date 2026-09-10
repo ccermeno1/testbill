@@ -20,6 +20,7 @@ Tres cosas que se hacen a proposito
 
 from __future__ import annotations
 
+import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,7 +28,12 @@ from pathlib import Path
 from testbank.config import Config
 from testbank.data.datasets import DEFAULT_DATASET
 from testbank.data.datasets import get as get_dataset
-from testbank.data.splits import SplitLoader
+from testbank.data.splits import (
+    SplitError,
+    SplitLoader,
+    read_test_accesses,
+    record_test_access,
+)
 from testbank.detectors.base import BaseDetector
 from testbank.experiment.run import ExperimentRun
 from testbank.viz.inspect import fixed_validation_sample, inspect_samples
@@ -143,3 +149,87 @@ def run_candidate(
         predictions=predictions,
     )
     return RunOutcome(run=run, weights=stored, metrics=metrics)
+
+
+# --- el conjunto sellado ---------------------------------------------------
+
+TEST_METRICS = "metrics_test.json"
+
+
+@dataclass(frozen=True, slots=True)
+class TestOutcome:
+    run_directory: Path
+    metrics: dict
+    #: Accesos al test ANTERIORES a este. Si no es cero, hay que explicarlo.
+    previous_accesses: list[dict]
+    entry: dict
+
+    def summary(self) -> str:
+        metrics = self.metrics
+        lines = [
+            f"Evaluacion sobre TEST de {self.run_directory.name}",
+            f"  imagenes {metrics.get('n_images')}  anotaciones {metrics.get('n_truths')}",
+            f"  mAP50        {_interval(metrics.get('map50'))}",
+            f"  mAP50-95     {_interval(metrics.get('map50_95'))}",
+            f"  cobertura p5 {_interval(metrics.get('coverage_p5'))}",
+        ]
+        decided = (metrics.get("detection") or {}).get("at_decision_confidence")
+        if decided:
+            lines.append(
+                f"  a confianza {metrics['detection']['decision_confidence']:.2f}: "
+                f"{decided['true_positives']} aciertos, "
+                f"{decided['false_positives']} falsos positivos, "
+                f"deteccion {decided['detection_rate']:.3f}"
+            )
+        return "\n".join(lines)
+
+
+def evaluate_on_test(
+    detector: BaseDetector,
+    config: Config,
+    *,
+    run_directory: Path,
+    weights: Path,
+    reason: str,
+    splits_dir: Path,
+    data_root: Path | None = None,
+    log_path: Path | None = None,
+) -> TestOutcome:
+    """Rompe el sello, deja constancia y evalua. En ese orden.
+
+    Se registra ANTES de evaluar. Si se registrara despues, una evaluacion que
+    se interrumpe al ver un numero malo no dejaria rastro, y el registro dejaria
+    de servir para lo unico que sirve: saber cuantas veces se ha mirado.
+
+    `reason` es obligatorio y va al registro. No es burocracia: la unica defensa
+    real contra ajustar al test es que cada acceso tenga que justificarse por
+    escrito y quede a la vista del siguiente que mire.
+    """
+    if not reason.strip():
+        raise SplitError("evaluate-test exige una razon; el registro sin motivo no sirve")
+
+    previous = read_test_accesses(log_path)
+    entry = record_test_access(
+        reason.strip(),
+        run_directory.name,
+        log_path,
+        weights=str(weights),
+        access_number=len(previous) + 1,
+    )
+
+    loader = SplitLoader(splits_dir, data_root)
+    # El unico sitio del proyecto que pasa allow_test=True.
+    samples = list(loader.load("test", allow_test=True))
+    metrics = detector.evaluate(samples, config, weights=weights)
+    metrics["split"] = "test"
+    metrics["test_access_number"] = entry["access_number"]
+
+    (run_directory / TEST_METRICS).write_text(
+        json.dumps(metrics, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    return TestOutcome(
+        run_directory=run_directory,
+        metrics=metrics,
+        previous_accesses=previous,
+        entry=entry,
+    )

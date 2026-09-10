@@ -265,3 +265,108 @@ def test_sin_padding_no_hay_aviso(registered, prepared):
         dataset_name=FAKE_DATASET,
     )
     assert outcome.run.record.caveats == []
+
+
+# --- el conjunto sellado --------------------------------------------------
+
+
+def _prepare_test_run(registered, prepared):
+    root, splits_dir, config = prepared
+    outcome = run_candidate(
+        registered, config, splits_dir=splits_dir, data_root=root,
+        dataset_name=FAKE_DATASET,
+    )
+    return root, splits_dir, config, outcome
+
+
+def test_evaluar_en_test_deja_constancia(registered, prepared, tmp_path):
+    from testbank.data.splits import read_test_accesses
+    from testbank.experiment.runner import evaluate_on_test
+
+    root, splits_dir, config, outcome = _prepare_test_run(registered, prepared)
+    log = tmp_path / "test_evaluations.jsonl"
+
+    result = evaluate_on_test(
+        registered, config,
+        run_directory=outcome.run.directory,
+        weights=outcome.weights,
+        reason="linea base definitiva",
+        splits_dir=splits_dir,
+        data_root=root,
+        log_path=log,
+    )
+    entries = read_test_accesses(log)
+    assert len(entries) == 1
+    assert entries[0]["reason"] == "linea base definitiva"
+    assert entries[0]["access_number"] == 1
+    assert result.metrics["split"] == "test"
+    assert (outcome.run.directory / "metrics_test.json").exists()
+
+
+def test_el_segundo_acceso_ve_el_primero(registered, prepared, tmp_path):
+    """Es lo que hace util el registro: el siguiente que mire ve que ya se miro."""
+    from testbank.experiment.runner import evaluate_on_test
+
+    root, splits_dir, config, outcome = _prepare_test_run(registered, prepared)
+    log = tmp_path / "log.jsonl"
+    comun = {
+        "run_directory": outcome.run.directory,
+        "weights": outcome.weights,
+        "splits_dir": splits_dir,
+        "data_root": root,
+        "log_path": log,
+    }
+    evaluate_on_test(registered, config, reason="primera", **comun)
+    segundo = evaluate_on_test(registered, config, reason="segunda", **comun)
+
+    assert len(segundo.previous_accesses) == 1
+    assert segundo.previous_accesses[0]["reason"] == "primera"
+    assert segundo.entry["access_number"] == 2
+
+
+def test_sin_razon_no_se_abre_el_test(registered, prepared, tmp_path):
+    from testbank.data.splits import SplitError
+    from testbank.experiment.runner import evaluate_on_test
+
+    root, splits_dir, config, outcome = _prepare_test_run(registered, prepared)
+    log = tmp_path / "log.jsonl"
+    with pytest.raises(SplitError, match="razon"):
+        evaluate_on_test(
+            registered, config, run_directory=outcome.run.directory,
+            weights=outcome.weights, reason="   ",
+            splits_dir=splits_dir, data_root=root, log_path=log,
+        )
+    assert not log.exists(), "un intento rechazado no debe dejar entrada"
+
+
+def test_se_registra_antes_de_evaluar(registered, prepared, tmp_path):
+    """Si fallara la evaluacion, el acceso tiene que constar igualmente.
+
+    Registrar despues dejaria que una evaluacion abandonada al ver un mal
+    numero no dejara rastro, y el recuento dejaria de significar nada.
+    """
+    from testbank.data.splits import read_test_accesses
+    from testbank.experiment.runner import evaluate_on_test
+
+    root, splits_dir, config, outcome = _prepare_test_run(registered, prepared)
+    log = tmp_path / "log.jsonl"
+
+    class _Revienta(type(registered)):
+        def predict(self, samples, *, weights, config):
+            raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        evaluate_on_test(
+            _Revienta(), config, run_directory=outcome.run.directory,
+            weights=outcome.weights, reason="intento fallido",
+            splits_dir=splits_dir, data_root=root, log_path=log,
+        )
+    assert len(read_test_accesses(log)) == 1
+
+
+def test_el_runner_normal_nunca_abre_el_test(registered, prepared, tmp_path):
+    from testbank.data.splits import read_test_accesses
+
+    _prepare_test_run(registered, prepared)
+    assert read_test_accesses(tmp_path / "log.jsonl") == []
+    assert _FakeDetector.seen_splits == ("train", "valid")

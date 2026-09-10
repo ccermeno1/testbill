@@ -81,8 +81,10 @@ class VisibilityReport:
             f"Politica de visibilidad: umbral {self.visibility_threshold:.0%}",
             f"Imagenes revisadas:      {self.images_checked}",
             f"Anotaciones revisadas:   {self.annotations_checked}",
-            f"Anotaciones marcadas:    {len(self.findings)} "
-            f"en {len(self.flagged_images)} imagenes",
+            (
+                f"Anotaciones marcadas:    {len(self.findings)} "
+                f"en {len(self.flagged_images)} imagenes"
+            ),
             f"Incumplimientos reales:  como mucho {self.upper_bound}",
         ]
         if self.findings:

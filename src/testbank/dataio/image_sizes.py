@@ -48,7 +48,7 @@ class SizeIndex:
         self._index: dict[str, tuple[int, int]] = dict(index or {})
 
     @classmethod
-    def for_samples(cls, samples, *, cache_path: str | Path | None = None) -> "SizeIndex":
+    def for_samples(cls, samples, *, cache_path: str | Path | None = None) -> SizeIndex:
         if cache_path is not None and Path(cache_path).is_file():
             cached = load_index(cache_path)
             missing = [s for s in samples if s.sample_id not in cached]

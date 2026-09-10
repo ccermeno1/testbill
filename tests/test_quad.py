@@ -20,7 +20,6 @@ from testbank.geometry.quad import (
     snap,
 )
 
-
 # -- construccion y validacion ---------------------------------------------
 
 

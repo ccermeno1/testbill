@@ -12,7 +12,7 @@ import json
 import random
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 
@@ -93,7 +93,7 @@ class GroupConfig:
                 "{identificador: clave_de_grupo}"
             )
 
-    def resolver(self, *, require_independence_confirmation: bool = True) -> "GroupResolver":
+    def resolver(self, *, require_independence_confirmation: bool = True) -> GroupResolver:
         self.validate(
             require_independence_confirmation=require_independence_confirmation
         )
@@ -163,7 +163,7 @@ def _digest(ids_by_split: dict[str, list[str]]) -> str:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def materialize_splits(
@@ -263,8 +263,8 @@ def _random_assignment(
     rng.shuffle(keys)
 
     total = len(keys)
-    n_train = int(round(total * ratios[0]))
-    n_valid = int(round(total * ratios[1]))
+    n_train = round(total * ratios[0])
+    n_valid = round(total * ratios[1])
     n_train = min(n_train, total)
     n_valid = min(n_valid, total - n_train)
     chunks = {
@@ -477,8 +477,8 @@ def extend_splits(
         keys = sorted(fresh)
         rng.shuffle(keys)
         total = len(keys)
-        n_train = int(round(total * ratios[0]))
-        n_valid = min(int(round(total * ratios[1])), total - n_train)
+        n_train = round(total * ratios[0])
+        n_valid = min(round(total * ratios[1]), total - n_train)
         chunks = {
             "train": keys[:n_train],
             "valid": keys[n_train : n_train + n_valid],
@@ -521,10 +521,17 @@ def make_folds(
     seed: int = 20260910,
     data_root: str | Path | None = None,
     overwrite: bool = False,
+    groups: GroupConfig | None = None,
 ) -> dict:
     """Pliegues agrupados sobre train+valid, materializados y congelados.
 
     Test se queda fuera, sellado, igual que siempre.
+
+    `groups` sustituye a la agrupacion declarada en el manifiesto de la
+    particion. Tiene sentido que se pueda: la particion adoptada viene dada por
+    el export y no la elegimos, pero los PLIEGUES los construimos nosotros, asi
+    que si sabemos de casi-duplicados podemos evitar partirlos aqui aunque la
+    particion de origen los reparta. Ver `data/duplicates.py`.
     """
     loader = SplitLoader(splits_dir, data_root)
     folds_dir = Path(splits_dir) / FOLDS_DIRNAME
@@ -534,9 +541,8 @@ def make_folds(
         )
 
     pool = list(loader.load("train")) + list(loader.load("valid"))
-    strategy = GroupStrategy(loader.manifest["group_strategy"])
-    config = GroupConfig(
-        strategy=strategy,
+    config = groups or GroupConfig(
+        strategy=GroupStrategy(loader.manifest["group_strategy"]),
         regex=loader.manifest.get("group_regex"),
         manifest_path=(
             Path(loader.manifest["group_manifest"])
@@ -568,7 +574,7 @@ def make_folds(
     summary = {
         "k": k,
         "seed": seed,
-        "group_strategy": strategy.value,
+        "group_strategy": config.strategy.value,
         "pool_size": len(pool),
         "fold_sizes": [len(b) for b in buckets],
         "created_utc": _now(),
@@ -579,10 +585,45 @@ def make_folds(
     return summary
 
 
-def record_test_access(reason: str, run_name: str, log_path: Path | None = None) -> None:
-    """Deja constancia de cada acceso al conjunto sellado."""
+def read_test_accesses(log_path: Path | None = None) -> list[dict]:
+    """Accesos previos al conjunto sellado, del mas antiguo al mas reciente.
+
+    Se lee ANTES de evaluar y se ensena. El sello no impide mirar el test: lo
+    que impide es mirarlo sin que quede constancia. Ver el recuento delante es
+    lo que hace que la constancia sirva de algo.
+    """
+    path = Path(log_path or TEST_LOG_PATH)
+    if not path.exists():
+        return []
+    entries: list[dict] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            # Una linea corrupta no puede ocultar las demas: el recuento de
+            # accesos es justo lo que no debe poder perderse.
+            entries.append({"utc": "?", "run": "?", "reason": "[linea ilegible]"})
+    return entries
+
+
+def record_test_access(
+    reason: str,
+    run_name: str,
+    log_path: Path | None = None,
+    **details,
+) -> dict:
+    """Deja constancia de cada acceso al conjunto sellado.
+
+    `details` guarda QUE se evaluo -- commit, pesos, metrica obtenida -- no solo
+    cuando. Un registro que solo diga "alguien miro el test el martes" no sirve
+    para lo unico que importa: saber si el numero final se eligio entre varios.
+    """
     path = Path(log_path or TEST_LOG_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
-    entry = {"utc": _now(), "run": run_name, "reason": reason}
+    entry = {"utc": _now(), "run": run_name, "reason": reason, **details}
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return entry
