@@ -290,3 +290,114 @@ def test_la_verdad_de_evaluate_pasa_por_el_filtro(tmp_path, config):
 def test_el_registro_es_lo_unico_que_decide():
     """`get` no conoce ningun nombre: todo sale del diccionario."""
     assert set(detectors()) == set(detector_base.REGISTRY)
+
+
+# --- billetes que cruzan el borde -----------------------------------------
+
+
+def _cfg(config, **detector):
+    return config.model_copy(
+        update={"detector": config.detector.model_copy(update=detector)}
+    )
+
+
+def _fuera_del_marco() -> Quad:
+    """Billete que se sale por la izquierda: vertices en x negativo."""
+    return canonicalize(Quad.from_xy([(-0.15, 0.3), (0.5, 0.3), (0.5, 0.7), (-0.15, 0.7)]))
+
+
+def _coords(path: Path) -> list[float]:
+    return [float(t) for t in path.read_text().split()[1:]]
+
+
+def test_clip_pega_el_quad_al_marco(tmp_path, config):
+    sample = _write_sample(tmp_path / "src", "a", [_fuera_del_marco()])
+    view = dataset_view.materialize(
+        {"train": [sample]}, _cfg(config, out_of_bounds="clip"), out_dir=tmp_path / "out"
+    )
+    coords = _coords(view.root / "train" / "labels" / "a.txt")
+    assert min(coords) >= 0.0 and max(coords) <= 1.0
+    assert view.adjusted == 1
+    assert view.out_of_bounds == "clip"
+
+
+def test_keep_no_toca_nada_pero_lo_cuenta(tmp_path, config):
+    """Con `keep` Ultralytics descartara la imagen; al menos queda registrado."""
+    sample = _write_sample(tmp_path / "src", "a", [_fuera_del_marco()])
+    view = dataset_view.materialize(
+        {"train": [sample]}, _cfg(config, out_of_bounds="keep"), out_dir=tmp_path / "out"
+    )
+    assert min(_coords(view.root / "train" / "labels" / "a.txt")) < 0.0
+    assert view.adjusted == 1
+
+
+def test_pad_mete_el_quad_dentro_y_agranda_la_imagen(tmp_path, config):
+    sample = _write_sample(tmp_path / "src", "a", [_fuera_del_marco()], size=(160, 120))
+    view = dataset_view.materialize(
+        {"train": [sample]},
+        _cfg(config, out_of_bounds="pad", pad_fraction=0.25),
+        out_dir=tmp_path / "out",
+    )
+    coords = _coords(view.root / "train" / "labels" / "a.txt")
+    assert min(coords) >= 0.0 and max(coords) <= 1.0
+
+    with Image.open(view.root / "train" / "images" / "a.jpg") as im:
+        assert im.size == (160 + 2 * 40, 120 + 2 * 30)
+
+
+def test_pad_y_su_inversa_se_cancelan():
+    """Si no fueran inversas exactas, las predicciones saldrian desplazadas."""
+    from testbank.detectors.dataset import pad_quad
+    from testbank.detectors.ultralytics_obb import _unpad
+
+    original = _quad(0.4, 0.5, half_long=0.2, ratio=2.0, theta=0.6)
+    ida = pad_quad(original, 0.25)
+    vuelta = _unpad(Prediction(ida, 0.9), 0.25).quad
+    for (x0, y0), (x1, y1) in zip(original.points, vuelta.points):
+        assert x1 == pytest.approx(x0, abs=1e-6)
+        assert y1 == pytest.approx(y0, abs=1e-6)
+
+
+def test_la_inversa_conserva_lo_que_sale_del_marco():
+    """Es el unico motivo de existir de `pad`: si se recortara al volver, daria
+    igual que clip y el coste del padding no compraria nada."""
+    from testbank.detectors.dataset import pad_quad
+    from testbank.detectors.ultralytics_obb import _unpad
+
+    fuera = _fuera_del_marco()
+    vuelta = _unpad(Prediction(pad_quad(fuera, 0.25), 0.9), 0.25).quad
+    assert min(vuelta.flat()) < 0.0
+
+
+def test_la_politica_por_defecto_es_clip(config):
+    assert config.detector.out_of_bounds.value == "clip"
+
+
+def test_pad_recorta_lo_que_el_borde_no_alcanza(tmp_path, config):
+    """Sin este recorte, `pad` con fraccion pequena perderia la imagen entera.
+
+    Es lo que permite padear POCO: el borde cubre el caso comun y el recorte se
+    ocupa del residuo, en vez de tener que padear para el peor caso.
+    """
+    muy_fuera = canonicalize(
+        Quad.from_xy([(-0.40, 0.3), (0.5, 0.3), (0.5, 0.7), (-0.40, 0.7)])
+    )
+    sample = _write_sample(tmp_path / "src", "a", [muy_fuera])
+    view = dataset_view.materialize(
+        {"train": [sample]},
+        _cfg(config, out_of_bounds="pad", pad_fraction=0.05),
+        out_dir=tmp_path / "out",
+    )
+    coords = _coords(view.root / "train" / "labels" / "a.txt")
+    assert min(coords) >= 0.0 and max(coords) <= 1.0
+    assert view.clipped_after_pad == 1
+
+
+def test_con_padding_de_sobra_no_hace_falta_recortar(tmp_path, config):
+    sample = _write_sample(tmp_path / "src", "a", [_fuera_del_marco()])
+    view = dataset_view.materialize(
+        {"train": [sample]},
+        _cfg(config, out_of_bounds="pad", pad_fraction=0.25),
+        out_dir=tmp_path / "out",
+    )
+    assert view.clipped_after_pad == 0

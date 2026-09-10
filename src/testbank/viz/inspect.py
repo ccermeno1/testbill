@@ -40,10 +40,11 @@ COLOR_FRAME = (120, 170, 250)
 #: Gris apagado: lo descartado por el filtro de area se dibuja para poder
 #: revisarlo, pero no debe competir visualmente con lo que sigue vivo.
 COLOR_DROPPED = (130, 130, 130)
-#: Cian para lo PREDICHO. Distinto de todo lo demas a proposito: en la hoja de
-#: contacto se compara a ojo entre ejecuciones, y verdad y prediccion no pueden
-#: confundirse de un vistazo.
-COLOR_PREDICTION = (255, 200, 40)
+#: Ambar para lo PREDICHO. OpenCV usa BGR, no RGB: (255, 200, 40) daba un cian
+#: casi identico al azul del marco de la imagen, y en la hoja de contacto las
+#: predicciones se confundian con el borde. Verdad y prediccion tienen que
+#: distinguirse de un vistazo.
+COLOR_PREDICTION = (40, 190, 255)
 
 
 @dataclass(frozen=True, slots=True)

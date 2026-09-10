@@ -9,7 +9,7 @@ import pytest
 from conftest import rotated_rect_points
 from PIL import Image
 
-from testbank.config import Config
+from testbank.config import Config, OutOfBoundsPolicy
 from testbank.data import datasets as datasets_mod
 from testbank.data.datasets import DatasetError, DatasetInfo
 from testbank.data.splits import materialize_splits
@@ -229,3 +229,39 @@ def test_el_dataset_real_declara_atribucion():
     assert real.license == "CC-BY-4.0"
     assert any("atribucion" in n.lower() for n in real.notes)
     assert real.origin.startswith("https://universe.roboflow.com/")
+
+
+# --- avisos de lectura ----------------------------------------------------
+
+
+def test_entrenar_con_padding_e_inferir_sin_el_se_avisa(registered, prepared):
+    """Un desajuste silencioso haria leer mal el resultado: sin el aviso, un mal
+    numero se atribuiria al padding y no al desajuste."""
+    root, splits_dir, config = prepared
+    config = config.model_copy(
+        update={
+            "detector": config.detector.model_copy(
+                update={
+                    "out_of_bounds": OutOfBoundsPolicy.PAD,
+                    "pad_at_inference": False,
+                }
+            )
+        }
+    )
+    outcome = run_candidate(
+        registered, config, splits_dir=splits_dir, data_root=root,
+        dataset_name=FAKE_DATASET,
+    )
+    assert any("desajustado" in c for c in outcome.run.record.caveats)
+    assert "AVISO" in outcome.summary()
+    record = json.loads((outcome.run.directory / "run.json").read_text(encoding="utf-8"))
+    assert record["caveats"]
+
+
+def test_sin_padding_no_hay_aviso(registered, prepared):
+    root, splits_dir, config = prepared
+    outcome = run_candidate(
+        registered, config, splits_dir=splits_dir, data_root=root,
+        dataset_name=FAKE_DATASET,
+    )
+    assert outcome.run.record.caveats == []

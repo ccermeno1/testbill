@@ -99,6 +99,28 @@ class RunRecord:
     def provenance_blockers(self) -> list[str]:
         return list(self.provenance.blockers())
 
+    @property
+    def caveats(self) -> list[str]:
+        """Cosas que cambian COMO HAY QUE LEER estos numeros.
+
+        No impiden desplegar ni repetir la ejecucion, asi que no son bloqueos.
+        Pero sin ellas delante, las cifras se interpretan mal, y eso es peor que
+        no tenerlas.
+        """
+        found: list[str] = []
+        detector = self.config.detector
+        if (
+            str(getattr(detector.out_of_bounds, "value", detector.out_of_bounds)) == "pad"
+            and not detector.pad_at_inference
+        ):
+            found.append(
+                "entrenado con padding pero inferido SIN el: estos numeros miden "
+                "el pipeline desajustado. Si salen mal no prueban que el padding "
+                "no sirva, solo que entrenar y predecir con encuadres distintos "
+                "no funciona. Para juzgar el padding, pad_at_inference=True."
+            )
+        return found
+
     def blockers(self) -> list[str]:
         return self.license_blockers() + self.provenance_blockers()
 
@@ -129,6 +151,7 @@ class RunRecord:
             "dataset_provenance": list(self.dataset_provenance),
             "production_ready": self.production_ready,
             "reproducible": self.provenance.reproducible,
+            "caveats": self.caveats,
             "license_blockers": self.license_blockers(),
             "provenance_blockers": self.provenance_blockers(),
             "notes": list(self.notes),

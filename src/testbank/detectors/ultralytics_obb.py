@@ -16,9 +16,10 @@ opcional `ultralytics` del pyproject, no en las dependencias base.
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
-from testbank.config import Config
+from testbank.config import Config, OutOfBoundsPolicy
 from testbank.dataio.image_sizes import SizeIndex
 from testbank.detectors import dataset as dataset_view
 from testbank.detectors.base import (
@@ -75,20 +76,23 @@ class UltralyticsObb(BaseDetector):
 
         model = YOLO(self.model)
         model.train(
-            data=str(view.data_yaml),
+            data=str(view.data_yaml.resolve()),
             epochs=config.detector.epochs,
             imgsz=config.detector.image_size,
             batch=config.detector.batch_size,
             seed=config.metrics.seed,
             deterministic=True,
-            project=str(output_dir),
+            # ABSOLUTO a proposito. Con una ruta relativa, Ultralytics la
+            # interpreta respecto a su propio `runs_dir` de settings y acaba
+            # escribiendo en `runs/obb/<lo que le pasaste>`, fuera de nuestra
+            # ejecucion. Medido: dejaba los pesos en
+            # `runs/obb/runs/<timestamp>_<nombre>/_train`.
+            project=str(output_dir.resolve()),
             name="train",
             exist_ok=True,
             verbose=False,
         )
-        weights = output_dir / "train" / "weights" / "best.pt"
-        if not weights.exists():
-            raise DetectorError(f"el entrenamiento no dejo pesos en {weights}")
+        weights = _locate_weights(model, output_dir)
         return TrainResult(
             weights=weights,
             epochs=config.detector.epochs,
@@ -111,20 +115,97 @@ class UltralyticsObb(BaseDetector):
             samples, cache_path=config.data.derived_dir / "image_sizes.json"
         )
         model = YOLO(str(weights))
+        trained_padded = (
+            OutOfBoundsPolicy(config.detector.out_of_bounds) is OutOfBoundsPolicy.PAD
+        )
+        padded = trained_padded and config.detector.pad_at_inference
+        fraction = config.detector.pad_fraction
 
         out: dict[str, list[Prediction]] = {}
-        for sample in samples:
-            width, height = sizes.size(sample.sample_id)
-            result = model.predict(
-                str(sample.image_path),
-                conf=config.detector.confidence_threshold,
-                iou=config.detector.nms_iou,
-                verbose=False,
-            )[0]
-            out[sample.sample_id] = list(
-                _to_predictions(result, width, height, aspect=width / height)
-            )
+        with tempfile.TemporaryDirectory() as scratch:
+            for sample in samples:
+                width, height = sizes.size(sample.sample_id)
+                image_path = sample.image_path
+
+                if padded:
+                    # El modelo se entreno sobre imagenes padeadas: si aqui se le
+                    # da la original, ve un encuadre distinto del que aprendio.
+                    # Que este `if` exista es el coste real de la politica `pad`.
+                    image_path = Path(scratch) / sample.image_path.name
+                    dataset_view.pad_image(sample.image_path, image_path, fraction)
+
+                result = model.predict(
+                    str(image_path),
+                    conf=config.detector.confidence_threshold,
+                    iou=config.detector.nms_iou,
+                    verbose=False,
+                )[0]
+                found = list(
+                    _to_predictions(
+                        result,
+                        *_target_size(width, height, fraction if padded else 0.0),
+                        aspect=width / height,
+                    )
+                )
+                if padded:
+                    found = [_unpad(p, fraction) for p in found]
+                out[sample.sample_id] = found
         return out
+
+
+def _target_size(width: int, height: int, fraction: float) -> tuple[int, int]:
+    """Tamano sobre el que normalizar. Con padding, el de la imagen padeada."""
+    if fraction <= 0.0:
+        return width, height
+    return (
+        width + 2 * round(width * fraction),
+        height + 2 * round(height * fraction),
+    )
+
+
+def _unpad(prediction: Prediction, fraction: float) -> Prediction:
+    """Devuelve una prediccion del espacio padeado al de la imagen original.
+
+    Inversa exacta de `dataset.pad_quad`: si aquella hace
+    `x' = x/(1+2f) + f/(1+2f)`, esta hace `x = x'*(1+2f) - f`.
+
+    El resultado puede caer fuera de [0,1], y debe: si el modelo predice que el
+    billete sigue mas alla del encuadre, esa es justo la informacion que la
+    politica `pad` existe para conservar. El rango tolerante del quad lo admite.
+    """
+    scale = 1.0 + 2.0 * fraction
+    return Prediction(
+        quad=canonicalize(
+            Quad.from_xy(
+                [(x * scale - fraction, y * scale - fraction)
+                 for x, y in prediction.quad.points]
+            )
+        ),
+        score=prediction.score,
+        class_id=prediction.class_id,
+    )
+
+
+def _locate_weights(model, output_dir: Path) -> Path:
+    """Pregunta al entrenador donde guardo, en vez de reconstruir la ruta.
+
+    Reconstruirla es adivinar el convenio de una libreria que no controlamos, y
+    ya fallo una vez. `trainer.save_dir` es lo que Ultralytics uso de verdad;
+    la ruta esperada queda solo como respaldo.
+    """
+    candidates: list[Path] = []
+    save_dir = getattr(getattr(model, "trainer", None), "save_dir", None)
+    if save_dir:
+        candidates.append(Path(save_dir) / "weights" / "best.pt")
+    candidates.append(output_dir / "train" / "weights" / "best.pt")
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise DetectorError(
+        "el entrenamiento no dejo pesos; se buscaron: "
+        + ", ".join(str(c) for c in candidates)
+    )
 
 
 def _to_predictions(result, width: int, height: int, *, aspect: float):

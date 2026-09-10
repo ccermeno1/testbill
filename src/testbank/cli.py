@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from testbank.checks.visibility import check_samples
-from testbank.config import Config
+from testbank.config import Config, OutOfBoundsPolicy
 from testbank.data.datasets import DEFAULT_DATASET, datasets
 from testbank.data.discover import LayoutMode, detect_layout
 from testbank.data.splits import (
@@ -153,6 +153,19 @@ def cmd_check_visibility(args, config: Config) -> int:
 
 
 def cmd_train(args, config: Config) -> int:
+    # Los overrides se sustituyen DENTRO de la config, no se pasan sueltos al
+    # detector: la config resuelta es lo que se congela en la ejecucion, y dos
+    # runs con epochs o politica de borde distintos no son comparables. Si el
+    # override no llegara ahi, el config.yaml mentiria sobre lo que se ejecuto.
+    updates = {}
+    if args.epochs is not None:
+        updates["epochs"] = args.epochs
+    if args.out_of_bounds is not None:
+        updates["out_of_bounds"] = OutOfBoundsPolicy(args.out_of_bounds)
+    if updates:
+        config = config.model_copy(
+            update={"detector": config.detector.model_copy(update=updates)}
+        )
     outcome = run_candidate(
         get_detector(args.detector),
         config,
@@ -268,6 +281,23 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("detector", help="nombre registrado; ver `list`")
     train.add_argument("--dataset", default=DEFAULT_DATASET)
     train.add_argument("--name", default=None, help="nombre de la ejecucion")
+    train.add_argument(
+        "--out-of-bounds",
+        choices=[p.value for p in OutOfBoundsPolicy],
+        default=None,
+        help=(
+            "billetes que cruzan el borde: clip los recorta al marco (por "
+            "defecto), pad anade borde negro para que quepan enteros (y padea "
+            "tambien en inferencia), keep no toca nada y Ultralytics descartara "
+            "esas imagenes"
+        ),
+    )
+    train.add_argument(
+        "--epochs",
+        type=int,
+        default=None,
+        help="sustituye detector.epochs; queda registrado en la config resuelta",
+    )
     train.add_argument(
         "--weights",
         default=None,

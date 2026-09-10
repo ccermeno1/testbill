@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from pathlib import Path
 
 import yaml
@@ -9,6 +10,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 class StrictModel(BaseModel):
+    """Config inmutable y sin campos de mas.
+
+    Aviso sobre `model_copy(update=...)`: pydantic v2 NO valida lo que se le
+    pasa ahi. Un `update={"out_of_bounds": "pad"}` deja un `str` donde deberia
+    haber un enum, y el `config.yaml` congelado de la ejecucion lo serializa
+    tal cual. Para sobrescribir, construye el tipo correcto -- es lo que hace
+    el CLI -- y donde el valor pueda venir de fuera, coercionalo al usarlo.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
@@ -32,7 +42,7 @@ class SplitConfig(StrictModel):
     folds: int = 5
 
     @model_validator(mode="after")
-    def _ratios_sum_to_one(self) -> "SplitConfig":
+    def _ratios_sum_to_one(self) -> SplitConfig:
         total = self.train + self.valid + self.test
         if abs(total - 1.0) > 1e-9:
             raise ValueError(f"los porcentajes de particion deben sumar 1, suman {total}")
@@ -105,7 +115,7 @@ class ContaminationConfig(StrictModel):
     percentile: float = Field(default=95.0, ge=0.0, le=100.0)
 
     @model_validator(mode="after")
-    def _fan_is_not_stricter_than_single(self) -> "ContaminationConfig":
+    def _fan_is_not_stricter_than_single(self) -> ContaminationConfig:
         if self.fan_max < self.single_max:
             raise ValueError(
                 "fan_max no puede ser menor que single_max: un abanico nunca "
@@ -137,6 +147,37 @@ class MetricsConfig(StrictModel):
         return value
 
 
+class OutOfBoundsPolicy(str, Enum):
+    """Que hacer con los billetes que cruzan el borde de la imagen.
+
+    Nuestro lector los acepta a proposito (rango tolerante [-0.5, 1.5]): un
+    billete a caballo del encuadre tiene vertices fuera de [0,1] legitimamente.
+    Ultralytics considera esas etiquetas corruptas y DESCARTA LA IMAGEN ENTERA.
+    Medido sobre el export actual: 12 imagenes perdidas de 452, y justo las de
+    los casos dificiles.
+
+    Medido tambien cuanto billete se sale de verdad:
+
+        99 anotaciones de 679, en 82 imagenes de 452
+        area fuera del encuadre: mediana 0.4%, p90 5.8%, max 16.5%
+        el 86% tiene menos del 5% de area fuera
+    """
+
+    #: Recorta los quads al marco. Ninguna imagen se pierde y no se inventa un
+    #: solo pixel. La caja pasa a ser la parte VISIBLE del billete, que es lo
+    #: unico que un recorte puede contener de todos modos.
+    CLIP = "clip"
+    #: Anade un borde para que quepa la extension completa. Ojo: el padding
+    #: tiene que ser UNIFORME Y SIEMPRE ACTIVO, tambien en inferencia -- ahi no
+    #: hay anotacion con la que calcular cuanto hace falta. Para que entre todo
+    #: se necesita un 23% por lado, o sea el 53% de cada imagen inventado, a
+    #: cambio de recuperar una mediana del 0.4% de billete.
+    PAD = "pad"
+    #: No tocar nada. Ultralytics descartara esas imagenes; queda registrado
+    #: cuantas, en vez de perderse en silencio.
+    KEEP = "keep"
+
+
 class DetectorConfig(StrictModel):
     """Lo que se le pasa al entrenador de turno. Va en la config y se registra:
     dos ejecuciones con epochs distintos no son comparables."""
@@ -152,11 +193,35 @@ class DetectorConfig(StrictModel):
     confidence_threshold: float = Field(default=0.01, gt=0.0, lt=1.0)
     #: IoU del NMS rotado.
     nms_iou: float = Field(default=0.5, gt=0.0, lt=1.0)
+    out_of_bounds: OutOfBoundsPolicy = OutOfBoundsPolicy.CLIP
+    #: Solo con `out_of_bounds = pad`. Fraccion del lado anadida en CADA borde.
+    #: 0.25 cubre el desbordamiento maximo medido (0.231).
+    pad_fraction: float = Field(default=0.25, gt=0.0, le=1.0)
+    #: Si el padding se aplica tambien al INFERIR. Por defecto NO: la decision
+    #: es deliberada y queda pendiente.
+    #:
+    #: Con False, el modelo se entrena sobre imagenes padeadas y luego ve
+    #: imagenes sin padear. Es un DESAJUSTE REAL: tras el redimensionado a
+    #: `image_size`, un billete ocupa mas pixeles al inferir que al entrenar,
+    #: porque en entrenamiento competia con un borde que anadia un 53% de area.
+    #:
+    #: Lo que hay que tener presente al leer los numeros: una ejecucion con
+    #: `pad` y sin padding en inferencia mide el pipeline DESAJUSTADO. Si sale
+    #: mal, no demuestra que el padding no sirva; demuestra que entrenar y
+    #: predecir con encuadres distintos no funciona, que ya se sabia. Para
+    #: juzgar el padding en si, hay que poner esto a True.
+    pad_at_inference: bool = False
 
 
 class VizConfig(StrictModel):
     #: Muestra fija de validacion, siempre la misma, para comparar a ojo.
     sample_count: int = 12
+    #: Confianza minima para DIBUJAR una prediccion. Distinta de la de
+    #: inferencia (0.01), que es baja a proposito para que la curva
+    #: precision-recall tenga su cola. Dibujar esa cola llena la imagen de
+    #: cajas de confianza 0.01 y la vuelve ilegible: medido, 11-19 cajas por
+    #: imagen tapando el billete. Aqui se mira, no se mide.
+    confidence_threshold: float = Field(default=0.25, ge=0.0, lt=1.0)
     seed: int = 20260910
     output_dir: Path = Path("runs/_inspection")
     dpi: int = 110
@@ -173,7 +238,7 @@ class Config(StrictModel):
     runs_dir: Path = Path("runs")
 
     @classmethod
-    def load(cls, path: str | Path | None) -> "Config":
+    def load(cls, path: str | Path | None) -> Config:
         if path is None:
             return cls()
         raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}

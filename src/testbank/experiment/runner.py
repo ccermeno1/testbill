@@ -60,6 +60,8 @@ class RunOutcome:
                     f"/ umbral {entry['threshold']:.2f}  (mediana "
                     f"{entry['median']:.3f}, n={entry['n']}){mark}"
                 )
+        for warning in self.run.record.caveats:
+            lines.append(f"  AVISO: {warning}")
         if not self.run.record.production_ready:
             lines.append("  NO APTO para produccion:")
             for blocker in self.run.record.license_blockers():
@@ -115,17 +117,18 @@ def run_candidate(
     metrics = detector.evaluate(samples["valid"], config, weights=stored)
     run.write_metrics(metrics)
 
-    predictions = detector.predict(
-        fixed_validation_sample(
-            samples["valid"], count=config.viz.sample_count, seed=config.viz.seed
-        ),
-        weights=stored,
-        config=config,
+    shown = fixed_validation_sample(
+        samples["valid"], count=config.viz.sample_count, seed=config.viz.seed
     )
+    predictions = detector.predict(shown, weights=stored, config=config)
+    predictions = {
+        sample_id: [
+            p for p in found if p.score >= config.viz.confidence_threshold
+        ]
+        for sample_id, found in predictions.items()
+    }
     inspect_samples(
-        fixed_validation_sample(
-            samples["valid"], count=config.viz.sample_count, seed=config.viz.seed
-        ),
+        shown,
         run.viz_dir,
         visibility_threshold=config.annotation_policy.visibility_threshold,
         min_relative_area=config.annotation_policy.min_relative_area,
