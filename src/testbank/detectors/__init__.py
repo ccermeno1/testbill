@@ -1,11 +1,16 @@
 """Registro de candidatos.
 
-Importar los adaptadores aqui es lo que los registra. El de Ultralytics importa
-`ultralytics` de forma PEREZOSA, dentro de sus metodos, asi que este import no
-exige tener el paquete instalado.
+Importar los adaptadores aqui es lo que los registra. Todos importan su libreria
+de forma PEREZOSA, dentro de sus metodos, asi que estos imports no exigen tener
+nada instalado: `import testbank` funciona con el conjunto base pelado.
+
+Es lo que permite que `list` y `compare` enseñen candidatos que este entorno no
+puede ejecutar -- RTMDet-R necesita torch 2.0 en un entorno aparte, y aun asi
+tiene que aparecer en la tabla.
 """
 
 from testbank.detectors import (
+    rtmdet_r,  # noqa: F401  (registra)
     ultralytics_obb,  # noqa: F401  (registra)
     yolox_obb,  # noqa: F401  (registra)
 )

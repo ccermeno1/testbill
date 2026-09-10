@@ -310,43 +310,130 @@ volver a medir la distribución de ratios. Es bastante probable que el 19% se
 desplome y que el atenuador deje de hacer falta — en cuyo caso `enabled=False`
 y a otra cosa. Medirlo antes de quitarlo, no al revés.
 
+## [DESCARTADO] buzhidaoshenme/YOLOX-OBB
+
+Estaba en la lista de candidatos. Se deja fuera, y estos son los motivos, todos
+verificados contra el repositorio y no supuestos.
+
+**Su esquema XML no es el que se asumía.** Durante un tiempo este proyecto dio
+por hecho que leía `<robndbox>` de roLabelImg. Leído su `dota_obb.py`, lo que
+espera es un `<bndbox>` de VOC con un `<angle>` **dentro**, y las coordenadas
+parseadas con `int(...) - 1`:
+
+```xml
+<object>
+  <name>...</name><difficult>0</difficult>
+  <bndbox>
+    <xmin>..</xmin><ymin>..</ymin><xmax>..</xmax><ymax>..</ymax>
+    <angle>..</angle>
+  </bndbox>
+</object>
+```
+
+Eso no es un rectángulo girado: es una envolvente alineada con un ángulo pegado.
+Reconstruir el quad desde ahí depende de un convenio que habría que deducir
+leyendo su código de decodificación.
+
+**Usa pérdida KLD**, la formulación gaussiana que este proyecto descartó a
+propósito por alejarse del IoU rotado de shapely con el que medimos. Meterlo
+daría un candidato optimizando algo distinto de lo que se mide, y sin forma de
+separar si su resultado viene del backbone o de la pérdida.
+
+**Está abandonado.** Último commit en noviembre de 2021, 14 issues abiertas. Es
+un fork de YOLOX de la época de PyTorch 1.9.
+
+**Y no compensa.** 9.0M parámetros frente a los 857k de la cabeza propia, que
+además controlamos entera. Su única ventaja sobre ella era el preentreno, y no
+justifica el resto.
+
+Si alguna vez se retoma, el trabajo pendiente es un exportador para ese esquema
+concreto — no el `voc_xml` que hay, que escribe `<robndbox>` y **no le sirve**.
+
 ## Entorno para RTMDet-R
 
 RTMDet-R es Apache 2.0 y apto para producción, pero **no entra en el entorno
 principal**. MMCV lleva operadores compilados —NMS rotado, IoU rotado— enlazados
-contra la ABI binaria de una versión concreta de PyTorch. Por eso OpenMMLab
-publica un índice de ruedas por versión de torch, y no son la misma rueda con
-otro nombre: son compilaciones distintas.
+contra la ABI binaria de una versión concreta de PyTorch, y de ahí sale una
+cadena de restricciones que empuja el proyecto entero dos años atrás.
 
-Medido sobre este proyecto (Windows, Python 3.11):
+### La cadena, y por qué acaba en torch 2.0
 
-| índice | ruedas cp311 |
-|---|---|
-| `torch2.14.0` | no existe |
-| `torch2.4.0` | solo `manylinux` |
-| **`torch2.1.0`** | **`win_amd64` sí** |
-| `torch2.0.0` | `win_amd64` sí |
-
-Así que hace falta un entorno aparte con torch 2.1. Verificado de punta a punta:
-MMCV instala desde rueda sin compilar, `mmcv._ext` carga, `box_iou_rotated`
-calcula, y YOLO26-obb entrena una época sin problemas en torch 2.1.
-
-```bash
-uv venv .venv-torch21 --python 3.11
-VIRTUAL_ENV=.venv-torch21 uv pip install torch==2.1.0 torchvision==0.16.0   "numpy==1.26.4" packaging "setuptools<81"
-VIRTUAL_ENV=.venv-torch21 uv pip install --only-binary=:all:   --find-links https://download.openmmlab.com/mmcv/dist/cpu/torch2.1.0/index.html   mmcv==2.1.0
+```
+mmrotate 1.0.0rc1   ->  mmdet >=3.0.0rc6, <3.2.0
+mmdet 3.1.0         ->  mmcv  >=2.0.0rc4, <2.1.0
+mmcv 2.0.x          ->  solo existe en el índice de torch 2.0
 ```
 
-**`numpy<2` va clavado a propósito, y es la parte frágil.** Nadie declara ese
-conflicto: `mmcv` y `mmengine` piden `numpy` sin tope, y torch 2.1 es anterior a
-NumPy 2, así que no lo restringe. El resolutor sube NumPy tan tranquilo y
-`torch.from_numpy` empieza a fallar con *"Numpy is not available"*. No lo detecta
-ninguna herramienta de dependencias — solo revienta al ejecutar. Cualquier
-instalación posterior en ese entorno puede volver a romperlo en silencio.
+Cada eslabón empuja al siguiente. Y **ninguna de estas incompatibilidades la ve
+el resolutor de dependencias**: son `assert` dentro del `__init__.py` de cada
+paquete, que solo saltan al importar.
 
-**Al comparar candidatos de los dos entornos**, ten presente que corren con torch
-distinto. El `run.json` registra la versión, así que la diferencia es visible en
-`compare`, pero sigue siendo una comparación entre entornos distintos.
+Ruedas `cp311-win_amd64` disponibles, medido:
+
+| índice | mmcv disponibles |
+|---|---|
+| `torch2.14` | el índice no existe |
+| `torch2.4` | solo `manylinux` |
+| `torch2.1` | 2.1.0, 2.2.0 — **las dos por encima del tope de mmdet** |
+| **`torch2.0`** | **2.0.0, 2.0.1** — las únicas que sirven |
+
+Y `mmrotate` **no está publicado en PyPI en su línea 1.x**: en PyPI solo hay
+0.3.4, que va con `mmcv-full` 1.x y `mmdet <3`. Hay que instalarlo desde la rama
+`dev-1.x` de GitHub.
+
+### Receta verificada
+
+```bash
+uv venv .venv-rtmdet --python 3.11
+VIRTUAL_ENV=.venv-rtmdet uv pip install torch==2.0.0 torchvision==0.15.1   "numpy==1.26.4" packaging "setuptools<81"
+VIRTUAL_ENV=.venv-rtmdet uv pip install --only-binary=:all:   --find-links https://download.openmmlab.com/mmcv/dist/cpu/torch2.0.0/index.html   mmcv==2.0.1
+VIRTUAL_ENV=.venv-rtmdet uv pip install mmdet==3.1.0   "git+https://github.com/open-mmlab/mmrotate@dev-1.x" "numpy==1.26.4"
+```
+
+Comprobado de punta a punta: los cuatro paquetes importan, `box_iou_rotated`
+calcula (0.6337 en el caso de prueba), `RotatedRTMDetHead` está en el registro, y
+Ultralytics sigue cargando YOLO26-obb en ese mismo entorno.
+
+**`numpy<2` es la parte frágil.** Torch 2.0 es anterior a NumPy 2 y no lo
+restringe; `mmcv` y `mmengine` piden `numpy` sin tope. El resolutor lo sube solo
+y `torch.from_numpy` empieza a fallar con *"Numpy is not available"*. Cualquier
+instalación posterior en ese entorno puede volver a romperlo **en silencio**:
+hay que repetir el pin en cada `uv pip install`.
+
+### [DESVIACIÓN] El preentreno COCO no existe para tiny
+
+La especificación pedía *"la config con preentreno COCO, no ImageNet"*. Para la
+variante `tiny` —la que encaja con el despliegue móvil— **esa config no está
+publicada**:
+
+```python
+# rotated_rtmdet_tiny-3x-dota.py
+checkpoint = '.../cspnext_rsb_pretrain/cspnext-tiny_imagenet_600e.pth'
+```
+
+El único `coco_pretrain` es el de la variante `l`, ~52M parámetros: diez veces
+el presupuesto móvil.
+
+**Lo que se usa en su lugar**, y por qué es mejor que ambas opciones: los
+checkpoints publicados no son preentrenos de backbone, son **detectores rotados
+ya entrenados en DOTA**.
+
+| checkpoint | mAP en DOTA |
+|---|---|
+| `rotated_rtmdet_tiny-3x-dota` | 75.60 |
+| `rotated_rtmdet_tiny-3x-dota_ms` | 79.82 |
+
+Eso es más que «aprendió a localizar en COCO»: es un modelo que ya predice
+**cajas orientadas**, que es exactamente nuestra tarea. Partir de ahí y ajustar
+sobre 351 imágenes es mejor punto de partida que cualquier preentreno de
+clasificación. La cadena real es ImageNet → DOTA, y el destino es lo que importa.
+
+### Al comparar
+
+Un candidato entrenado aquí corre con **torch 2.0** mientras el candidato propio
+y Ultralytics corren con **2.14**. El `run.json` registra la versión, así que la
+diferencia es visible en `compare`, pero sigue siendo una comparación entre
+entornos separados por dos años de PyTorch. Conviene decirlo al leer los números.
 
 ## Licencias
 

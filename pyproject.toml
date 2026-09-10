@@ -25,26 +25,43 @@ torch = ["torch>=2.2"]
 # Aislado tras el adaptador; ningun otro modulo puede importarlo (test_isolation.py).
 ultralytics = ["ultralytics>=8.3"]
 
-# RTMDet-R. Apache-2.0 y apto para produccion, pero exige un entorno APARTE:
-# MMCV lleva operadores compilados contra la ABI de PyTorch, y en Windows +
-# Python 3.11 la ultima rueda precompilada es la de torch 2.1. Medido:
-#   torch 2.14 -> el indice de OpenMMLab no existe
-#   torch 2.4  -> solo manylinux, sin win_amd64
-#   torch 2.1  -> win_amd64 SI     <- unico que sirve
+# RTMDet-R. Apache-2.0 y apto para produccion, pero exige un entorno APARTE y
+# una cadena de versiones MUY estrecha. Nadie la declara: son `assert` dentro del
+# __init__.py de cada paquete, que solo saltan al importar.
 #
-# `numpy<2` va CLAVADO a proposito. Nadie declara ese conflicto: mmcv y mmengine
-# piden `numpy` sin tope y torch 2.1 es anterior a NumPy 2, asi que el resolutor
-# sube NumPy tan tranquilo y `torch.from_numpy` empieza a fallar con "Numpy is
-# not available". No lo detecta ninguna herramienta; solo revienta al ejecutar.
+#   mmrotate 1.0.0rc1  ->  mmdet >=3.0.0rc6, <3.2.0
+#   mmdet 3.1.0        ->  mmcv  >=2.0.0rc4, <2.1.0
+#   mmcv 2.0.x         ->  solo existe en el indice de torch 2.0
 #
-# Receta verificada (ver README, seccion "Entorno para RTMDet-R"):
-#   uv venv .venv-torch21 --python 3.11
-#   VIRTUAL_ENV=.venv-torch21 uv pip install torch==2.1.0 torchvision==0.16.0 #     "numpy==1.26.4" packaging "setuptools<81"
-#   VIRTUAL_ENV=.venv-torch21 uv pip install --only-binary=:all: #     --find-links https://download.openmmlab.com/mmcv/dist/cpu/torch2.1.0/index.html #     mmcv==2.1.0
-rtmdet = ["mmcv==2.1.0", "mmdet>=3.3", "numpy<2", "torch==2.1.0"]
+# Cada eslabon empuja al siguiente. El resultado es torch 2.0.0 -- marzo de 2023.
+# El indice de torch 2.1 solo trae mmcv 2.1.0 y 2.2.0, las dos por encima del
+# tope de mmdet, asi que 2.1 NO sirve aunque MMCV instale.
+#
+# `numpy<2` va clavado: torch 2.0 es anterior a NumPy 2 y no lo restringe, y
+# mmcv/mmengine piden `numpy` sin tope. El resolutor lo sube y `torch.from_numpy`
+# empieza a fallar con "Numpy is not available", sin que nada lo avise.
+#
+# `mmrotate` NO esta publicado en PyPI en su linea 1.x: en PyPI solo hay 0.3.4,
+# que va con mmcv-full 1.x y mmdet <3. Hay que instalarlo desde la rama dev-1.x.
+#
+# Receta verificada de punta a punta (ver README, "Entorno para RTMDet-R").
+rtmdet = [
+    "torch==2.0.0",
+    "torchvision==0.15.1",
+    "numpy==1.26.4",
+    "mmcv==2.0.1",
+    "mmdet==3.1.0",
+    "mmrotate @ git+https://github.com/open-mmlab/mmrotate@dev-1.x",
+]
 
 [project.scripts]
 testbank = "testbank.cli:main"
+
+# `mmrotate` se instala desde una rama de git, y hatchling exige permiso
+# explicito para referencias directas. Es deliberado: la linea 1.x de mmrotate
+# no esta publicada en PyPI (ver el comentario del grupo `rtmdet`).
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/testbank"]

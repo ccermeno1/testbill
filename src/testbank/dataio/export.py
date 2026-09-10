@@ -4,22 +4,27 @@ Los conversores de `formats.py` traducen UNA anotacion. Esto escribe el arbol de
 ficheros que cada entrenador espera encontrar: donde van las imagenes, donde las
 etiquetas, y con que nombres.
 
-Los tres siguientes candidatos leen cosas distintas:
+Que lee cada quien:
 
-    dota      RTMDet-R y los forks de YOLOX-OBB: un .txt por imagen en labelTxt/
-    voc_xml   buzhidaoshenme/YOLOX-OBB: un .xml por imagen en Annotations/
+    dota      RTMDet-R: un .txt por imagen en labelTxt/
+    voc_xml   VOC con <robndbox> de roLabelImg: un .xml por imagen
     coco      diagnostico y herramientas de terceros: un solo annotations.json
 
 Todos pasan por `dataio/view.prepare`, asi que comparten filtro de area y
 politica de borde con la vista de Ultralytics. Es lo que evita que dos
 candidatos entrenen con verdades distintas y la tabla los compare como iguales.
 
-Aviso sobre voc_xml
--------------------
-El esquema exacto que espera `buzhidaoshenme/YOLOX-OBB` NO esta verificado
-contra su dataloader. Aqui se escribe `<robndbox>` de roLabelImg, que es el
-convenio habitual para VOC con cajas orientadas, pero hay que contrastarlo con
-el fork antes de fiarse de una cifra que salga de ahi.
+Aviso sobre voc_xml: hoy no lo consume nadie
+--------------------------------------------
+Se escribio pensando en `buzhidaoshenme/YOLOX-OBB`. Verificado despues contra su
+`dota_obb.py`, ese fork NO lee `<robndbox>`: espera un `<bndbox>` de VOC con un
+`<angle>` DENTRO y coordenadas en base 1. Asi que este exportador no le vale, y
+el fork quedo descartado por otros motivos (ver README).
+
+Se conserva porque `<robndbox>` de roLabelImg es el convenio VOC-OBB mas comun y
+el conversor esta probado, pero **ningun candidato actual lo consume**. Antes de
+usarlo con una herramienta concreta, hay que leer SU parser -- que es la leccion
+de haberlo escrito contra una suposicion.
 """
 
 from __future__ import annotations
