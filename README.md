@@ -1,0 +1,309 @@
+# testbank — localización de billetes
+
+Etapa de localización de un pipeline de inspección. Recorta cada billete de una
+foto y se lo pasa al clasificador de manchas, que ya existe y queda fuera de este
+alcance.
+
+Arquitectura: **detector OBB de una etapa**. Entrada imagen, salida rectángulos
+orientados, uno por billete. El recorte se hace con margen configurable sobre
+cada caja y se rectifica por homografía.
+
+Las alternativas de dos etapas están descartadas y no deben implementarse. La
+segmentación clásica no separa billetes que se solapan o se tocan —son del mismo
+color y textura, no hay borde entre ellos—, y el cuadrilátero libre no aporta
+nada porque el ground truth son rectángulos girados.
+
+Caja orientada y no alineada al eje porque los billetes aparecen en abanico o
+adyacentes en ángulos distintos: las cajas alineadas de objetos alargados en
+ángulos distintos se solapan casi por completo y el NMS estándar suprime
+detecciones verdaderas. El NMS rotado lo resuelve.
+
+## Guía de anotación
+
+**Rectángulo orientado aproximado.** No se persigue exactitud geométrica. Un
+billete arrugado o con bordes ondulados se anota con el rectángulo que lo
+envuelva razonablemente.
+
+**Umbral de visibilidad: 25%.** Un billete tapado por otro se anota solo si se ve
+al menos ese porcentaje. Los que asoman una franja quedan sin anotar y son fondo
+a efectos de entrenamiento.
+
+Esta regla se aplica de verdad **aquí, al anotar**. El código no puede hacerla
+cumplir: si un billete no se anotó, no hay nada que medir. Lo único que se puede
+comprobar es la dirección contraria —una anotación que la contradice— y para eso
+está `check-visibility`, que es un aviso para revisión manual, nunca un error.
+
+Lee la sección siguiente antes de fiarte de su salida.
+
+### Filtro de área relativa
+
+**En cada imagen se conserva el billete de delante.** Al cargar, se descarta toda
+anotación cuya área sea menor que `min_relative_area` (por defecto **0.25**) veces
+el área de la mayor anotación de esa misma imagen.
+
+Cubre las dos situaciones sin tener que distinguirlas:
+
+- En un **abanico**, la franja visible de un billete tapado es mucho menor que el
+  billete de delante, y cae.
+- En una foto de **dos o tres billetes juntos**, todos tienen un tamaño parecido y
+  se conservan todos.
+
+Tres cosas que conviene tener claras:
+
+**Es una aproximación a la política de visibilidad del 25%, no una medida de
+oclusión.** El área relativa y la fracción visible son cosas distintas: una franja
+larga y estrecha puede superar el 25% de área y estar tapada del todo, y un
+billete pequeño pero entero puede quedar por debajo del umbral sin que nada lo
+tape. El filtro y `check-visibility` son complementarios, no redundantes — el
+primero quita fragmentos pequeños, el segundo marca lo grande pero tapado.
+
+**Es un filtro en carga, no un borrado.** Los ficheros de anotación no se tocan
+nunca. Las anotaciones filtradas **siguen en el dataset de origen**, y el informe
+las lista con imagen, índice y porcentaje de área relativa para poder revisarlas y
+corregirlas en Roboflow. Los índices son siempre la posición dentro del fichero,
+nunca la posición tras filtrar, para que lleven a la anotación correcta.
+
+**Es un parámetro, no una constante.** Está en `annotation_policy.min_relative_area`
+y se puede subir o bajar sin reexportar el dataset. `--min-relative-area 0`
+desactiva el filtro y muestra las anotaciones tal cual están en el fichero.
+
+En la visualización, lo filtrado se dibuja en **gris discontinuo** con su índice y
+su porcentaje, sin vértices numerados ni flecha de ancla: está ahí para poder
+localizarlo, no como parte del conjunto canónico.
+
+Medido sobre el export actual (502 imágenes, 693 anotaciones en `train`+`valid`),
+el filtro por defecto descarta **14 anotaciones en 10 imágenes**, un 2%.
+
+### Cómo leer `check-visibility`
+
+El chequeo mide **solapamiento geométrico, no oclusión**, porque el orden de
+profundidad no está anotado. Que A solape a B no dice cuál está encima.
+Consecuencias medidas sobre datos sintéticos con 3 incumplimientos plantados
+entre 108 imágenes y 301 anotaciones:
+
+| | |
+|---|---|
+| Anotaciones marcadas | 28, en 20 imágenes |
+| Incumplimientos reales | 3 |
+| Encontrados por el chequeo | 2 de 3 |
+
+Los **falsos positivos** salen del desconocimiento de la profundidad: un quad muy
+solapado puede ser perfectamente el de arriba, que no está tapado en absoluto. La
+línea `Incumplimientos reales: como mucho N` acota esto de forma exacta — recorre
+todos los órdenes de profundidad posibles con un DP sobre subconjuntos y devuelve
+el máximo número de anotaciones que podrían estar tapadas a la vez.
+
+El **falso negativo** tiene una causa distinta y no tiene arreglo en código: si el
+billete que tapa **no está anotado**, el chequeo no puede verlo. Es el mismo punto
+ciego de la política, con la vuelta de tuerca de que puede ocultar justo el
+incumplimiento que busca.
+
+Usa el informe como lista de candidatos ordenada, y mira siempre la
+visualización antes de tocar una anotación.
+
+## Coordenadas y orden canónico
+
+El pivote de todas las conversiones es el **quad canónico**: 4 vértices
+normalizados. N formatos son 2N conversores, no N².
+
+**Orden canónico.** Horario respecto al centroide, arrancando en el vértice que
+abre el lado más largo. Desempate por menor `x+y`, luego menor `x`, luego menor
+`y` — la cadena entera hace falta porque `x+y` empata en rectángulos cuya
+diagonal es perpendicular a `(1,1)`.
+
+No se usa «la esquina más cercana al origen»: es discontinua cerca de 45° y un
+jitter de 2 px rota las etiquetas 90°.
+
+**Aspecto de la imagen.** Las coordenadas normalizadas dividen `x` por el ancho e
+`y` por el alto, que es un escalado **anisótropo**. En ese espacio el lado más
+largo, el ángulo y el ratio no son los geométricos: un billete 2:1 tumbado en una
+imagen 16:9 tiene ratio normalizado 1.13, y en 20:9 baja de 1 y el ancla salta al
+lado corto. Por eso toda comparación de longitudes admite el aspecto, y el lector
+lo recibe desde `data/derived/image_sizes.json`.
+
+**Rejilla diádica.** Las coordenadas se ajustan a múltiplos de `2^-30`. Es lo que
+hace que `flip(flip(q)) == q` se cumpla de forma **exacta**: en float64
+`1 - (1 - 0.1)` da `0.09999999999999998`, así que `x -> 1-x` no es una involución.
+Sobre la rejilla sí lo es, bit a bit. El error introducido es `2e-6 px` en una
+imagen de 4000 px. Los ficheros de anotación no se modifican.
+
+**Rango tolerante** `[-0.5, 1.5]`, con aviso fuera de `[0,1]` pero sin fallo: hay
+billetes que cruzan el borde de la imagen y sus vértices caen fuera
+legítimamente.
+
+**Aviso de ancla inestable** si el ratio de lados baja de 1.1.
+
+## Particiones
+
+`splits.py` es la **única puerta de acceso** a la asignación. Ningún otro módulo
+la calcula. Todo lee de `splits/{train,valid,test}.txt`, nunca del árbol de
+directorios, para que la partición quede congelada aunque el directorio cambie.
+
+**Modo adoptar (por defecto).** Si el directorio ya trae `train/`, `valid/` y
+`test/` con `images/` y `labels/` —la estructura que exporta Roboflow— esa es la
+partición. No se recalcula ni se «mejora»: solo se congela. Roboflow usa `valid`,
+no `val`; `val` se acepta como alias dejando constancia, y tener los dos a la vez
+es error.
+
+**Modo crear.** Si no existe esa estructura, se genera con porcentajes
+configurables y semilla registrada en `splits/manifest.json`.
+
+`--group-key` acepta `filename-prefix`, `directory`, `manifest` y `none`. El
+valor `none` afirma que cada imagen es independiente, y exige
+`--i-confirm-independence` para que sea una afirmación explícita y no un
+descuido: si existen varias tomas del mismo billete físico repartidas entre
+particiones, las métricas salen infladas. La confirmación **solo se exige al
+crear**; en modo adoptar no elegimos el reparto, únicamente lo congelamos.
+
+**Integridad al cargar.** Una muestra en dos particiones es error fatal con
+mensaje que la identifica. Con clave de grupo, también un grupo repartido.
+
+**`extend-splits`** anexa muestras nuevas sin reordenar las existentes. Una
+muestra nueva de un grupo ya existente hereda su partición sin opción.
+
+**Test sellado.** `SplitLoader.load("test")` exige `allow_test=True`. El runner
+nunca lo pasa. El comando aparte `evaluate-test` registra cada acceso en
+`runs/test_evaluations.jsonl`.
+
+**Pliegues.** `make-folds` materializa 5 pliegues agrupados sobre train+valid en
+`splits/folds/fold_{k}.txt`, congelados igual que las particiones. Test queda
+fuera.
+
+## Métricas
+
+Las dos que deciden, porque miden si el recorte sirve:
+
+- **Cobertura** — fracción del billete real dentro del recorte predicho con
+  margen. Un recorte que corta media mancha arruina el clasificador de aguas
+  abajo. Objetivo ≥ 0.98 en el percentil 5.
+- **Contaminación** — fracción del recorte que pertenece a otro billete. El
+  fondo es ruido inocuo; un trozo del vecino puede meter una mancha ajena y
+  provocar un falso positivo. **Dos umbrales**, ver abajo.
+
+### Los dos umbrales de contaminación
+
+La distribución es **bimodal, no continua**, así que un umbral único sería inútil
+en los dos sentidos a la vez. Medido con un detector perfecto (predicción =
+verdad) sobre train+valid del export actual, a margen 0.05:
+
+| escena | n | mediana | p95 | umbral |
+|---|---|---|---|---|
+| un billete | 301 | 0.0000 | **0.0000** | 0.01 |
+| abanico | 378 | 0.0231 | **0.8906** | 0.92 |
+
+En **imágenes de un solo billete** el suelo es cero exacto: no hay nada más en la
+imagen que pueda ensuciar el recorte, así que cualquier contaminación es un error
+real del detector. El umbral 0.01 es holgado respecto al suelo y estricto en
+términos absolutos, que es lo que se quiere.
+
+En **abanicos** ni un detector perfecto baja del 0.89, y no por ser malo: si un
+billete está parcialmente tapado, su caja contiene por fuerza píxeles del que lo
+tapa. Es geometría, no error. El umbral 0.92 deja ~3 puntos de holgura, un cuarto
+del recorrido que queda hasta 1.0.
+
+**Aviso al leer el umbral de abanico:** entre el suelo (0.89) y el techo (1.0)
+quedan 11 puntos, así que discrimina poco — solo caza detectores bastante peores
+que el perfecto. Para comparar candidatos en abanicos mira la **mediana**, que el
+detector perfecto deja en 0.023 y tiene recorrido de sobra.
+
+Una imagen cuenta como abanico si tiene **más de un billete presente**, contando
+también los que el filtro de área descartó: un vecino filtrado sigue en los
+píxeles y sigue ensuciando.
+
+Los dos números salen de los datos, así que hay que rederivarlos cuando cambie el
+export: `contamination_floor()` en `metrics/crop.py` los recalcula.
+
+### [PENDIENTE] Enmascarado por polígono en el recorte
+
+Mejora pendiente para la etapa de recorte, **fuera del alcance actual**.
+
+Hoy el recorte es la caja predicha con margen, así que en abanico arrastra
+inevitablemente píxeles del billete de delante. Pero en inferencia se tienen
+todas las detecciones de la imagen, no solo una: se pueden **enmascarar los
+polígonos de los demás billetes** dentro del recorte antes de pasárselo al
+clasificador de manchas. La contaminación pasaría de ser píxeles de otro billete
+—que pueden meter una mancha ajena— a ser fondo, que es ruido inocuo.
+
+Bajaría el suelo de 0.89 y haría el umbral de abanico mucho más discriminante.
+Toca la etapa que alimenta al clasificador, que queda fuera de este alcance.
+
+Ambas dependen del **margen de recorte**, que por eso vive en la config
+(`crop.margin`), se registra en `metrics.json` y se reporta barrido en
+`{0.00, 0.05, 0.10}`: el margen intercambia una métrica por la otra y una sola
+fila oculta el intercambio. La contaminación se reporta junto a la del **quad
+anotado** con el mismo margen: en abanico el propio ground truth ya contiene
+trozos del vecino, y sin ese suelo no se puede separar el error del modelo de la
+geometría irreducible.
+
+Detección: mAP50 y mAP50-95 con IoU rotado vía shapely. Ángulo: error módulo
+180°, como `min(|Δ|, 180-|Δ|)`. Vértices: distancia mediana y p95, en píxeles y
+como fracción del lado mayor — diagnóstico, no criterio de éxito.
+
+Emparejamiento por IoU rotado, umbral 0.5, asignación greedy por confianza
+descendente. **Los billetes no detectados cuentan como fallo**, no se excluyen:
+excluirlos hace que un detector que solo encuentra los casos fáciles salga mejor,
+que es la conclusión invertida. Se reportan por separado tasa de detección, error
+condicionado a detección, y agregado.
+
+**Intervalos.** Toda fila de la tabla comparativa lleva `n` e intervalo por
+bootstrap, sin excepción. La **unidad de remuestreo es la imagen**, no la
+detección: varios billetes de una misma imagen están correlacionados y
+remuestrear detecciones estrecha los intervalos artificialmente.
+
+La tabla que decide se calcula sobre el `valid` adoptado. La validación cruzada
+de 5 pliegues queda como comprobación del candidato ganador.
+
+**Al interpretar:** por la política de visibilidad, en imágenes con abanico el
+modelo puede detectar correctamente billetes que no están anotados y contarán
+como falsos positivos. Si ves precisión hundida en esas imágenes, mira las
+visualizaciones antes de concluir que el modelo falla.
+
+## Licencias
+
+Sin código AGPL ni GPL en producción. El registro distingue **dos ejes
+independientes**:
+
+- `production_ready` — licencia del **código**. Ultralytics es AGPL-3.0, así que
+  queda en `False`: solo referencia de rendimiento, aislado tras la interfaz
+  común y en grupo opcional de dependencias. Un test comprueba que ningún módulo
+  fuera de su adaptador importa `ultralytics`.
+- `restricted_pretrain` — licencia de los **datos de preentreno**. DOTA-v1.0 se
+  distribuye solo para uso académico y eso alcanza a los pesos derivados.
+
+Los dos ejes se separan a propósito: cada candidato apto se instancia en dos
+variantes, con y sin preentreno DOTA, y `compare` las muestra como filas hermanas
+con la columna marcada. Nada queda descartado de antemano.
+
+Los datasets llevan `license`, `production_ready` y `sources: list[str]` con la
+licencia de cada fuente, porque la licencia de un agregado no anula la de sus
+fuentes. `compare` marca una ejecución como no apta si cualquier dataset de su
+cadena lo es.
+
+## Uso
+
+```bash
+uv venv --python 3.11
+uv pip install -e ".[dev]"
+
+# datos sintéticos mientras no llega el export real
+python tools/make_synthetic.py --out data/synth_roboflow --count 120 --layout roboflow
+
+python -m testbank.cli --data-root data/synth_roboflow detect
+python -m testbank.cli --data-root data/synth_roboflow --splits-dir splits make-splits
+python -m testbank.cli --splits-dir splits make-folds
+python -m testbank.cli --splits-dir splits check-visibility --json-out runs/_inspection/visibility.json
+python -m testbank.cli --splits-dir splits inspect --split valid --count 9
+
+pytest -q
+```
+
+## Estado
+
+Hecho: estructura y `pyproject`, quad canónico con las cinco invariantes del
+volteo, lector `obb_yolo` con validación estricta, detección de estructura y
+materialización de splits en ambos modos, chequeo de visibilidad, visualización
+de inspección.
+
+Pendiente: conversores de formato, motor de experimentos, y solo entonces los
+candidatos. El export real aún no ha llegado; todo está construido contra datos
+sintéticos generados por `tools/make_synthetic.py`.

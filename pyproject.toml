@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "testbank"
+version = "0.1.0"
+description = "Localizacion de billetes por deteccion OBB de una etapa"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+    "numpy>=1.26",
+    "shapely>=2.0",
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+    "pillow>=10.2",
+    "opencv-python-headless>=4.9",
+]
+
+# Sin AGPL/GPL en el conjunto base. Ver README, seccion Licencias.
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "hypothesis>=6.98", "ruff>=0.3"]
+torch = ["torch>=2.2"]
+# AGPL-3.0. Solo referencia de rendimiento, production_ready=False.
+# Aislado tras el adaptador; ningun otro modulo puede importarlo (test_isolation.py).
+ultralytics = ["ultralytics>=8.3"]
+
+[project.scripts]
+testbank = "testbank.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/testbank"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error::testbank.geometry.quad.QuadShapeWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

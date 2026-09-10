@@ -1,0 +1,24 @@
+{
+  "created_utc": "2026-09-10T17:14:17+00:00",
+  "mode": "adopt",
+  "data_root": "C:\\Users\\Clara\\OneDrive\\Escritorio\\testbill\\testbank\\data\\Annotated banknotes 2.yolov8-obb",
+  "seed": 20260910,
+  "ratios": null,
+  "group_strategy": "none",
+  "group_regex": null,
+  "group_manifest": null,
+  "independence_confirmed": false,
+  "counts": {
+    "train": 351,
+    "valid": 101,
+    "test": 50
+  },
+  "digest": "7bf2248fdb85fd9c78893906a74c187b448f8af1532ad4dc6018b065cae25c8b",
+  "notes": [],
+  "history": [
+    {
+      "action": "materialize",
+      "utc": "2026-09-10T17:14:17+00:00"
+    }
+  ]
+}

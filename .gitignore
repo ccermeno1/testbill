@@ -1,0 +1,50 @@
+# --- entorno y caches -------------------------------------------------------
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.hypothesis/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# --- editor y sistema operativo ---------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- datos ------------------------------------------------------------------
+# El dataset no entra: son 16 MB de imagenes cuya fuente de verdad es Roboflow
+# (clara-cermeno/annotated-banknotes-2-rwayh), no este repositorio. Se recupera
+# reexportando desde alli.
+#
+# Lo que SI entra es splits/, que es donde vive la particion congelada. Ese es el
+# punto de materializarla: los .txt sobreviven aunque el arbol de datos cambie, y
+# versionarlos es lo que permite repetir una ejecucion.
+data/*
+!data/.gitkeep
+
+# Todo lo derivado se regenera: indice de tamanos, vista para Ultralytics.
+data/derived/
+
+# Los datos sinteticos los rehace tools/make_synthetic.py con semilla fija.
+data/synth_*/
+
+# --- ejecuciones ------------------------------------------------------------
+# Los pesos y las imagenes fuera; el REGISTRO dentro. run.json, metrics.json y
+# config.yaml son pequenos y son el historial de experimentos: versionarlos es
+# lo que hace que `compare` tenga memoria mas alla de esta maquina.
+runs/**/weights/
+runs/**/viz/
+runs/_inspection/
+*.pt
+*.pth
+*.onnx
+*.tflite
+
+# Ultralytics deja esto donde le pillas.
+yolo*.pt
+runs/detect/

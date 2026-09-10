@@ -1,0 +1,89 @@
+"""Indice de dimensiones en pixeles, leyendo solo cabeceras con Pillow.
+
+Hacia falta antes de lo previsto. Estaba planificado para bbox_coco, que es el
+unico formato que declara requires_image_size, pero el ORDEN CANONICO tambien lo
+necesita: las coordenadas normalizadas escalan x e y por factores distintos, asi
+que sin el aspecto de la imagen el "lado mas largo" no es el lado mas largo.
+
+`Image.open` no decodifica el pixel data hasta que se pide, asi que leer `.size`
+cuesta lo que leer la cabecera.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from PIL import Image
+
+DEFAULT_INDEX_NAME = "image_sizes.json"
+
+
+def read_size(path: str | Path) -> tuple[int, int]:
+    with Image.open(path) as image:
+        return image.size  # (width, height)
+
+
+def build_index(samples, *, out_path: str | Path | None = None) -> dict[str, list[int]]:
+    """Construye {sample_id: [ancho, alto]} y lo guarda si se pide."""
+    index = {s.sample_id: list(read_size(s.image_path)) for s in samples}
+    if out_path is not None:
+        out_path = Path(out_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            json.dumps(index, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+    return index
+
+
+def load_index(path: str | Path) -> dict[str, tuple[int, int]]:
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    return {key: (int(value[0]), int(value[1])) for key, value in raw.items()}
+
+
+class SizeIndex:
+    """Resuelve el aspecto de una muestra, construyendo el indice si hace falta."""
+
+    def __init__(self, index: dict[str, tuple[int, int]] | None = None):
+        self._index: dict[str, tuple[int, int]] = dict(index or {})
+
+    @classmethod
+    def for_samples(cls, samples, *, cache_path: str | Path | None = None) -> "SizeIndex":
+        if cache_path is not None and Path(cache_path).is_file():
+            cached = load_index(cache_path)
+            missing = [s for s in samples if s.sample_id not in cached]
+            if not missing:
+                return cls(cached)
+            cached.update(
+                {s.sample_id: read_size(s.image_path) for s in missing}
+            )
+            Path(cache_path).write_text(
+                json.dumps({k: list(v) for k, v in sorted(cached.items())}, indent=2)
+                + "\n",
+                encoding="utf-8",
+            )
+            return cls(cached)
+        index = {s.sample_id: read_size(s.image_path) for s in samples}
+        if cache_path is not None:
+            Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(cache_path).write_text(
+                json.dumps({k: list(v) for k, v in sorted(index.items())}, indent=2)
+                + "\n",
+                encoding="utf-8",
+            )
+        return cls(index)
+
+    def size(self, sample_id: str) -> tuple[int, int]:
+        try:
+            return self._index[sample_id]
+        except KeyError:
+            raise KeyError(
+                f"'{sample_id}' no esta en el indice de tamanos; reconstruyelo"
+            ) from None
+
+    def aspect(self, sample_id: str) -> float:
+        width, height = self.size(sample_id)
+        return width / height
+
+    def __len__(self) -> int:
+        return len(self._index)
