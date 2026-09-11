@@ -190,7 +190,10 @@ def cmd_find_duplicates(args, config: Config) -> int:
             split_of[sample.sample_id] = split
 
     report = find_duplicates(samples, split_of=split_of, threshold=args.threshold)
-    for line in report.summary_lines():
+    sizes: dict[str, int] = {}
+    for split in split_of.values():
+        sizes[split] = sizes.get(split, 0) + 1
+    for line in report.summary_lines(sizes):
         print(line)
 
     if report.crossing:

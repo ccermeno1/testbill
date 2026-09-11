@@ -169,3 +169,38 @@ def test_el_manifiesto_tiene_el_formato_de_group_manifest(tmp_path):
 
 def test_el_umbral_por_defecto_es_el_medido():
     assert DEFAULT_THRESHOLD == 0.92
+
+
+def test_el_desglose_por_particion_destaca_test(tmp_path):
+    """El numero que mas importa es cuanto test esta contaminado.
+
+    Regresion: sin este desglose habia que contarlo a mano sobre la lista
+    truncada de pares, y asi se colo un 4 donde eran 21 en un informe.
+    """
+    base = _noise(31)
+    a = _sample(tmp_path, "a", base)
+    b = _sample(tmp_path, "b", _jitter(base, 4, seed=1))
+    c = _sample(tmp_path, "c", _noise(32))
+
+    report = find_duplicates(
+        [a, b, c], split_of={"a": "train", "b": "test", "c": "train"}
+    )
+    assert len(report.touching("test")) == 1
+    assert report.affected_in("test") == {"b"}
+    assert report.affected_in("train") == {"a"}
+    assert report.touching("valid") == []
+
+    lineas = "\n".join(report.summary_lines({"train": 2, "test": 1}))
+    assert "test" in lineas and "SELLADO" in lineas
+    assert lineas.index("test") < lineas.index("train"), "test va primero"
+
+
+def test_el_desglose_va_tambien_al_json(tmp_path):
+    base = _noise(41)
+    a = _sample(tmp_path, "a", base)
+    b = _sample(tmp_path, "b", _jitter(base, 4, seed=1))
+    payload = find_duplicates(
+        [a, b], split_of={"a": "train", "b": "test"}
+    ).to_dict()
+    assert payload["by_split"]["test"]["images"] == 1
+    assert payload["by_split"]["valid"]["pairs"] == 0

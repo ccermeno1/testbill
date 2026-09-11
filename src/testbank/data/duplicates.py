@@ -98,9 +98,23 @@ class DuplicateReport:
     def n_groups(self) -> int:
         return len(set(self.groups.values()))
 
-    def summary_lines(self) -> list[str]:
+    def touching(self, split: str) -> list[DuplicatePair]:
+        """Pares que cruzan y tienen `split` a un lado."""
+        return [p for p in self.crossing if split in (p.split_a, p.split_b)]
+
+    def affected_in(self, split: str) -> set[str]:
+        """Imagenes DE `split` que tienen un casi-duplicado en otra particion."""
+        out = set()
+        for pair in self.touching(split):
+            if pair.split_a == split:
+                out.add(pair.a)
+            if pair.split_b == split:
+                out.add(pair.b)
+        return out
+
+    def summary_lines(self, sizes: dict[str, int] | None = None) -> list[str]:
         share = 100 * len(self.affected) / self.n_samples if self.n_samples else 0.0
-        return [
+        lines = [
             f"Casi-duplicados: umbral de correlacion {self.threshold:.2f}",
             f"Imagenes analizadas:     {self.n_samples}",
             f"Pares detectados:        {len(self.pairs)}",
@@ -108,6 +122,22 @@ class DuplicateReport:
             f"Imagenes implicadas:     {len(self.affected)} ({share:.1f}%)",
             f"Grupos resultantes:      {self.n_groups}",
         ]
+        # El desglose por particion va SIEMPRE, y `test` el primero. Sin el, hay
+        # que contar a mano sobre una lista truncada, y contar a mano sobre una
+        # lista truncada es exactamente como se cuela un numero equivocado en un
+        # informe: paso, y por eso esta aqui.
+        for split in ("test", "valid", "train"):
+            afectadas = self.affected_in(split)
+            if not self.touching(split):
+                continue
+            total = (sizes or {}).get(split)
+            proporcion = f" de {total} ({100*len(afectadas)/total:.0f}%)" if total else ""
+            marca = "  <- el conjunto SELLADO" if split == "test" else ""
+            lines.append(
+                f"  {split:5s}: {len(self.touching(split))} pares, "
+                f"{len(afectadas)} imagenes{proporcion}{marca}"
+            )
+        return lines
 
     def to_dict(self) -> dict:
         return {
@@ -116,6 +146,13 @@ class DuplicateReport:
             "n_pairs": len(self.pairs),
             "n_crossing": len(self.crossing),
             "n_affected": len(self.affected),
+            "by_split": {
+                split: {
+                    "pairs": len(self.touching(split)),
+                    "images": len(self.affected_in(split)),
+                }
+                for split in ("train", "valid", "test")
+            },
             "n_groups": self.n_groups,
             "note": (
                 "No re-particiona: en modo adoptar la particion la decide el "

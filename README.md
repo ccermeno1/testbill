@@ -18,6 +18,111 @@ adyacentes en ángulos distintos: las cajas alineadas de objetos alargados en
 ángulos distintos se solapan casi por completo y el NMS estándar suprime
 detecciones verdaderas. El NMS rotado lo resuelve.
 
+## Salvedades
+
+Todo lo que hay que saber antes de creerse un número de este proyecto. Cada
+entrada dice dónde está tratada; ninguna es un descuido pendiente de descubrir.
+
+### Sobre los datos
+
+**El aspecto de los billetes está deformado y no se recupera.** 489 de 502
+imágenes llegan ya a 416×416 desde el export, aplastadas al cuadrado. Un billete
+real es ~1.95:1 y la mediana medida es 1.45. De ahí sale el 19% de cajas casi
+cuadradas que motiva el atenuador de ángulo. → *[SOSPECHA] Ese 19%…*
+
+**Hay fuga entre particiones, es grave, y no se puede arreglar.** 42 pares de
+imágenes casi idénticas cruzan particiones (14.7% del dataset), con correlaciones
+de hasta 0.999 e índices consecutivos: la misma toma repartida entre lados.
+
+Lo peor está en el conjunto sellado:
+
+| | |
+|---|---|
+| Pares que cruzan | 42 |
+| De ellos, con `test` a un lado | **21** |
+| Imágenes de `test` implicadas | **18 de 50 (36%)** |
+
+Más de un tercio del conjunto de test tiene un casi-duplicado en `train` o
+`valid`. **El número que salga de `evaluate-test` estará inflado**, y no de forma
+despreciable. No es un defecto que hayamos introducido: la partición viene del
+export y no se recalcula, porque la especificación dice que en modo adoptar la
+decide él.
+
+Lo que sí está en nuestra mano son los pliegues de validación cruzada, que
+generamos nosotros, y ahí la fuga ya se corrige: de 55 grupos partidos a 0.
+
+→ `testbank find-duplicates`, `data/duplicates.py`
+
+**El 64.6% de las anotaciones sigue alineado al eje.** Tras la recorrección son
+cajas correctas —muchos billetes se fotografían rectos— pero significa que la
+ventaja de OBB sobre una caja alineada es menor de lo que sugiere la premisa del
+proyecto. Medido: un detector alineado con localización perfecta llega a mAP50
+0.939 frente a 1.000. La mediana de error de los formatos *lossy* es de 2 px.
+
+**La contaminación tiene un suelo de 0.89 en abanicos.** Ni un detector perfecto
+baja de ahí: si un billete está parcialmente tapado, su caja contiene por fuerza
+píxeles del que lo tapa. → *Los dos umbrales de contaminación*
+
+**`check-visibility` puede dar 0 y no significar nada.** Solo compara quads
+anotados entre sí, así que una oclusión causada por un billete sin anotar le es
+invisible. → *Cómo leer `check-visibility`*
+
+**Queda una anotación degenerada en Roboflow.** Se borró en local
+(`005_Euro_328`, un clic suelto), pero el próximo export la trae de vuelta.
+
+**El dataset es CC BY 4.0: exige atribución** allí donde se distribuya el modelo
+o los datos. → `data/datasets.py`
+
+### Aproximaciones asumidas
+
+**Se entrena con un IoU aproximado y se mide con el bueno.** El IoU rotado por
+shapely no cabe en el bucle de entrenamiento, así que la asignación usa
+envolventes alineadas y la pérdida se descompone en forma + giro. La evaluación
+sigue usando shapely, de modo que si la aproximación reparte mal el compromiso,
+el número final lo delata. → `models/assign.py`, `models/loss.py`
+
+**Se entrena con la verdad recortada y se mide con la sin recortar.** La política
+`clip` mueve los vértices al marco; las métricas evalúan contra el quad original.
+Medido: el percentil 5 de cobertura no se mueve (1.0000 en validación), solo la
+cola (p1 = 0.936). El margen de recorte absorbe casi todo.
+
+**El atenuador de ángulo puede sobrar.** Existe por el 19% de cajas casi
+cuadradas, que probablemente es artefacto del redimensionado. Si se resuben los
+originales, hay que volver a medir **antes** de quitarlo. → `enabled=False`
+
+**Sin letterbox al redimensionar**, porque el aspecto ya se perdió en origen y
+añadirlo ahora no recupera nada. → `models/data.py`
+
+**Con `out_of_bounds=pad` e inferencia sin padding, los números miden el pipeline
+desajustado.** Sale un `AVISO` en el `run.json` y en el resumen. →
+`pad_at_inference`
+
+### Fragilidades de entorno
+
+**`opencv-python` y `opencv-python-headless` están los dos instalados.**
+Ultralytics arrastra el primero; ambos ocupan el espacio de nombres `cv2` y gana
+el último instalado. Se registran las dos versiones en cada ejecución para que la
+colisión sea visible. → `experiment/provenance.py`
+
+**El entorno de RTMDet-R se rompe solo si alguien instala algo.** `numpy<2` no lo
+declara nadie y el resolutor lo sube sin avisar. → *Entorno para RTMDet-R*
+
+**RTMDet-R usa `mmrotate` desde una rama de desarrollo sin publicar.**
+
+**Los candidatos corren en entornos distintos** — torch 2.0 para RTMDet-R, 2.14
+para los demás. El `run.json` registra la versión, pero sigue siendo una
+comparación entre entornos separados por dos años de PyTorch.
+
+### Sin probar todavía
+
+- **RTMDet-R no ha entrenado nunca.** Verificado que la config se construye y el
+  modelo se instancia (4.873.470 parámetros); no se ha lanzado un entrenamiento.
+- **`evaluate-test` no se ha ejecutado.** Deliberado: gastaría un acceso al
+  conjunto sellado sobre un modelo que no significa nada.
+- **`voc_xml` no lo consume ningún candidato.** → aviso en `dataio/export.py`
+- **Ninguna línea base larga se ha lanzado.** Todo lo medido son pruebas de
+  circuito de 1 o 2 épocas, cuyos números no significan nada.
+
 ## Guía de anotación
 
 **Rectángulo orientado aproximado.** No se persigue exactitud geométrica. Un
