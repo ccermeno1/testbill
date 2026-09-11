@@ -213,3 +213,47 @@ def test_el_recorrido_completo_del_adaptador(setup, tmp_path):
         for prediction in found:
             assert 0.0 <= prediction.score <= 1.0
             assert len(prediction.quad.points) == 4
+
+
+# --- una variante por candidato -------------------------------------------
+
+
+def test_hay_un_candidato_por_variante():
+    from testbank.detectors import detectors
+    from testbank.models.yolox_obb import VARIANTS
+
+    registrados = set(detectors())
+    for variant in VARIANTS:
+        assert f"yolox-obb-{variant}" in registrados
+
+
+def test_el_nombre_registrado_coincide_con_la_variante():
+    """Regresion: el nombre estaba fijo en "nano" mientras la variante venia de
+    la config, asi que un tiny de 4.37M se registraba como el nano de 857k."""
+    from testbank.detectors import get as get_detector
+    from testbank.models.yolox_obb import VARIANTS
+
+    for variant in VARIANTS:
+        detector = get_detector(f"yolox-obb-{variant}")
+        assert detector.variant == variant
+
+
+def test_la_variante_del_candidato_manda_sobre_la_config(setup, tmp_path):
+    """Y se ESCRIBE en la config, para que el config.yaml congelado no mienta."""
+    samples, config = setup
+    from testbank.detectors import get as get_detector
+    from testbank.models.train import load_model
+
+    detector = get_detector("yolox-obb-tiny")
+    assert config.detector.variant == "nano", "la config dice otra cosa a proposito"
+
+    result = detector.train(samples, config, output_dir=tmp_path / "t")
+    assert load_model(result.weights).variant == "tiny"
+
+
+def test_cada_variante_declara_sus_parametros():
+    from testbank.detectors import get as get_detector
+
+    nota = " ".join(get_detector("yolox-obb-tiny").notes)
+    assert "tiny" in nota
+    assert "4,366,808" in nota

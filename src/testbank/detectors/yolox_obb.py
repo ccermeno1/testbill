@@ -38,16 +38,43 @@ def _import_torch():
     return torch
 
 
-@register
 class YoloxObbDetector(BaseDetector):
-    name = "yolox-obb-nano"
+    """Base de los candidatos propios. Una subclase registrada por variante.
+
+    La variante NO se lee de la config: la lleva la clase. Antes venia de
+    `config.detector.variant` mientras el nombre registrado decia "nano" fijo,
+    asi que entrenar con `variant: tiny` producia un modelo de 4.37M etiquetado
+    como el de 857k. La tabla comparativa habria mostrado un nombre que no
+    corresponde al modelo -- exactamente la mentira silenciosa que el resto del
+    proyecto se dedica a evitar.
+
+    Ahora el nombre y la variante salen del mismo sitio y no pueden separarse, y
+    `train` reescribe la config con su variante para que el `config.yaml`
+    congelado diga la verdad.
+    """
+
+    variant: str = "nano"
     license = "Apache-2.0"
     production_ready = True
     _NOTE = (
-        "Candidato propio: 857k parametros, sin dependencias compiladas y con "
-        "la arquitectura entera bajo nuestro control."
+        "Candidato propio: sin dependencias compiladas y con la arquitectura "
+        "entera bajo nuestro control."
     )
     notes = (_NOTE,)
+
+    def _with_variant(self, config: Config) -> Config:
+        """La variante de la clase manda sobre la de la config, y se escribe.
+
+        Sin reescribirla, el `config.yaml` de la ejecucion guardaria la variante
+        por defecto mientras se entreno otra.
+        """
+        if config.detector.variant == self.variant:
+            return config
+        return config.model_copy(
+            update={"detector": config.detector.model_copy(
+                update={"variant": self.variant}
+            )}
+        )
 
     # --- entrenamiento ----------------------------------------------------
 
@@ -56,6 +83,7 @@ class YoloxObbDetector(BaseDetector):
         from testbank.models.data import build_datasets
         from testbank.models.train import fit
 
+        config = self._with_variant(config)
         datasets = build_datasets(samples_by_split, config)
         if "train" not in datasets:
             raise DetectorError("hace falta la particion 'train' para entrenar")
@@ -165,3 +193,37 @@ def _recanonicalize(predictions, aspect: float):
 
 
 __all__ = ["YoloxObbDetector"]
+
+
+def _register_variants() -> dict[str, type]:
+    """Un candidato registrado por variante, con el nombre derivado de ella.
+
+    Se generan en vez de escribirse a mano para que no puedan desincronizarse:
+    anadir una variante en `VARIANTS` la pone aqui sola.
+    """
+    from testbank.models.yolox_obb import VARIANTS, YoloxObb
+
+    made = {}
+    for variant in VARIANTS:
+        params = YoloxObb(variant, num_classes=1).parameter_count()
+        cls = type(
+            f"YoloxObb{variant.capitalize()}Detector",
+            (YoloxObbDetector,),
+            {
+                "variant": variant,
+                "name": f"yolox-obb-{variant}",
+                "notes": (
+                    YoloxObbDetector._NOTE,
+                    f"variante {variant}: {params:,} parametros.",
+                ),
+                "__doc__": (
+                    f"Cabeza OBB propia sobre YOLOX, variante {variant} "
+                    f"({params:,} parametros)."
+                ),
+            },
+        )
+        made[variant] = register(cls)
+    return made
+
+
+VARIANT_DETECTORS = _register_variants()
