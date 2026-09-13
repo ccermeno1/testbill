@@ -319,6 +319,17 @@ class DetectorConfig(StrictModel):
     epochs: int = Field(default=100, gt=0)
     image_size: int = Field(default=640, gt=0)
     batch_size: int = Field(default=8, gt=0)
+    #: Evaluate on `valid` every N epochs (and always on the last one) and keep
+    #: the best checkpoint as `best.pt`. 0 disables it: then `best.pt` is just
+    #: the last epoch. It is checkpoint SELECTION, not early stopping: the
+    #: cosine schedule runs whole, because stopping it halfway leaves the
+    #: learning rate hanging where it should have decayed.
+    eval_every: int = Field(default=5, ge=0)
+    #: What "best" means. mAP50 by default and not coverage p5, which is the
+    #: metric that decides: coverage saturates at 1.0 early and stops telling
+    #: checkpoints apart, while mAP50 keeps moving. The final comparison of
+    #: candidates still reads coverage and contamination.
+    selection_metric: Literal["map50", "coverage_p5"] = "map50"
     #: Foreign checkpoint to start from, or None to train from scratch. For the
     #: in-house head, a Megvii `yolox_*.pth.tar` (COCO; loads backbone and neck,
     #: discards its head). For the DDGRCF port, its DOTA checkpoint. It lives

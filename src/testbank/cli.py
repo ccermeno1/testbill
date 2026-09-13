@@ -393,6 +393,14 @@ def cmd_inspect(args, config: Config) -> int:
     return 0
 
 
+def cmd_plot_training(args, config: Config) -> int:
+    from testbank.viz.curves import plot_run
+
+    path = plot_run(args.run, args.output)
+    print(f"Training curves: {path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="testbank", description=__doc__)
     parser.add_argument("--config", type=Path, default=None)
@@ -578,6 +586,15 @@ def build_parser() -> argparse.ArgumentParser:
     comparison.add_argument("--runs-dir", default=None)
     comparison.add_argument("--csv-out", default=None)
 
+    curves = subparsers.add_parser(
+        "plot-training",
+        help="losses per epoch and validation metrics of a run (own candidates)",
+    )
+    curves.add_argument("run", help="run directory in runs/ (or the _train/ dir)")
+    curves.add_argument(
+        "--output", default=None, help="PNG path; default <run>/viz/training.png"
+    )
+
     inspect = subparsers.add_parser("inspect", help="inspection visualization")
     inspect.add_argument("--split", default="valid")
     inspect.add_argument("--count", type=int, default=None)
@@ -596,6 +613,7 @@ _COMMANDS = {
     "evaluate-test": cmd_evaluate_test,
     "list": cmd_list,
     "compare": cmd_compare,
+    "plot-training": cmd_plot_training,
     "inspect": cmd_inspect,
 }
 
@@ -605,7 +623,7 @@ def main(argv: list[str] | None = None) -> int:
     config = Config.load(args.config)
     try:
         return _COMMANDS[args.command](args, config)
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

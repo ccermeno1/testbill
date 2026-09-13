@@ -19,7 +19,9 @@ images of 416x416 loading is not the bottleneck.
 
 from __future__ import annotations
 
+import json
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -40,9 +42,14 @@ WARMUP_FRACTION = 0.05
 
 @dataclass
 class TrainingHistory:
-    """What happened in each epoch. Goes to `run.json` to be looked at later."""
+    """What happened in each epoch. Written to `training.json` after EVERY
+    epoch, so a run that dies at hour three still leaves its curve."""
 
     epochs: list[dict] = field(default_factory=list)
+    #: Validation metrics at the epochs where `valid` was evaluated.
+    validation: list[dict] = field(default_factory=list)
+    #: The epoch that produced `best.pt` and its selection metric.
+    best: dict | None = None
     #: Things that happened once and are worth leaving written: e.g. which
     #: pretraining was loaded and which tensors were skipped.
     notes: list[str] = field(default_factory=list)
@@ -52,6 +59,33 @@ class TrainingHistory:
 
     def to_list(self) -> list[dict]:
         return list(self.epochs)
+
+    def to_dict(self) -> dict:
+        return {
+            "epochs": list(self.epochs),
+            "validation": list(self.validation),
+            "best": self.best,
+            "notes": list(self.notes),
+        }
+
+    def write(self, path: Path) -> None:
+        path.write_text(
+            json.dumps(self.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+
+
+HISTORY_FILE = "training.json"
+
+#: Given the model and the epoch, returns the validation metrics as plain
+#: numbers (`{"map50": ..., "coverage_p5": ...}`). The adapter builds it: the
+#: loop must not know how a candidate predicts.
+Validator = Callable[["torch.nn.Module", int], dict]
+
+
+def _format_terms(terms: dict) -> str:
+    keys = ("total", "box", "angle", "objectness", "classes", "dfl", "l1")
+    return "  ".join(f"{k} {terms[k]:.4f}" for k in keys if terms.get(k))
 
 
 def learning_rate_at(step: int, total: int, base: float) -> float:
@@ -156,6 +190,20 @@ def train_one_epoch(
     return {k: v / max(1, batches) for k, v in totals.items()}, step
 
 
+def checkpoint_payload(model, config: Config, *, epoch: int | None = None) -> dict:
+    """What `load_model` needs to rebuild the network: the architecture and the
+    head travel with the weights, so a checkpoint never depends on the config
+    of the moment."""
+    return {
+        "model": model.state_dict(),
+        "variant": config.detector.variant,
+        "head": model.head_spec.to_dict(),
+        "arch": architecture_of(model),
+        "num_classes": 1,
+        "image_size": config.detector.image_size,
+        "epoch": epoch,
+    }
+
 
 def pick_device() -> torch.device:
     """`cuda` if available, else `mps` (Apple's GPU), else `cpu`.
@@ -187,16 +235,26 @@ def fit(
     device: torch.device | None = None,
     base_lr: float = 1e-3,
     pretrained: Path | None = None,
+    validate: Validator | None = None,
+    log: Callable[[str], None] | None = print,
 ) -> tuple[Path, TrainingHistory]:
-    """Train and leave the weights. Returns `(path, history)`.
+    """Train and leave the weights. Returns `(path to best.pt, history)`.
 
-    `pretrained`: a foreign checkpoint to start from (today only DDGRCF's DOTA
-    on its port, or Megvii's COCO on the own head). What does not fit is
-    skipped and noted.
+    `pretrained`: a foreign checkpoint to start from (Megvii's COCO on the own
+    head, DDGRCF's DOTA on its port). What does not fit is skipped and noted.
+
+    `validate`: evaluates the model on `valid` every `config.detector.eval_every`
+    epochs and on the last one; `best.pt` is the checkpoint with the best
+    `selection_metric`, `last.pt` the final one. Without it (or with
+    `eval_every = 0`) `best.pt` is simply the last epoch, and the history says
+    so. One line per epoch goes to `log`, and `training.json` is rewritten
+    after every epoch.
     """
     device = device or pick_device()
+    output_dir.mkdir(parents=True, exist_ok=True)
     history = TrainingHistory()
     history.notes.append(f"device: {device}")
+    say = log or (lambda _: None)
     # EVERYTHING is seeded before building the model, not only the DataLoader.
     # Weights are initialized at random from torch's global generator: seeding
     # only the loader left two runs with the same seed starting from different
@@ -223,30 +281,57 @@ def fit(
         history.notes.append("no pretraining: random initial weights")
     optimizer = torch.optim.AdamW(model.parameters(), lr=base_lr, weight_decay=5e-4)
 
-    total_steps = max(1, len(loader) * config.detector.epochs)
+    total_epochs = config.detector.epochs
+    eval_every = config.detector.eval_every if validate is not None else 0
+    metric_name = config.detector.selection_metric
+    best_path = output_dir / "best.pt"
+    last_path = output_dir / "last.pt"
+    total_steps = max(1, len(loader) * total_epochs)
     step = 0
-    for epoch in range(config.detector.epochs):
+    for epoch in range(total_epochs):
         terms, step = train_one_epoch(
             model, loader, optimizer, config,
             device=device, step=step, total_steps=total_steps, base_lr=base_lr,
             epoch=epoch,
         )
-        history.record(epoch, terms, learning_rate_at(step, total_steps, base_lr))
+        lr = learning_rate_at(step, total_steps, base_lr)
+        history.record(epoch, terms, lr)
+        say(f"epoch {epoch + 1}/{total_epochs}  lr {lr:.2e}  {_format_terms(terms)}")
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    weights = output_dir / "best.pt"
-    torch.save(
-        {
-            "model": model.state_dict(),
-            "variant": config.detector.variant,
-            "head": model.head_spec.to_dict(),
-            "arch": architecture_of(model),
-            "num_classes": 1,
-            "image_size": config.detector.image_size,
-        },
-        weights,
-    )
-    return weights, history
+        is_last = epoch == total_epochs - 1
+        if eval_every and (is_last or (epoch + 1) % eval_every == 0):
+            model.eval()
+            metrics = validate(model, epoch)
+            model.train()
+            history.validation.append({"epoch": epoch, **metrics})
+            value = metrics[metric_name]
+            improved = history.best is None or value > history.best[metric_name]
+            say(
+                f"  valid @ {epoch + 1}: "
+                + "  ".join(f"{k} {v:.4f}" for k, v in metrics.items())
+                + ("  <- best" if improved else "")
+            )
+            if improved:
+                history.best = {"epoch": epoch, **metrics}
+                torch.save(checkpoint_payload(model, config, epoch=epoch), best_path)
+        history.write(output_dir / HISTORY_FILE)
+
+    torch.save(checkpoint_payload(model, config, epoch=total_epochs - 1), last_path)
+    if history.best is None:
+        # No validation: `best.pt` is the last epoch, and it is said, so
+        # nobody reads the name as a claim.
+        torch.save(checkpoint_payload(model, config, epoch=total_epochs - 1), best_path)
+        history.notes.append(
+            "best.pt = last epoch: no validation during training "
+            "(eval_every = 0 or no valid split)"
+        )
+    else:
+        history.notes.append(
+            f"best.pt = epoch {history.best['epoch'] + 1} of {total_epochs} by "
+            f"{metric_name} {history.best[metric_name]:.4f}; last.pt = epoch {total_epochs}"
+        )
+    history.write(output_dir / HISTORY_FILE)
+    return best_path, history
 
 
 def load_model(weights: Path, device: torch.device | None = None) -> YoloxObb:
@@ -273,8 +358,11 @@ def load_model(weights: Path, device: torch.device | None = None) -> YoloxObb:
 
 
 __all__ = [
+    "HISTORY_FILE",
     "WARMUP_FRACTION",
     "TrainingHistory",
+    "Validator",
+    "checkpoint_payload",
     "fit",
     "learning_rate_at",
     "load_model",

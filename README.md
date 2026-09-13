@@ -944,6 +944,42 @@ environment*.
 run in `runs/<date>_<name>/` with the frozen config. **The test is not
 touched**: see *Sealed test* in § *Splits*.
 
+**What you see while it trains.** One line per epoch with the learning rate
+and every loss term, and every `detector.eval_every` epochs (default **5**,
+always on the last one) an evaluation on `valid` with our metrics:
+
+```
+epoch 12/100  lr 8.13e-04  total 1.2345  box 0.4102  angle 0.0881  objectness 0.5011  classes 0.2351
+  valid @ 15: map50 0.7120  coverage_p5 0.9614  <- best
+```
+
+`best.pt` is the checkpoint with the best `detector.selection_metric` (mAP50
+by default: coverage p5 saturates at 1.0 early and stops telling checkpoints
+apart; the final comparison still reads coverage and contamination), `last.pt`
+the final epoch, and `_train/training.json` is rewritten after **every** epoch
+with the loss curve, the validation points and which epoch won — so a run that
+dies at hour three still leaves its curve, and you can look at it while it
+runs. This is checkpoint *selection*, not early stopping: the cosine schedule
+runs whole, because stopping it halfway leaves the learning rate hanging where
+it should have decayed. Own loop only; Ultralytics has its own (`patience`) and
+RTMDet-R evaluates at the end. With `eval_every: 0` `best.pt` is just the last
+epoch, and the run notes say so.
+
+To see the curve, during or after the run:
+
+```bash
+testbank plot-training runs/<run>        # -> runs/<run>/viz/training.png
+```
+
+Two panels: losses per epoch on the left, validation metrics on the right with
+the epoch that produced `best.pt` marked. Needs `matplotlib` (`dev` group).
+Own candidates only: Ultralytics and RTMDet-R keep their own logs.
+
+How many epochs: no number has been measured yet. Starting points for 351
+images at batch 8 (44 steps per epoch): **100–150 with pretraining** (COCO or
+DOTA), **200–300 from scratch**; the validation curve in `training.json` is
+what says whether they are too many or too few.
+
 Options valid for all:
 
 ```bash

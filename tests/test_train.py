@@ -260,3 +260,144 @@ def test_each_variant_declares_its_parameters():
     note = " ".join(get_detector("yolox-obb-tiny").notes)
     assert "tiny" in note
     assert "4,366,808" in note
+
+
+# --- checkpoint selection and the live history ----------------------------
+
+
+def _config_with(config, **detector):
+    return config.model_copy(
+        update={"detector": config.detector.model_copy(update=detector)}
+    )
+
+
+def test_without_validation_best_is_the_last_epoch_and_it_is_said(setup, tmp_path):
+    samples, config = setup
+    dataset = build_datasets(samples, config)["train"]
+    weights, history = fit(dataset, config, output_dir=tmp_path / "out", log=None)
+    assert weights.name == "best.pt" and (tmp_path / "out" / "last.pt").exists()
+    assert history.best is None
+    assert any("best.pt = last epoch" in n for n in history.notes)
+
+
+def test_validation_keeps_the_best_checkpoint_not_the_last(setup, tmp_path):
+    """A fake validator whose score PEAKS in the middle: best.pt must be that
+    epoch, last.pt the final one, and the history must say which."""
+    import torch as torch_
+
+    from testbank.models.train import load_model
+
+    samples, config = setup
+    config = _config_with(config, epochs=4, eval_every=1)
+    dataset = build_datasets(samples, config)["train"]
+    scores = {0: 0.1, 1: 0.9, 2: 0.5, 3: 0.4}
+    snapshots = {}
+
+    def validate(model, epoch):
+        snapshots[epoch] = {k: v.clone() for k, v in model.state_dict().items()}
+        return {"map50": scores[epoch], "coverage_p5": 1.0}
+
+    lines = []
+    weights, history = fit(
+        dataset, config, output_dir=tmp_path / "out", validate=validate, log=lines.append
+    )
+    assert history.best["epoch"] == 1 and history.best["map50"] == 0.9
+    assert [v["epoch"] for v in history.validation] == [0, 1, 2, 3]
+    best = load_model(weights).state_dict()
+    assert all(torch_.equal(best[k], snapshots[1][k]) for k in best)
+    last = torch_.load(tmp_path / "out" / "last.pt", weights_only=False)
+    assert last["epoch"] == 3
+    assert sum("<- best" in line for line in lines) == 2  # epochs 1 and 2 (1-based)
+    assert any("best.pt = epoch 2 of 4" in n for n in history.notes)
+
+
+def test_eval_every_spaces_the_evaluations_and_always_includes_the_last(setup, tmp_path):
+    samples, config = setup
+    config = _config_with(config, epochs=5, eval_every=2)
+    dataset = build_datasets(samples, config)["train"]
+    seen = []
+
+    def validate(model, epoch):
+        seen.append(epoch)
+        return {"map50": 0.5, "coverage_p5": 1.0}
+
+    fit(dataset, config, output_dir=tmp_path / "out", validate=validate, log=None)
+    assert seen == [1, 3, 4]
+
+
+def test_the_history_is_written_after_every_epoch(setup, tmp_path):
+    """A run that dies halfway has to leave its curve on disk."""
+    import json
+
+    from testbank.models.train import HISTORY_FILE
+
+    samples, config = setup
+    config = _config_with(config, epochs=3, eval_every=1)
+    dataset = build_datasets(samples, config)["train"]
+    lengths = []
+
+    def validate(model, epoch):
+        lengths.append(len(json.loads((tmp_path / "out" / HISTORY_FILE).read_text())["epochs"])
+                       if (tmp_path / "out" / HISTORY_FILE).exists() else 0)
+        return {"map50": 0.5, "coverage_p5": 1.0}
+
+    fit(dataset, config, output_dir=tmp_path / "out", validate=validate, log=None)
+    # At the validation of epoch k the file already had k epochs written.
+    assert lengths == [0, 1, 2]
+    written = json.loads((tmp_path / "out" / HISTORY_FILE).read_text(encoding="utf-8"))
+    assert len(written["epochs"]) == 3 and len(written["validation"]) == 3
+    assert written["best"]["epoch"] == 0
+
+
+def test_the_adapter_validates_with_our_metrics_and_records_it(setup, tmp_path):
+    samples, config = setup
+    samples = {**samples, "valid": samples["train"][:2]}
+    config = _config_with(config, epochs=2, eval_every=1)
+    detector = get_detector("yolox-obb-nano")
+    result = detector.train(samples, config, output_dir=tmp_path / "t")
+    assert result.weights.name == "best.pt"
+    assert not (tmp_path / "t" / "_eval.pt").exists()
+    assert any("2 validation images" in n for n in result.notes)
+    assert any(n.startswith("best.pt = epoch") for n in result.notes)
+
+
+def test_validating_mid_training_does_not_change_the_trajectory(setup, tmp_path):
+    """Evaluating must not consume the training RNG: with and without
+    validation the losses have to match exactly."""
+    samples, config = setup
+    config = _config_with(config, epochs=3, eval_every=1)
+    dataset = build_datasets(samples, config)["train"]
+    _, plain = fit(dataset, config, output_dir=tmp_path / "a", log=None)
+    _, validated = fit(
+        dataset, config, output_dir=tmp_path / "b",
+        validate=lambda m, e: {"map50": 0.0, "coverage_p5": 0.0}, log=None,
+    )
+    assert [e["total"] for e in plain.epochs] == pytest.approx(
+        [e["total"] for e in validated.epochs], rel=1e-6
+    )
+
+
+# --- the curves -----------------------------------------------------------
+
+
+def test_plot_training_renders_losses_and_validation(setup, tmp_path):
+    pytest.importorskip("matplotlib", reason="plots live in the dev group")
+    from testbank.viz.curves import plot_run
+
+    samples, config = setup
+    config = _config_with(config, epochs=3, eval_every=1)
+    dataset = build_datasets(samples, config)["train"]
+    fit(
+        dataset, config, output_dir=tmp_path / "run" / "_train",
+        validate=lambda m, e: {"map50": 0.2 * (e + 1), "coverage_p5": 0.9}, log=None,
+    )
+    path = plot_run(tmp_path / "run")
+    assert path == tmp_path / "run" / "viz" / "training.png"
+    assert path.stat().st_size > 1000
+
+
+def test_plot_training_says_when_there_is_nothing_to_plot(tmp_path):
+    from testbank.viz.curves import find_history
+
+    with pytest.raises(FileNotFoundError, match="training.json"):
+        find_history(tmp_path)

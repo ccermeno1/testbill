@@ -79,22 +79,45 @@ class YoloxObbDetector(BaseDetector):
     # --- training ---------------------------------------------------------
 
     def train(self, samples_by_split, config: Config, *, output_dir: Path) -> TrainResult:
-        _import_torch()
+        torch = _import_torch()
         from testbank.models.data import build_datasets
-        from testbank.models.train import fit
+        from testbank.models.train import checkpoint_payload, fit
 
         config = self._with_variant(config)
         datasets = build_datasets(samples_by_split, config)
         if "train" not in datasets:
             raise DetectorError("the 'train' split is required to train")
 
-        weights, history = fit(datasets["train"], config, output_dir=output_dir)
+        validate = None
+        valid_samples = list(samples_by_split.get("valid", ()))
+        if valid_samples and config.detector.eval_every:
+            # Selection metrics only: a light bootstrap, because the interval
+            # is not what decides which checkpoint stays. The real `valid`
+            # evaluation, with the full bootstrap, happens after training.
+            light = config.model_copy(
+                update={"metrics": config.metrics.model_copy(update={"bootstrap_samples": 20})}
+            )
+            scratch = output_dir / "_eval.pt"
+
+            def validate(model, epoch):
+                torch.save(checkpoint_payload(model, config, epoch=epoch), scratch)
+                report = self.evaluate(valid_samples, light, weights=scratch)
+                return {
+                    "map50": report["map50"]["value"],
+                    "coverage_p5": report["coverage_p5"]["value"],
+                }
+
+        weights, history = fit(
+            datasets["train"], config, output_dir=output_dir, validate=validate
+        )
+        (output_dir / "_eval.pt").unlink(missing_ok=True)
         last = history.epochs[-1] if history.epochs else {}
         return TrainResult(
             weights=weights,
             epochs=config.detector.epochs,
             notes=(
-                f"{len(datasets['train'])} training images",
+                f"{len(datasets['train'])} training images"
+                + (f", {len(valid_samples)} validation images" if validate else ""),
                 f"loss recipe: {config.detector.loss.recipe}",
                 *history.notes,
                 "final losses: "
