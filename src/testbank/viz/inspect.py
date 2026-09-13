@@ -204,6 +204,10 @@ def _draw_prediction(
 ) -> None:
     """Contorno cian con la confianza. Sin vertices numerados: el orden canonico
     de una prediccion no es lo que se esta mirando aqui."""
+    if prediction.quad is None:
+        # Falso positivo sin geometria (caja mas de medio marco fuera): no hay
+        # nada que dibujar dentro de la imagen. Cuenta en la metrica, no aqui.
+        return
     pts = np.array(
         [
             (x * width + offset[0], y * height + offset[1])

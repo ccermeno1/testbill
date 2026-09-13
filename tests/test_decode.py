@@ -186,3 +186,46 @@ def test_las_detecciones_salen_ordenadas_por_confianza():
     found = detections(_outputs(), SIZE, confidence=1e-8, max_detections=20)
     scores = [p.score for p in found]
     assert scores == sorted(scores, reverse=True)
+
+
+def test_una_prediccion_muy_fuera_del_marco_cuenta_como_falso_positivo():
+    """REGRESION. Con el backbone COCO recien cargado y la cabeza sin entrenar,
+    la red predijo un vertice en -0.54 normalizado y `Quad` lo rechazo con un
+    QuadError: la evaluacion entera de la ejecucion se cayo.
+
+    No se descarta: se emite sin geometria y la metrica la cuenta como falso
+    positivo. Descartarla habria sido regalar al modelo un error que cometio.
+    """
+    from testbank.metrics.core import ImageEval, PolygonCache, Prediction
+    from testbank.metrics.matching import Outcome, match_image
+
+    fuera = box(-300, 208, 100, 50)  # centro medio marco a la izquierda de la imagen
+    dentro = box(208, 208, 100, 50)
+    quads = boxes_to_quads(torch.stack([fuera, dentro]), SIZE)
+    assert quads[0] is None and quads[1] is not None
+
+    # En la metrica: la de dentro empareja con la verdad, la de fuera no
+    # empareja con nada y queda como falso positivo a su puntuacion.
+    truth = quads[1]
+    item = ImageEval(
+        sample_id="x", size=SIZE, truths=(truth,),
+        predictions=(Prediction(quad=None, score=0.9), Prediction(quad=quads[1], score=0.8)),
+    )
+    matching = match_image(item, PolygonCache.build(item), match_iou=0.5)
+    assert [p.prediction_index for p in matching.pairs] == [1]
+    outcome = {index: result for index, result, _ in matching.outcomes}
+    assert outcome[0] is Outcome.FALSE_POSITIVE, "sin geometria = falso positivo, no descarte"
+
+
+def test_dibujar_una_prediccion_sin_geometria_no_revienta():
+    """REGRESION: el port con DOTA produjo una prediccion sin quad, la metrica
+    la conto bien y luego la VISUALIZACION de la ejecucion se cayo con
+    `'NoneType' object has no attribute 'points'`."""
+    import numpy as np
+
+    from testbank.metrics.core import Prediction
+    from testbank.viz.inspect import _draw_prediction
+
+    canvas = np.zeros((64, 64, 3), dtype=np.uint8)
+    _draw_prediction(canvas, Prediction(quad=None, score=0.5), offset=(0, 0), width=64, height=64)
+    assert canvas.sum() == 0

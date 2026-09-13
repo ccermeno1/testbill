@@ -28,7 +28,7 @@ from torch.utils.data import DataLoader
 from testbank.config import Config
 from testbank.experiment.provenance import seed_everything
 from testbank.models.data import BanknoteDataset, Batch, collate
-from testbank.models.recipes import head_spec_for, losses_for_image
+from testbank.models.recipes import architecture_of, build_model, losses_for_image
 from testbank.models.yolox_obb import HeadSpec, YoloxObb
 
 #: Fraccion del entrenamiento dedicada a subir el learning rate desde casi cero.
@@ -42,6 +42,9 @@ class TrainingHistory:
     """Lo que paso en cada epoca. Va al `run.json` para poder mirarlo despues."""
 
     epochs: list[dict] = field(default_factory=list)
+    #: Cosas que pasaron una vez y conviene dejar escritas: p. ej. que
+    #: preentreno se cargo y que tensores se saltaron.
+    notes: list[str] = field(default_factory=list)
 
     def record(self, epoch: int, terms: dict, learning_rate: float) -> None:
         self.epochs.append({"epoch": epoch, "lr": learning_rate, **terms})
@@ -116,6 +119,8 @@ def train_one_epoch(
                         if o.distribution is not None
                         else None
                     ),
+                    regression=o.regression,
+                    angle_mode=o.angle_mode,
                 )
                 for o in outputs
             ]
@@ -157,9 +162,15 @@ def fit(
     output_dir: Path,
     device: torch.device | None = None,
     base_lr: float = 1e-3,
+    pretrained: Path | None = None,
 ) -> tuple[Path, TrainingHistory]:
-    """Entrena y deja los pesos. Devuelve `(ruta, historial)`."""
+    """Entrena y deja los pesos. Devuelve `(ruta, historial)`.
+
+    `pretrained`: un checkpoint ajeno con el que arrancar (hoy solo el de DOTA
+    de DDGRCF sobre su port). Lo que no encaje se salta y queda anotado.
+    """
     device = device or torch.device("cpu")
+    history = TrainingHistory()
     # Se siembra TODO antes de construir el modelo, no solo el DataLoader. Los
     # pesos se inicializan al azar desde el generador global de torch: sembrar
     # solo el cargador dejaba dos ejecuciones con la misma semilla partiendo de
@@ -176,13 +187,17 @@ def fit(
         drop_last=False,
     )
 
-    model = YoloxObb(
-        config.detector.variant, num_classes=1, head=head_spec_for(config)
-    ).to(device)
+    model = build_model(config).to(device)
+    pretrained = pretrained or config.detector.pretrained
+    if pretrained is not None:
+        from testbank.models.pretrained import load_pretrained
+
+        history.notes.append(load_pretrained(model, pretrained))
+    else:
+        history.notes.append("sin preentreno: pesos iniciales aleatorios")
     optimizer = torch.optim.AdamW(model.parameters(), lr=base_lr, weight_decay=5e-4)
 
     total_steps = max(1, len(loader) * config.detector.epochs)
-    history = TrainingHistory()
     step = 0
     for epoch in range(config.detector.epochs):
         terms, step = train_one_epoch(
@@ -199,6 +214,7 @@ def fit(
             "model": model.state_dict(),
             "variant": config.detector.variant,
             "head": model.head_spec.to_dict(),
+            "arch": architecture_of(model),
             "num_classes": 1,
             "image_size": config.detector.image_size,
         },
@@ -215,11 +231,16 @@ def load_model(weights: Path, device: torch.device | None = None) -> YoloxObb:
     sitio donde esa informacion no se puede desincronizar.
     """
     payload = torch.load(weights, map_location=device or "cpu", weights_only=False)
-    model = YoloxObb(
-        payload["variant"],
-        num_classes=payload["num_classes"],
-        head=HeadSpec.from_dict(payload.get("head")),
-    )
+    if payload.get("arch") == "ddgrcf":
+        from testbank.models.ddgrcf import DdgrcfYoloxObb
+
+        model = DdgrcfYoloxObb(num_classes=payload["num_classes"])
+    else:
+        model = YoloxObb(
+            payload["variant"],
+            num_classes=payload["num_classes"],
+            head=HeadSpec.from_dict(payload.get("head")),
+        )
     model.load_state_dict(payload["model"])
     return model.to(device or torch.device("cpu")).eval()
 

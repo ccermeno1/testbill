@@ -84,7 +84,10 @@ def test_el_dataset_entrega_imagen_y_cajas(setup):
     dataset = build_datasets(samples, config)["train"]
     image, boxes, classes, sample_id = dataset[0]
     assert image.shape == (3, SIDE, SIDE)
-    assert image.min() >= 0.0 and image.max() <= 1.0
+    # BGR crudo en 0-255, la convencion de YOLOX: es lo que esperan los pesos
+    # preentrenados (COCO de Megvii, DOTA de DDGRCF). Antes iba en [0, 1] y el
+    # preentreno llegaba destrozado; ver `image_to_input`.
+    assert image.min() >= 0.0 and image.max() <= 255.0 and image.max() > 1.0
     assert boxes.shape == (2, 5)
     assert classes.shape == (2,)
     assert sample_id == "s0"

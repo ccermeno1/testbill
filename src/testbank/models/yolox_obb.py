@@ -155,22 +155,25 @@ class HeadSpec:
     lo produjo, no la de la config del momento.
     """
 
-    #: `direct`: cuatro distancias por celda. `dfl`: una DISTRIBUCION de
-    #: `reg_max` bins por distancia, y la distancia es su esperanza
-    #: (Li et al., "Generalized Focal Loss", NeurIPS 2020).
+    #: `direct`: cuatro distancias l/t/r/b por celda. `dfl`: una DISTRIBUCION
+    #: de `reg_max` bins por distancia, y la distancia es su esperanza (Li et
+    #: al., "Generalized Focal Loss", NeurIPS 2020). `yolox`: el original de
+    #: YOLOX, `(dx, dy, log w, log h)` respecto a la celda; lo usa el port de
+    #: DDGRCF.
     regression: str = "direct"
     reg_max: int = 16
     #: `sincos`: (sin 2t, cos 2t), sin discontinuidad. `scalar`: un canal,
     #: `theta = (sigmoid(x) - 1/4) * pi`, que es como lo documenta Ultralytics.
+    #: `radians`: un canal crudo en radianes, sin transformar (DDGRCF).
     angle: str = "sincos"
     #: Rama de "hay objeto". Las cabezas al estilo v8 no la llevan: la clase
     #: absorbe la presencia, con objetivos suaves del asignador.
     objectness: bool = True
 
     def __post_init__(self) -> None:
-        if self.regression not in ("direct", "dfl"):
+        if self.regression not in ("direct", "dfl", "yolox"):
             raise ValueError(f"regression: {self.regression!r}")
-        if self.angle not in ("sincos", "scalar"):
+        if self.angle not in ("sincos", "scalar", "radians"):
             raise ValueError(f"angle: {self.angle!r}")
         if self.reg_max < 2:
             raise ValueError("reg_max tiene que ser >= 2")
@@ -207,6 +210,10 @@ class HeadOutput:
     #: (B, 4 * reg_max, H, W) -- logits crudos de la distribucion. Solo con
     #: DFL, y solo los usa la perdida: la decodificacion ya va en `distances`.
     distribution: torch.Tensor | None = None
+    #: Como leer `distances` y `angle`. Con un solo canal de angulo no se puede
+    #: distinguir "sigmoide" de "radianes" mirando el tensor: lo dice la cabeza.
+    regression: str = "direct"
+    angle_mode: str = "sincos"
 
 
 class ObbHead(nn.Module):
@@ -290,6 +297,8 @@ class ObbHead(nn.Module):
                     classes=self.cls_pred(self.cls_branch(x)),
                     stride=stride,
                     distribution=distribution,
+                    regression=self.spec.regression,
+                    angle_mode=self.spec.angle,
                 )
             )
         return outputs
@@ -338,25 +347,30 @@ class YoloxObb(nn.Module):
         return sum(p.numel() for p in self.parameters())
 
 
-def decode_angle(angle: torch.Tensor) -> torch.Tensor:
+def decode_angle(angle: torch.Tensor, mode: str = "sincos") -> torch.Tensor:
     """Salida cruda de la rama de angulo -> theta en radianes, en `[0, pi)`.
 
-    Distingue por canales, para que el decodificador no tenga que saber que
-    cabeza hay detras:
+    - `sincos`, 2 canales `(sin 2t, cos 2t)`: el factor 1/2 deshace el doblado.
+      El resultado cae siempre en medio giro, que es todo el rango que
+      distingue rectangulos: mas alla se repite.
+    - `scalar`, 1 canal: `theta = (sigmoid(x) - 1/4) * pi`, en `[-pi/4, 3pi/4)`,
+      que es la parametrizacion que documenta Ultralytics.
+    - `radians`, 1 canal: el valor tal cual, en radianes (DDGRCF).
 
-    - 2 canales, `(sin 2t, cos 2t)`: el factor 1/2 deshace el doblado. El
-      resultado cae siempre en medio giro, que es todo el rango que distingue
-      rectangulos: mas alla se repite.
-    - 1 canal, escalar: `theta = (sigmoid(x) - 1/4) * pi`, en `[-pi/4, 3pi/4)`,
-      que es la parametrizacion que documenta Ultralytics. Se lleva a `[0, pi)`
-      con el modulo, porque es lo que espera todo lo demas.
+    Todo se lleva a `[0, pi)` con el modulo, porque es lo que espera lo demas.
     """
-    if angle.shape[1] == 2:
+    if mode == "sincos":
+        if angle.shape[1] != 2:
+            raise ValueError(f"sincos necesita 2 canales, hay {angle.shape[1]}")
         sin2, cos2 = angle[:, 0], angle[:, 1]
         return 0.5 * torch.atan2(sin2, cos2) % math.pi
-    if angle.shape[1] == 1:
+    if angle.shape[1] != 1:
+        raise ValueError(f"{mode} necesita 1 canal, hay {angle.shape[1]}")
+    if mode == "scalar":
         return ((torch.sigmoid(angle[:, 0]) - 0.25) * math.pi) % math.pi
-    raise ValueError(f"la rama de angulo tiene {angle.shape[1]} canales; se esperaban 1 o 2")
+    if mode == "radians":
+        return angle[:, 0] % math.pi
+    raise ValueError(f"modo de angulo desconocido: {mode!r}")
 
 
 def encode_scalar_angle(theta: torch.Tensor) -> torch.Tensor:

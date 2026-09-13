@@ -55,3 +55,11 @@ runs/detect/
 /YOLOX-OBB/
 /fork/
 *.orig
+/YOLOX_OBB/
+/BboxToolkit/
+.venv-*/
+
+# Checkpoints descargados a mano (Megvii COCO, DDGRCF DOTA). Nunca al repo.
+/weights/
+*.pth
+*.pth.tar

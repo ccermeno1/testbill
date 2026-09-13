@@ -49,9 +49,10 @@ from testbank.models.gaussian import (
     probiou,
 )
 from testbank.models.loss import LossTerms, compute_losses
-from testbank.models.yolox_obb import STRIDES, HeadSpec
+from testbank.models.polygon import pairwise_rotated_iou, rotated_iou
+from testbank.models.yolox_obb import STRIDES, HeadSpec, YoloxObb
 
-RECIPES = ("own", "yolox_obb_fork", "ultralytics_obb")
+RECIPES = ("own", "yolox_obb_fork", "ultralytics_obb", "ddgrcf")
 
 
 def head_spec_for(config: Config) -> HeadSpec:
@@ -64,7 +65,26 @@ def head_spec_for(config: Config) -> HeadSpec:
             angle="scalar",
             objectness=False,
         )
+    if recipe == "ddgrcf":
+        from testbank.models.ddgrcf import DdgrcfYoloxObb
+
+        return DdgrcfYoloxObb.HEAD_SPEC
     return HeadSpec()
+
+
+def build_model(config: Config):
+    """El modelo que exige la receta. `ddgrcf` es una RED distinta, no solo una
+    cabeza: el port de su yaml, para que sus pesos de DOTA carguen."""
+    if config.detector.loss.recipe == "ddgrcf":
+        from testbank.models.ddgrcf import DdgrcfYoloxObb
+
+        return DdgrcfYoloxObb(num_classes=1)
+    return YoloxObb(config.detector.variant, num_classes=1, head=head_spec_for(config))
+
+
+def architecture_of(model) -> str:
+    """Lo que va al checkpoint para reconstruir la red al cargar."""
+    return "ddgrcf" if model.__class__.__name__ == "DdgrcfYoloxObb" else "yolox_obb"
 
 
 # --- utilidades comunes ----------------------------------------------------
@@ -308,6 +328,119 @@ def _ultralytics(outputs, boxes, classes, config: Config, device) -> LossTerms:
     )
 
 
+# --- receta de DDGRCF ------------------------------------------------------
+
+
+def regularize_angle_ddgrcf(boxes: torch.Tensor) -> torch.Tensor:
+    """Su `mintheta_obb`: el angulo en `(-pi/4, pi/4]`, intercambiando w y h.
+
+    `(w, h, t)` y `(h, w, t + pi/2)` son el mismo rectangulo; su convenio elige
+    la representacion de |angulo| menor. Su red predice el angulo crudo, asi que
+    el objetivo tiene que estar en ese rango o no seria alcanzable con gradiente
+    pequeno.
+    """
+    import math
+
+    cx, cy, w, h, theta = boxes.unbind(dim=-1)
+    theta1 = (theta + math.pi / 2) % math.pi - math.pi / 2
+    theta2 = (theta + math.pi) % math.pi - math.pi / 2
+    swap = theta1.abs() >= theta2.abs()
+    return torch.stack(
+        (
+            cx,
+            cy,
+            torch.where(swap, h, w),
+            torch.where(swap, w, h),
+            torch.where(swap, theta2, theta1),
+        ),
+        dim=-1,
+    )
+
+
+def _ddgrcf(outputs, boxes, classes, config: Config, device, *, epoch, total_epochs) -> LossTerms:
+    """`get_losses` de DDGRCF/YOLOX_OBB (Apache-2.0), sobre el port de su red.
+
+    Literal de su `detectx.py` + `obbdetectx.py` + yaml de perdidas: SimOTA con
+    coste `-log(IoU)` x3 e IoU EXACTO; caja `1 - IoU` x5; obj y cls BCE con
+    objetivo `one_hot * IoU`; todo `sum / num_fg`; L1 extra sobre la regresion
+    cruda en las ultimas epocas.
+
+    Una desviacion, dicha: su L1 extra deja el objetivo del ANGULO a cero (su
+    `get_reg_l1_target` rellena 4 de 5 componentes), lo que empuja el angulo
+    crudo hacia 0 en las ultimas epocas. Aqui el objetivo es el angulo real. Es
+    casi seguro un descuido suyo, no una decision, y replicarlo seria copiar el
+    fallo con el nombre de fidelidad.
+    """
+    options = config.detector.loss.ddgrcf
+    boxes = regularize_angle_ddgrcf(boxes)
+    predicted_boxes, scores = decode_outputs(outputs, _image_size(config))
+    angle, cls, obj, raw, _ = _flatten(outputs)
+    grid = _grid(outputs, device)
+
+    assignment = simota_assign(
+        predicted_boxes.detach(),
+        scores.detach(),
+        boxes,
+        grid,
+        iou_weight=3.0,
+        overlap=pairwise_rotated_iou,
+        overlap_cost="neg_log",
+    )
+    positive = assignment.positive
+    num_fg = max(assignment.num_positives, 1)
+    zero = torch.zeros((), device=device)
+
+    objectness = F.binary_cross_entropy_with_logits(
+        obj, positive.to(obj.dtype), reduction="sum"
+    ) / num_fg
+    if not positive.any():
+        return LossTerms(zero, zero, objectness, zero, objectness, 0, dfl=zero, l1=zero)
+
+    matched = assignment.matched[positive]
+    boxes_p, boxes_t = predicted_boxes[positive], boxes[matched]
+
+    box = (1.0 - rotated_iou(boxes_p, boxes_t)).sum() / num_fg
+    cls_target = (
+        F.one_hot(classes[matched], cls.shape[-1]).to(cls.dtype)
+        * assignment.matched_iou[positive, None]
+    )
+    class_loss = F.binary_cross_entropy_with_logits(
+        cls[positive], cls_target, reduction="sum"
+    ) / num_fg
+
+    l1 = zero
+    if options.l1_last_epochs > 0 and epoch >= total_epochs - options.l1_last_epochs:
+        # Su `get_reg_l1_target`: (cx/stride - i, cy/stride - j, log w/stride,
+        # log h/stride), con (i, j) la esquina de la celda. Nuestra rejilla
+        # guarda el CENTRO de la celda, de ahi el medio stride.
+        stride = grid.strides[positive]
+        corner = (grid.centers[positive] - stride[:, None] / 2) / stride[:, None]
+        target = torch.stack(
+            (
+                boxes_t[:, 0] / stride - corner[:, 0],
+                boxes_t[:, 1] / stride - corner[:, 1],
+                torch.log(boxes_t[:, 2] / stride + 1e-8),
+                torch.log(boxes_t[:, 3] / stride + 1e-8),
+                boxes_t[:, 4],
+            ),
+            dim=-1,
+        )
+        raw_all = torch.cat((raw[positive], angle[positive]), dim=-1)
+        l1 = F.l1_loss(raw_all, target, reduction="sum") / num_fg
+
+    total = options.box_gain * box + objectness + class_loss + l1
+    return LossTerms(
+        box=box,
+        angle=zero,
+        objectness=objectness,
+        classes=class_loss,
+        total=total,
+        num_positives=assignment.num_positives,
+        dfl=zero,
+        l1=l1,
+    )
+
+
 # --- despacho --------------------------------------------------------------
 
 
@@ -323,6 +456,10 @@ def losses_for_image(
         )
     if recipe == "ultralytics_obb":
         return _ultralytics(outputs, boxes, classes, config, device)
+    if recipe == "ddgrcf":
+        return _ddgrcf(
+            outputs, boxes, classes, config, device, epoch=epoch, total_epochs=total_epochs
+        )
     raise ValueError(f"receta desconocida: {recipe!r}; hay {RECIPES}")
 
 
@@ -335,9 +472,12 @@ def _image_size(config: Config):
 
 __all__ = [
     "RECIPES",
+    "architecture_of",
+    "build_model",
     "distribution_focal_loss",
     "head_spec_for",
     "losses_for_image",
+    "regularize_angle_ddgrcf",
     "target_distances",
 ]
 

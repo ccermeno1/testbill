@@ -339,6 +339,8 @@ def cmd_train(args, config: Config) -> int:
         updates["epochs"] = args.epochs
     if args.out_of_bounds is not None:
         updates["out_of_bounds"] = OutOfBoundsPolicy(args.out_of_bounds)
+    if args.pretrained is not None:
+        updates["pretrained"] = Path(args.pretrained).resolve()
     if args.loss_recipe is not None:
         # Por el constructor, que valida; `model_copy(update=...)` no.
         updates["loss"] = config.detector.loss.model_validate(
@@ -530,6 +532,15 @@ def build_parser() -> argparse.ArgumentParser:
             "own = la propia; yolox_obb_fork = KLD x5 + obj + cls + L1 tardia con "
             "SimOTA; ultralytics_obb = ProbIoU + DFL + cls suave con TAL, que "
             "ademas cambia la cabeza (regresion DFL, angulo escalar, sin obj)"
+        ),
+    )
+    train.add_argument(
+        "--pretrained",
+        default=None,
+        help=(
+            "checkpoint ajeno con el que ARRANCAR el entrenamiento (queda en la "
+            "config): un yolox_*.pth.tar de Megvii para la cabeza propia, o el "
+            "de DOTA de DDGRCF para su port. No confundir con --weights"
         ),
     )
     train.add_argument(

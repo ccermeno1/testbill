@@ -118,7 +118,7 @@ def test_un_checkpoint_viejo_sin_cabeza_carga_como_directa(tmp_path):
 
 def test_el_angulo_escalar_cubre_medio_giro():
     logits = torch.linspace(-12, 12, 200).view(1, 1, 200, 1)
-    theta = decode_angle(logits.permute(0, 1, 2, 3).reshape(200, 1))
+    theta = decode_angle(logits.permute(0, 1, 2, 3).reshape(200, 1), "scalar")
     assert (theta >= 0).all() and (theta < math.pi).all()
     # Sigmoide de -inf a +inf recorre (-pi/4, 3pi/4): modulo pi, todo el rango.
     assert theta.max() - theta.min() > 0.95 * math.pi

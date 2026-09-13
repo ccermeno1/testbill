@@ -174,6 +174,8 @@ def _unpad(prediction: Prediction, fraction: float) -> Prediction:
     politica `pad` existe para conservar. El rango tolerante del quad lo admite.
     """
     scale = 1.0 + 2.0 * fraction
+    if prediction.quad is None:
+        return prediction  # sin geometria: nada que desplazar
     return Prediction(
         quad=canonicalize(
             Quad.from_xy(

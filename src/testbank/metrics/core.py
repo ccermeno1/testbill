@@ -32,9 +32,16 @@ HALF_TURN = 180.0
 
 @dataclass(frozen=True, slots=True)
 class Prediction:
-    """Una deteccion. `score` ordena el emparejamiento greedy."""
+    """Una deteccion. `score` ordena el emparejamiento greedy.
 
-    quad: Quad
+    `quad` puede ser None: una caja que la red predijo tan fuera de la imagen
+    que `Quad` no la admite (mas de medio marco). Sigue siendo una deteccion
+    que el modelo hizo, asi que CUENTA como falso positivo a su puntuacion --
+    no se empareja con nada porque no tiene con que -- en vez de descartarse,
+    que seria regalarle a la metrica un error que el modelo si cometio.
+    """
+
+    quad: Quad | None
     score: float
     class_id: int = 0
 
@@ -59,8 +66,15 @@ class ImageEval:
             raise ValueError(f"{self.sample_id}: tamano de imagen invalido")
 
 
-def to_polygon(quad: Quad, size: ImageSize) -> Polygon:
-    """Quad normalizado -> poligono en pixeles, saneado."""
+def to_polygon(quad: Quad | None, size: ImageSize) -> Polygon:
+    """Quad normalizado -> poligono en pixeles, saneado.
+
+    None -> poligono vacio: no interseca con nada, area cero, IoU cero con
+    todo. Es como una prediccion sin geometria se queda sin pareja y pasa a
+    falso positivo sin tocar el emparejamiento.
+    """
+    if quad is None:
+        return Polygon()
     polygon = Polygon(
         [(x * size.width, y * size.height) for x, y in quad.points]
     )

@@ -270,25 +270,41 @@ class UltralyticsRecipeConfig(StrictModel):
     tal_beta: float = Field(default=6.0, ge=0.0)
 
 
+class DdgrcfRecipeConfig(StrictModel):
+    """La receta de `DDGRCF/YOLOX_OBB`, con los valores de SU yaml de perdidas.
+
+    `configs/losses/yolox_losses_obb.yaml` (Apache-2.0): PolyIoU lineal x5, obj y
+    cls BCE x1 sumadas y normalizadas por positivos, y una L1 "extra" que su
+    trainer enciende en las ultimas `no_aug_epochs = 3` epocas (la del exp de
+    DOTA es 2). El IoU es EXACTO, de poligonos: aqui en torch puro
+    (`models/polygon.py`) en vez de su operador compilado.
+    """
+
+    box_gain: float = Field(default=5.0, ge=0.0)
+    l1_last_epochs: int = Field(default=3, ge=0)
+
+
 class LossConfig(StrictModel):
     """Que receta de perdida entrena la cabeza propia. Se registra con la ejecucion.
 
-    Tres recetas, cada una ENTERA y sin mezclar con las otras:
+    Cuatro recetas, cada una ENTERA y sin mezclar con las otras:
 
         own              la propia: IoU alineada + angulo atenuado + BCE, SimOTA
         yolox_obb_fork   KLD x5 + obj + cls por IoU + L1 tardia, SimOTA con KLD
         ultralytics_obb  ProbIoU x7.5 + DFL x1.5 + cls x0.5 suave, TAL, sin obj
+        ddgrcf           PolyIoU EXACTO x5 + obj + cls por IoU + L1 tardia, SimOTA
 
     La receta fija tambien la CABEZA (`models/yolox_obb.HeadSpec`): Ultralytics
-    exige regresion distribucional y angulo escalar, y no lleva objectness.
-    Comparar las tres es comparar recetas completas sobre el mismo backbone, que
-    es lo que no se podia hacer con el fork ni con Ultralytics de fuera.
+    exige regresion distribucional y angulo escalar, y no lleva objectness. Y
+    `ddgrcf` fija ademas la RED entera: es el port de su yaml, para poder cargar
+    sus pesos de DOTA (`models/ddgrcf.py`).
     """
 
-    recipe: Literal["own", "yolox_obb_fork", "ultralytics_obb"] = "own"
+    recipe: Literal["own", "yolox_obb_fork", "ultralytics_obb", "ddgrcf"] = "own"
     angle_weight: AngleWeightConfig = AngleWeightConfig()
     fork: ForkRecipeConfig = ForkRecipeConfig()
     ultralytics: UltralyticsRecipeConfig = UltralyticsRecipeConfig()
+    ddgrcf: DdgrcfRecipeConfig = DdgrcfRecipeConfig()
 
 
 class DetectorConfig(StrictModel):
@@ -300,6 +316,12 @@ class DetectorConfig(StrictModel):
     epochs: int = Field(default=100, gt=0)
     image_size: int = Field(default=640, gt=0)
     batch_size: int = Field(default=8, gt=0)
+    #: Checkpoint ajeno con el que arrancar, o None para entrenar de cero.
+    #: Para la cabeza propia, un `yolox_*.pth.tar` de Megvii (COCO; carga
+    #: backbone y cuello, descarta su cabeza). Para el port de DDGRCF, su
+    #: checkpoint de DOTA. Va en la config para que quede congelado en la
+    #: ejecucion: dos runs con y sin preentreno no son comparables.
+    pretrained: Path | None = None
     #: Umbral de confianza en INFERENCIA. Bajo a proposito: las metricas de
     #: deteccion necesitan la cola de baja confianza para trazar la curva
     #: precision-recall; recortarla arriba infla el AP artificialmente.

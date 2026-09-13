@@ -1,0 +1,239 @@
+{
+  "split": "valid",
+  "n_images": 101,
+  "n_truths": 142,
+  "crop": {
+    "margin_used": 0.05,
+    "coverage_target": 0.98,
+    "coverage_percentile": 5.0,
+    "by_margin": {
+      "0.00": {
+        "margin": 0.0,
+        "n_truths": 142,
+        "detected": 51,
+        "detection_rate": 0.3591549295774648,
+        "coverage_p5_all": 0.0,
+        "coverage_p5_detected": 0.5713574295689775,
+        "coverage_median": 0.0,
+        "contamination_p95": 0.5651094184466507,
+        "contamination_median": 0.0,
+        "coverage_p5_all_ci": {
+          "value": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "n": 101,
+          "bootstrap_samples": 2000
+        },
+        "contamination_p95_ci": {
+          "value": 0.5651094184466507,
+          "ci_low": 0.09782780892597104,
+          "ci_high": 0.9396974048097306,
+          "n": 101,
+          "bootstrap_samples": 2000
+        },
+        "contamination_by_scene": {
+          "single": {
+            "scene": "single",
+            "n": 29,
+            "median": 0.0,
+            "p95": 0.0,
+            "threshold": 0.01,
+            "passes": true
+          },
+          "fan": {
+            "scene": "fan",
+            "n": 22,
+            "median": 0.0839884701739804,
+            "p95": 0.9300262631482855,
+            "threshold": 0.92,
+            "passes": false
+          }
+        },
+        "meets_target": false
+      },
+      "0.05": {
+        "margin": 0.05,
+        "n_truths": 142,
+        "detected": 51,
+        "detection_rate": 0.3591549295774648,
+        "coverage_p5_all": 0.0,
+        "coverage_p5_detected": 0.654557779812931,
+        "coverage_median": 0.0,
+        "contamination_p95": 0.557626253291787,
+        "contamination_median": 0.0,
+        "coverage_p5_all_ci": {
+          "value": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "n": 101,
+          "bootstrap_samples": 2000
+        },
+        "contamination_p95_ci": {
+          "value": 0.557626253291787,
+          "ci_low": 0.12306457845151988,
+          "ci_high": 0.8890329103543609,
+          "n": 101,
+          "bootstrap_samples": 2000
+        },
+        "contamination_by_scene": {
+          "single": {
+            "scene": "single",
+            "n": 29,
+            "median": 0.0,
+            "p95": 0.0,
+            "threshold": 0.01,
+            "passes": true
+          },
+          "fan": {
+            "scene": "fan",
+            "n": 22,
+            "median": 0.1085603450598734,
+            "p95": 0.8751914706525951,
+            "threshold": 0.92,
+            "passes": true
+          }
+        },
+        "meets_target": false
+      },
+      "0.10": {
+        "margin": 0.1,
+        "n_truths": 142,
+        "detected": 51,
+        "detection_rate": 0.3591549295774648,
+        "coverage_p5_all": 0.0,
+        "coverage_p5_detected": 0.7256388330656933,
+        "coverage_median": 0.0,
+        "contamination_p95": 0.5501547767760024,
+        "contamination_median": 0.0,
+        "coverage_p5_all_ci": {
+          "value": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "n": 101,
+          "bootstrap_samples": 2000
+        },
+        "contamination_p95_ci": {
+          "value": 0.5501547767760024,
+          "ci_low": 0.14612880755499685,
+          "ci_high": 0.8303501170484223,
+          "n": 101,
+          "bootstrap_samples": 2000
+        },
+        "contamination_by_scene": {
+          "single": {
+            "scene": "single",
+            "n": 29,
+            "median": 0.0,
+            "p95": 0.0,
+            "threshold": 0.01,
+            "passes": true
+          },
+          "fan": {
+            "scene": "fan",
+            "n": 22,
+            "median": 0.1294249077491167,
+            "p95": 0.8107072280397596,
+            "threshold": 0.92,
+            "passes": true
+          }
+        },
+        "meets_target": false
+      }
+    }
+  },
+  "coverage_p5": {
+    "value": 0.0,
+    "ci_low": 0.0,
+    "ci_high": 0.0,
+    "n": 101,
+    "bootstrap_samples": 2000
+  },
+  "contamination_p95": {
+    "value": 0.557626253291787,
+    "ci_low": 0.12306457845151988,
+    "ci_high": 0.8890329103543609,
+    "n": 101,
+    "bootstrap_samples": 2000
+  },
+  "contamination": {
+    "by_scene": {
+      "single": {
+        "scene": "single",
+        "n": 29,
+        "median": 0.0,
+        "p95": 0.0,
+        "threshold": 0.01,
+        "passes": true
+      },
+      "fan": {
+        "scene": "fan",
+        "n": 22,
+        "median": 0.1085603450598734,
+        "p95": 0.8751914706525951,
+        "threshold": 0.92,
+        "passes": true
+      }
+    },
+    "passes": true,
+    "note": "Dos umbrales porque la distribucion es bimodal. En imagenes de un solo billete el suelo es cero exacto y cualquier contaminacion es un error real. En abanicos ni un detector perfecto baja del 0.89: si un billete esta parcialmente tapado, su caja contiene por fuerza pixeles del que lo tapa. Para comparar candidatos en abanicos mira la mediana, no el p95, que discrimina poco por estar casi saturado."
+  },
+  "detection": {
+    "match_iou": 0.5,
+    "inference_confidence": 0.01,
+    "decision_confidence": 0.25,
+    "at_decision_confidence": {
+      "true_positives": 0,
+      "false_positives": 0,
+      "ignored": 0,
+      "detection_rate": 0.0,
+      "note": "Lo que se veria al desplegar con este umbral. Es la cifra que hay que leer."
+    },
+    "with_ignored": {
+      "true_positives": 51,
+      "false_positives": 2768,
+      "ignored": 0,
+      "detection_rate": 0.3591549295774648
+    },
+    "without_ignored": {
+      "true_positives": 51,
+      "false_positives": 2768,
+      "detection_rate": 0.3591549295774648
+    },
+    "note": "`with_ignored` y `without_ignored` estan a la confianza de INFERENCIA, baja a proposito para que el AP tenga la cola de la curva: ahi el recuento de falsos positivos mide cuantas cajas dejo pasar el NMS, no calidad, y no mejora entrenando mas. Para leer, usa `at_decision_confidence`. La diferencia de false_positives entre las dos entradas es el coste de nuestra propia politica de anotacion: detecciones correctas sobre billetes que el filtro de area dejo fuera. Un salto grande dice que hay que revisar la anotacion, no el detector."
+  },
+  "map50": {
+    "value": 0.009896277162683955,
+    "ci_low": 0.006383724297644948,
+    "ci_high": 0.017680499791722953,
+    "n": 101,
+    "bootstrap_samples": 2000
+  },
+  "map50_95": {
+    "value": 0.0015014433191902928,
+    "ci_low": 0.0009909214071307706,
+    "ci_high": 0.002756343689731262,
+    "n": 101,
+    "bootstrap_samples": 2000
+  },
+  "geometry": {
+    "n_matched_pairs": 51,
+    "angle_error_deg": {
+      "median": 32.70521637108442,
+      "p95": 66.20071546068417
+    },
+    "vertex_distance_px": {
+      "median": 169.26042121846996,
+      "p95": 450.06453799435457
+    },
+    "vertex_distance_fraction_of_longest_side": {
+      "median": 0.4942170934358476,
+      "p95": 1.2576963120546734
+    },
+    "note": "Diagnostico. Un rectangulo aproximado es la politica de anotacion, asi que la desviacion por vertice no es un fallo del detector."
+  },
+  "bootstrap": {
+    "unit": "image",
+    "samples": 2000,
+    "seed": 20260910
+  }
+}

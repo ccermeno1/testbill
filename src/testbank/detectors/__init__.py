@@ -13,6 +13,7 @@ from testbank.detectors import (
     rtmdet_r,  # noqa: F401  (registra)
     ultralytics_obb,  # noqa: F401  (registra)
     yolox_obb,  # noqa: F401  (registra)
+    yolox_obb_ddgrcf,  # noqa: F401  (registra)
     yolox_obb_fork,  # noqa: F401  (registra)
 )
 from testbank.detectors.base import (

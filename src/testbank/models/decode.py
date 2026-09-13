@@ -31,6 +31,8 @@ from shapely.geometry import Polygon
 
 from testbank.dataio.formats import ImageSize
 from testbank.geometry.quad import (
+    COORD_MAX,
+    COORD_MIN,
     CoordinateRangeWarning,
     Quad,
     QuadShapeWarning,
@@ -73,21 +75,34 @@ def decode_level(output, grid_slice: AnchorGrid) -> tuple[torch.Tensor, torch.Te
         else torch.ones(classes.shape[0], device=classes.device)
     )
 
-    left, top, right, bottom = distances.unbind(dim=-1)
-    width = left + right
-    height = top + bottom
     # `decode_angle` indexa la dim 1, asi que un (N, 2) le vale igual que el
     # (B, 2, H, W) de la cabeza. Una sola implementacion para los dos usos.
-    theta = decode_angle(angle)
-
-    # El desplazamiento del centro va en el marco de la CAJA, asi que se gira
-    # antes de sumarlo al centro de la celda.
-    local_x = (right - left) / 2
-    local_y = (bottom - top) / 2
-    cos_t, sin_t = torch.cos(theta), torch.sin(theta)
+    theta = decode_angle(angle, output.angle_mode)
     centers = grid_slice.centers
-    cx = centers[:, 0] + local_x * cos_t - local_y * sin_t
-    cy = centers[:, 1] + local_x * sin_t + local_y * cos_t
+
+    if output.regression == "yolox":
+        # El original de YOLOX, que usa el port de DDGRCF: `(dx, dy)` en
+        # celdas desde la esquina de la celda y `(log w, log h)` en strides.
+        # `distances` ya viene multiplicado por el stride arriba, asi que
+        # `dx * stride` es el desplazamiento en pixeles; el centro de celda de
+        # nuestra rejilla esta medio stride mas alla de la esquina.
+        raw = flat(output.distances)
+        stride = output.stride
+        cx = centers[:, 0] - stride / 2 + raw[:, 0] * stride
+        cy = centers[:, 1] - stride / 2 + raw[:, 1] * stride
+        width = torch.exp(raw[:, 2]) * stride
+        height = torch.exp(raw[:, 3]) * stride
+    else:
+        left, top, right, bottom = distances.unbind(dim=-1)
+        width = left + right
+        height = top + bottom
+        # El desplazamiento del centro va en el marco de la CAJA, asi que se
+        # gira antes de sumarlo al centro de la celda.
+        local_x = (right - left) / 2
+        local_y = (bottom - top) / 2
+        cos_t, sin_t = torch.cos(theta), torch.sin(theta)
+        cx = centers[:, 0] + local_x * cos_t - local_y * sin_t
+        cy = centers[:, 1] + local_x * sin_t + local_y * cos_t
 
     boxes = torch.stack((cx, cy, width, height, theta), dim=-1)
     # La puntuacion combina "hay algo" con "es un billete": una celda segura de
@@ -173,7 +188,7 @@ def rotated_nms(
     return kept
 
 
-def boxes_to_quads(boxes: torch.Tensor, size: ImageSize) -> list[Quad]:
+def boxes_to_quads(boxes: torch.Tensor, size: ImageSize) -> list[Quad | None]:
     """Pixeles -> quads NORMALIZADOS y canonicos, que es lo que consume todo.
 
     La canonicalizacion se hace con el aspecto de la imagen: sin el, el "lado
@@ -200,6 +215,17 @@ def boxes_to_quads(boxes: torch.Tensor, size: ImageSize) -> list[Quad]:
                 (x / size.width, y / size.height)
                 for x, y in list(polygon.exterior.coords)[:4]
             ]
+            # `Quad` admite vertices hasta medio marco fuera de la imagen, que
+            # es lo que puede tener una ANOTACION de un billete que cruza el
+            # borde. Una prediccion puede irse mucho mas lejos -- una red con
+            # el backbone recien cargado y la cabeza sin entrenar lo hace -- y
+            # antes eso reventaba la evaluacion entera con un QuadError. Se
+            # devuelve None y la prediccion sigue existiendo SIN geometria: la
+            # metrica la cuenta como falso positivo, que es lo que es. Los
+            # frameworks de referencia hacen lo equivalente: no descartan.
+            if not all(COORD_MIN <= v <= COORD_MAX for xy in points for v in xy):
+                quads.append(None)
+                continue
             quads.append(canonicalize(Quad.from_xy(points), aspect=aspect))
     return quads
 
@@ -229,6 +255,8 @@ def detections(
         return []
     selected = boxes[kept]
     quads = boxes_to_quads(selected, size)
+    # Un quad None (caja mas de medio marco fuera de la imagen) se emite igual:
+    # es un falso positivo que el modelo cometio y la metrica lo cuenta.
     return [
         Prediction(quad=quad, score=float(scores[index]), class_id=0)
         for quad, index in zip(quads, kept)

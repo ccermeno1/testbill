@@ -34,6 +34,23 @@ from testbank.dataio.view import PreparedSample, prepare
 from testbank.geometry.quad import Quad
 
 
+def image_to_input(image_bgr: np.ndarray) -> torch.Tensor:
+    """Imagen de OpenCV (BGR, uint8) -> tensor `(3, H, W)` de entrada a la red.
+
+    **BGR crudo en 0-255, sin normalizar.** Es la convencion de YOLOX (Megvii)
+    y de DDGRCF, y por tanto la que esperan los pesos preentrenados que se
+    cargan: el COCO de Megvii en la cabeza propia y el DOTA de DDGRCF en su
+    port. Antes se daba RGB en [0, 1] -- canales cambiados y escala 255 veces
+    menor -- y el preentreno llegaba destrozado a la primera capa: medido, el
+    port con DOTA daba mAP 0.000 y puntuaciones maximas de 0.004 tras una epoca.
+
+    Para entrenar de cero da igual (la BatchNorm absorbe la escala), asi que la
+    convencion se fija aqui, en un solo sitio, y la usan entrenamiento e
+    inferencia. Cambiarla en uno solo invalidaria todos los pesos guardados.
+    """
+    return torch.from_numpy(np.ascontiguousarray(image_bgr.transpose(2, 0, 1))).float()
+
+
 def quad_to_box(quad: Quad, width: int, height: int) -> tuple[float, ...]:
     """Quad normalizado -> `cx, cy, w, h, theta` en PIXELES.
 
@@ -85,12 +102,7 @@ class BanknoteDataset(Dataset):
         image = cv2.resize(
             image, (self.image_size, self.image_size), interpolation=cv2.INTER_LINEAR
         )
-        # BGR->RGB y a [0,1]. Sin normalizacion por media/desviacion: la
-        # BatchNorm del tronco ya la aprende, y una constante de ImageNet aqui
-        # seria un numero magico sin dueno.
-        tensor = torch.from_numpy(
-            np.ascontiguousarray(image[:, :, ::-1].transpose(2, 0, 1))
-        ).float().div_(255.0)
+        tensor = image_to_input(image)
 
         # Los quads son normalizados, asi que las cajas se calculan ya en la
         # escala de entrada: no hay que reescalarlas despues.
@@ -127,4 +139,4 @@ def build_datasets(
     }
 
 
-__all__ = ["BanknoteDataset", "Batch", "build_datasets", "collate", "quad_to_box"]
+__all__ = ["BanknoteDataset", "Batch", "build_datasets", "collate", "image_to_input", "quad_to_box"]

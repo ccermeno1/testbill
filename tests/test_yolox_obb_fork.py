@@ -29,6 +29,8 @@ from testbank.detectors.yolox_obb_fork import (
 
 SRC = Path(yolox_obb_fork.__file__).resolve().parents[1]
 ADAPTER = SRC / "detectors" / "yolox_obb_fork.py"
+#: El otro fork de YOLOX-OBB comparte nombre de paquete: tambien puede importarlo.
+ADAPTERS = {ADAPTER, SRC / "detectors" / "yolox_obb_ddgrcf.py"}
 NAME = "yolox-obb-fork-small"
 
 
@@ -80,7 +82,7 @@ def test_aislamiento_de_yolox():
     offenders = [
         path.relative_to(SRC).as_posix()
         for path in sorted(SRC.rglob("*.py"))
-        if path != ADAPTER and _imports_yolox(path)
+        if path not in ADAPTERS and _imports_yolox(path)
     ]
     assert offenders == [], (
         "estos modulos importan yolox fuera del adaptador: " + str(offenders)
