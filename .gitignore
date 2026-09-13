@@ -49,3 +49,9 @@ runs/_inspection/
 # Ultralytics deja esto donde le pillas.
 yolo*.pt
 runs/detect/
+
+# Clon del fork de YOLOX-OBB. No se vendoriza: se clona y se parchea con
+# tools/patch_yolox_obb_fork.py, que ademas deja copias .orig de lo que toca.
+/YOLOX-OBB/
+/fork/
+*.orig

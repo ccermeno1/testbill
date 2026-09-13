@@ -46,17 +46,27 @@ class LossTerms:
     classes: torch.Tensor
     total: torch.Tensor
     num_positives: int
+    #: Solo la receta de Ultralytics. Cero en las demas, para que el registro
+    #: de cada ejecucion tenga siempre las mismas columnas.
+    dfl: torch.Tensor | None = None
+    #: Solo la receta del fork, y solo en sus ultimas epocas.
+    l1: torch.Tensor | None = None
 
     def to_dict(self) -> dict:
         """Solo para registrar. `detach` a proposito: convertir a float un
         tensor todavia enganchado al grafo avisa, y arrastrar el grafo a un
         diccionario de informes es como se filtran las fugas de memoria."""
+        def value(t):
+            return 0.0 if t is None else t.detach().item()
+
         return {
-            "box": self.box.detach().item(),
-            "angle": self.angle.detach().item(),
-            "objectness": self.objectness.detach().item(),
-            "classes": self.classes.detach().item(),
-            "total": self.total.detach().item(),
+            "box": value(self.box),
+            "angle": value(self.angle),
+            "objectness": value(self.objectness),
+            "classes": value(self.classes),
+            "dfl": value(self.dfl),
+            "l1": value(self.l1),
+            "total": value(self.total),
             "num_positives": self.num_positives,
         }
 

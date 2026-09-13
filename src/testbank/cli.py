@@ -79,18 +79,49 @@ def cmd_detect(args, config: Config) -> int:
     return 0
 
 
+def _parse_ratios(text: str) -> tuple[float, float, float]:
+    try:
+        parts = tuple(float(x) for x in text.split(","))
+    except ValueError:
+        raise SystemExit(f"--ratios: {text!r} no son tres numeros") from None
+    if len(parts) != 3:
+        raise SystemExit(f"--ratios: hacen falta tres valores (train,valid,test), hay {len(parts)}")
+    if abs(sum(parts) - 1.0) > 1e-9:
+        raise SystemExit(f"--ratios: deben sumar 1, suman {sum(parts):g}")
+    if any(x < 0 for x in parts):
+        raise SystemExit("--ratios: ninguna proporcion puede ser negativa")
+    return parts
+
+
 def cmd_make_splits(args, config: Config) -> int:
+    ratios = _parse_ratios(args.ratios) if args.ratios else config.splits.ratios
     manifest = materialize_splits(
         args.data_root or config.data.root,
         args.splits_dir or config.data.splits_dir,
         groups=_group_config(args, config),
-        ratios=config.splits.ratios,
+        ratios=ratios,
         seed=args.seed if args.seed is not None else config.splits.seed,
         overwrite=args.overwrite,
+        repartition=args.repartition,
+        stratify_regex=args.stratify_regex,
     )
     print(f"Modo: {manifest['mode']}")
+    if manifest["mode"] == "repartition":
+        print("  (la particion del export se ha IGNORADO; esta es nuestra)")
+    if manifest.get("ratios"):
+        r = manifest["ratios"]
+        print(f"  ratios {r['train']:g}/{r['valid']:g}/{r['test']:g}   semilla {manifest['seed']}")
     for split, count in manifest["counts"].items():
         print(f"  {split:6s} {count:5d}")
+    if manifest.get("strata"):
+        # Una fila por estrato, para ver de un vistazo que ninguna particion se
+        # ha quedado sin un tipo de billete.
+        print("  por estrato:      train  valid   test")
+        for stratum, counts in sorted(manifest["strata"].items()):
+            print(
+                f"    {stratum:12s}  {counts['train']:5d}  {counts['valid']:5d}  "
+                f"{counts['test']:5d}"
+            )
     print(f"  digest {manifest['digest'][:16]}")
     for note in manifest["notes"]:
         print(f"  aviso: {note}")
@@ -218,6 +249,15 @@ def cmd_find_duplicates(args, config: Config) -> int:
 
 
 def cmd_export(args, config: Config) -> int:
+    if args.out_of_bounds is not None:
+        config = config.model_copy(
+            update={
+                "detector": config.detector.model_copy(
+                    # El enum, no la cadena: `model_copy(update=...)` NO valida.
+                    update={"out_of_bounds": OutOfBoundsPolicy(args.out_of_bounds)}
+                )
+            }
+        )
     loader = SplitLoader(args.splits_dir or config.data.splits_dir, args.data_root)
     splits = args.splits or ["train", "valid"]
     samples = {split: list(loader.load(split)) for split in splits}
@@ -232,11 +272,13 @@ def cmd_export(args, config: Config) -> int:
     print(f"Raiz:         {result.root}")
     print(f"Punto entrada: {result.entry_point}")
     print(f"  {result.report.describe()}")
-    if get_format(get_exporter(args.format).annotation_format).lossy:
-        print(
-            "  AVISO: este formato es LOSSY -- pierde la orientacion. Sirve "
-            "para diagnostico, no para entrenar un detector OBB."
-        )
+    # El motivo lo pone el formato, no esta funcion. Antes estaba aqui escrito
+    # a mano ("pierde la orientacion"), que vale para bbox_* y es FALSO para
+    # yolox_obb_voc: ese conserva el angulo y solo redondea. Un aviso que miente
+    # sobre lo que pierde es peor que no avisar.
+    annotation_format = get_format(get_exporter(args.format).annotation_format)
+    if annotation_format.lossy:
+        print(f"  AVISO: formato LOSSY -- {annotation_format.lossy_reason}.")
     return 0
 
 
@@ -297,6 +339,11 @@ def cmd_train(args, config: Config) -> int:
         updates["epochs"] = args.epochs
     if args.out_of_bounds is not None:
         updates["out_of_bounds"] = OutOfBoundsPolicy(args.out_of_bounds)
+    if args.loss_recipe is not None:
+        # Por el constructor, que valida; `model_copy(update=...)` no.
+        updates["loss"] = config.detector.loss.model_validate(
+            {**config.detector.loss.model_dump(), "recipe": args.loss_recipe}
+        )
     if updates:
         config = config.model_copy(
             update={"detector": config.detector.model_copy(update=updates)}
@@ -383,8 +430,41 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="afirma explicitamente que cada imagen es independiente",
     )
-    make.add_argument("--seed", type=int, default=None)
+    make.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="semilla del reparto; con la misma semilla y los mismos datos sale "
+        "la misma particion, y el manifiesto guarda un digest para comprobarlo",
+    )
     make.add_argument("--overwrite", action="store_true")
+    make.add_argument(
+        "--ratios",
+        default=None,
+        metavar="TRAIN,VALID,TEST",
+        help="proporciones del reparto, p. ej. 0.8,0.1,0.1; deben sumar 1. Solo "
+        "cuando repartimos nosotros (modo crear o --repartition). Por defecto, "
+        "las de la config: 0.70,0.15,0.15",
+    )
+    make.add_argument(
+        "--repartition",
+        action="store_true",
+        help=(
+            "ignora la particion del export y reparte de cero, por grupos. Es la "
+            "excepcion explicita a 'en modo adoptar manda el export': existe "
+            "porque la de Roboflow tiene el 20%% del test contaminado por "
+            "casi-duplicados. Queda escrito en el manifiesto"
+        ),
+    )
+    make.add_argument(
+        "--stratify-regex",
+        default=None,
+        help=(
+            "regex con UN grupo de captura sobre el nombre de la muestra; cada "
+            "particion recibe su proporcion de cada valor capturado. Para el "
+            r"export de Roboflow: '^(\d+|Multiple)_' (el tipo de billete)"
+        ),
+    )
 
     extend = subparsers.add_parser("extend-splits", help="anexa muestras nuevas")
     extend.add_argument("--seed", type=int, default=None)
@@ -442,6 +522,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="sustituye detector.epochs; queda registrado en la config resuelta",
     )
     train.add_argument(
+        "--loss-recipe",
+        choices=["own", "yolox_obb_fork", "ultralytics_obb"],
+        default=None,
+        help=(
+            "solo para la cabeza propia: que receta de perdida ENTERA entrena. "
+            "own = la propia; yolox_obb_fork = KLD x5 + obj + cls + L1 tardia con "
+            "SimOTA; ultralytics_obb = ProbIoU + DFL + cls suave con TAL, que "
+            "ademas cambia la cabeza (regresion DFL, angulo escalar, sin obj)"
+        ),
+    )
+    train.add_argument(
         "--weights",
         default=None,
         help="reutiliza estos pesos en vez de entrenar (para reevaluar)",
@@ -465,6 +556,15 @@ def build_parser() -> argparse.ArgumentParser:
     exporter.add_argument("format", choices=exporters())
     exporter.add_argument("--splits", nargs="+", default=None)
     exporter.add_argument("--out-dir", default=None)
+    # Sin esto, los formatos de rectangulo (voc_xml, yolox_obb_voc) eran
+    # inalcanzables desde la CLI: rechazan la politica `clip` por defecto y su
+    # mensaje de error recomendaba una opcion que solo existia en `train`.
+    exporter.add_argument(
+        "--out-of-bounds",
+        choices=[p.value for p in OutOfBoundsPolicy],
+        default=None,
+        help="igual que en `train`; los formatos de rectangulo exigen `keep`",
+    )
 
     evaluate = subparsers.add_parser(
         "evaluate-test",

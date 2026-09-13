@@ -78,6 +78,9 @@ class Record:
 class Converter(Protocol):
     name: ClassVar[str]
     lossy: ClassVar[bool]
+    #: Que se pierde, en una linea. Obligatorio: sin esto, un formato lossy
+    #: nuevo saldria avisando de lo que pierde OTRO.
+    lossy_reason: ClassVar[str]
     requires_image_size: ClassVar[bool]
 
     def to_quad(self, record: Record, *, size: ImageSize | None = None) -> Quad: ...
@@ -170,6 +173,8 @@ class ObbYolo:
 
     name = "obb_yolo"
     lossy = False
+    #: Que se pierde exactamente. Vacio si no se pierde nada.
+    lossy_reason = ''
     requires_image_size = False
 
     def to_quad(self, record: Record, *, size: ImageSize | None = None) -> Quad:
@@ -204,6 +209,8 @@ class Dota:
 
     name = "dota"
     lossy = False
+    #: Que se pierde exactamente. Vacio si no se pierde nada.
+    lossy_reason = ''
     requires_image_size = True
 
     def to_quad(self, record: Record, *, size: ImageSize | None = None) -> Quad:
@@ -248,6 +255,8 @@ class VocXml:
 
     name = "voc_xml"
     lossy = False
+    #: Que se pierde exactamente. Vacio si no se pierde nada.
+    lossy_reason = ''
     requires_image_size = True
 
     def to_quad(self, record: Record, *, size: ImageSize | None = None) -> Quad:
@@ -327,6 +336,8 @@ class BboxYolo:
 
     name = "bbox_yolo"
     lossy = True
+    #: Que se pierde exactamente. Vacio si no se pierde nada.
+    lossy_reason = 'solo guarda la envolvente alineada al eje: PIERDE LA ORIENTACION, asi que no sirve para entrenar un detector OBB'
     requires_image_size = False
 
     def to_quad(self, record: Record, *, size: ImageSize | None = None) -> Quad:
@@ -368,6 +379,8 @@ class BboxCoco:
 
     name = "bbox_coco"
     lossy = True
+    #: Que se pierde exactamente. Vacio si no se pierde nada.
+    lossy_reason = 'solo guarda la envolvente alineada al eje: PIERDE LA ORIENTACION, asi que no sirve para entrenar un detector OBB'
     requires_image_size = True
 
     def to_quad(self, record: Record, *, size: ImageSize | None = None) -> Quad:
@@ -443,3 +456,148 @@ def convert(
     return get(target).from_quad(
         quad, class_id=record.class_id, size=size, class_names=class_names
     )
+
+
+@register
+class YoloxObbVoc:
+    """El XML de `buzhidaoshenme/YOLOX-OBB`. Verificado contra SU generador.
+
+    No es `<robndbox>` ni una envolvente alineada, aunque lo parezca. Leido su
+    `custom tools/DOTA2VOC_obb.py`, los cuatro campos de VOC guardan el ancho y
+    el alto de la caja GIRADA colocados alrededor del centro:
+
+        xmin = cx - w/2      xmax = cx + w/2      -> w = xmax - xmin
+        ymin = cy - h/2      ymax = cy + h/2      -> h = ymax - ymin
+
+    O sea un `(cx, cy, w, h, angulo)` normal, escrito en los campos equivocados.
+    Y su generador garantiza `w >= h` intercambiando y restando 90 grados, asi
+    que `w` es siempre el lado LARGO -- el mismo invariante que nuestro orden
+    canonico, lo que hace la conversion directa.
+
+    El angulo va en GRADOS, no radianes.
+
+    La base de coordenadas: se sigue al LECTOR, no al generador
+    -------------------------------------------------------------
+    El fork se contradice consigo mismo por un pixel. Su lector aplica la base 1
+    de VOC:
+
+        cur_pt = int(bbox.find(pt).text) - 1     # dota_obb.py:60
+
+    pero su generador escribe en base 0, sin sumar nada (`int(c_x - w/2)`). O
+    sea que sus propias etiquetas llegan a la red desplazadas -1 px.
+
+    Aqui se escribe en **base 1** (`+ 1`) y se lee restando 1. Se elige al lector
+    porque es el que fabrica los objetivos de entrenamiento: reproducir el fallo
+    del generador desplazaria cada caja un pixel sin ganar nada. La consecuencia
+    es que leer ficheros generados por SU herramienta da un desfase de 1 px, que
+    es el desfase que el fork ya tiene por dentro.
+
+    Ojo tambien: su lector usa `int(texto)`, no `float(texto)`, asi que las
+    cuatro coordenadas TIENEN que ser literales enteros. Un `123.5` seria un
+    ValueError al cargar. Y lee `<difficult>` sin comprobar que exista, asi que
+    omitirlo da un AttributeError: por eso se escribe siempre.
+
+    LOSSY, y por dos motivos distintos de la orientacion:
+
+    1. Su generador trunca a entero (`int(c_x - w/2)`), asi que se pierde la
+       precision subpixel. Aqui se escribe redondeado para no acumular sesgo
+       hacia abajo, que es lo que hace `int()` con valores positivos.
+    2. Recorta al marco de la imagen, asi que un billete que cruza el borde
+       pierde la parte de fuera -- igual que la politica `clip`.
+    """
+
+    name = "yolox_obb_voc"
+    lossy = True
+    #: Que se pierde exactamente. Vacio si no se pierde nada.
+    lossy_reason = 'conserva la orientacion; lo que pierde es precision subpixel al redondear a entero (IoU 0.9965 de mediana sobre las 762 reales)'
+    requires_image_size = True
+
+    def to_quad(self, record: Record, *, size: ImageSize | None = None) -> Quad:
+        size = _require_size(self, size)
+        element = record.payload
+        box = element.find("bndbox")
+        if box is None:
+            raise FormatError("el <object> no tiene <bndbox>")
+
+        def field(tag: str) -> float:
+            node = box.find(tag)
+            if node is None or node.text is None:
+                raise FormatError(f"falta <{tag}> en <bndbox>")
+            return float(node.text)
+
+        # A base 0, que es como lo lee SU dataloader (`- 1` en dota_obb.py:60).
+        xmin, ymin = field("xmin") - 1, field("ymin") - 1
+        xmax, ymax = field("xmax") - 1, field("ymax") - 1
+        cx, cy = (xmin + xmax) / 2, (ymin + ymax) / 2
+        half_w, half_h = (xmax - xmin) / 2, (ymax - ymin) / 2
+        theta = math.radians(field("angle"))
+
+        cos_a, sin_a = math.cos(theta), math.sin(theta)
+        local = [
+            (-half_w, -half_h),
+            (+half_w, -half_h),
+            (+half_w, +half_h),
+            (-half_w, +half_h),
+        ]
+        points = [
+            (cx + lx * cos_a - ly * sin_a, cy + lx * sin_a + ly * cos_a)
+            for lx, ly in local
+        ]
+        return canonicalize(
+            Quad.from_xy(_to_normalized(points, size)), aspect=size.aspect
+        )
+
+    def from_quad(
+        self,
+        quad: Quad,
+        *,
+        class_id: int = 0,
+        size: ImageSize | None = None,
+        class_names: tuple[str, ...] = DEFAULT_CLASS_NAMES,
+    ) -> Record:
+        size = _require_size(self, size)
+        points = _to_pixels(quad, size)
+        cx = sum(p[0] for p in points) / 4.0
+        cy = sum(p[1] for p in points) / 4.0
+        # NO se asume que `p0->p1` sea el lado largo. El orden canonico lo ancla
+        # ahi *en el espacio normalizado y con el aspecto aplicado*, y en cajas
+        # casi cuadradas eso no coincide con el lado largo en pixeles: medido,
+        # una anotacion del export tiene ratio 0.951 por p0->p1.
+        #
+        # La caja saldria geometricamente correcta igualmente -- `(w, h, angulo)`
+        # con w < h describe el mismo rectangulo -- pero romperia el INVARIANTE
+        # del fork, cuyo generador garantiza w >= h con este mismo intercambio
+        # (`if w_o <= h_o`). Un consumidor que se fie de el leeria mal la caja.
+        side_a = math.dist(points[0], points[1])
+        side_b = math.dist(points[1], points[2])
+        if side_a >= side_b:
+            long_side, short_side = side_a, side_b
+            start, end = points[0], points[1]
+        else:
+            long_side, short_side = side_b, side_a
+            start, end = points[1], points[2]
+        degrees = math.degrees(math.atan2(end[1] - start[1], end[0] - start[0]))
+        # Su convenio deja el angulo en (-90, 90]: el mismo rectangulo con el
+        # lado largo apuntando al otro sentido, que es el mismo rectangulo.
+        degrees = (degrees + 90.0) % 180.0 - 90.0
+        if degrees <= -90.0:
+            degrees += 180.0
+
+        element = ET.Element("object")
+        ET.SubElement(element, "name").text = _class_name(class_id, class_names)
+        ET.SubElement(element, "difficult").text = "0"
+        box = ET.SubElement(element, "bndbox")
+        for tag, value in (
+            ("xmin", cx - long_side / 2),
+            ("ymin", cy - short_side / 2),
+            ("xmax", cx + long_side / 2),
+            ("ymax", cy + short_side / 2),
+        ):
+            # Redondeo, no truncado. Su generador usa `int()`, que con valores
+            # positivos sesga siempre hacia abajo y desplaza la caja medio pixel.
+            #
+            # El `+ 1` es la base 1 de VOC, y NO es un adorno: su dataloader
+            # hace `int(texto) - 1`. Ver la nota de la clase.
+            ET.SubElement(box, tag).text = str(round(value) + 1)
+        ET.SubElement(box, "angle").text = f"{degrees:.6f}"
+        return Record(class_id=class_id, payload=element)

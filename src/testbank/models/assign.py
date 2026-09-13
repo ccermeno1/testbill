@@ -29,6 +29,7 @@ como tal. Dos cosas lo hacen aceptable:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import torch
@@ -155,10 +156,23 @@ class Assignment:
     matched: torch.Tensor
     #: (N,) -- IoU de la pareja, para ponderar la perdida de objectness.
     matched_iou: torch.Tensor
+    #: (N, C) -- solo TAL: objetivo SUAVE de clasificacion por celda, con la
+    #: metrica de alineacion normalizada. Con SimOTA es None y el objetivo es
+    #: duro (one-hot, o one-hot por IoU en la receta del fork).
+    target_scores: torch.Tensor | None = None
 
     @property
     def num_positives(self) -> int:
         return int(self.positive.sum())
+
+
+#: (N, 5) x (M, 5) -> (N, M) de "parecido" en [0, 1]: 1 es la misma caja.
+OverlapFn = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+
+
+def enclosing_iou(predicted: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """El solape por defecto: IoU de las envolventes alineadas."""
+    return pairwise_iou(enclosing_boxes(predicted), enclosing_boxes(target))
 
 
 def simota_assign(
@@ -168,11 +182,26 @@ def simota_assign(
     grid: AnchorGrid,
     *,
     iou_weight: float = 3.0,
+    overlap: OverlapFn = enclosing_iou,
+    overlap_cost: str = "neg_log",
 ) -> Assignment:
     """Asigna celdas a billetes. Todo en pixeles.
 
     `predicted_boxes` y `target_boxes` son (·, 5) con `cx, cy, w, h, theta`.
     `predicted_scores` es (N,) con la confianza ya en probabilidad.
+
+    `overlap` y `overlap_cost` existen para reproducir la receta del fork de
+    YOLOX-OBB SIN tocar la propia:
+
+        propia   overlap = IoU de envolventes,   coste = -log(overlap)     (YOLOX)
+        fork     overlap = 1 - kld_loss,         coste = 1 - overlap       (= kld_loss)
+
+    El `dynamic k` usa `overlap` en los dos casos, que es lo que hace el fork
+    (`pair_wise_iou_approximate = 1 - kld_loss`).
+
+    El coste de clase es `-log(score)`. En el fork es una BCE contra el one-hot
+    de la clase; con UNA clase, `BCE(p, 1) = -log(p)` y es lo mismo. Con mas
+    clases dejaria de serlo, y este proyecto tiene una.
     """
     n_points = len(grid)
     device = grid.centers.device
@@ -193,13 +222,19 @@ def simota_assign(
     if not candidate.any():
         return empty
 
-    iou = pairwise_iou(enclosing_boxes(predicted_boxes), enclosing_boxes(target_boxes))
-    # Coste: penaliza poca confianza y poco solape. El log del IoU castiga con
-    # dureza creciente el solape malo, que es lo que se quiere -- entre 0.8 y
-    # 0.9 la diferencia importa poco; entre 0.1 y 0.2, mucho.
+    iou = overlap(predicted_boxes, target_boxes)
+    if overlap_cost == "neg_log":
+        # El log del IoU castiga con dureza creciente el solape malo, que es lo
+        # que se quiere -- entre 0.8 y 0.9 la diferencia importa poco; entre
+        # 0.1 y 0.2, mucho.
+        pair_cost = -torch.log(iou.clamp(min=1e-8))
+    elif overlap_cost == "one_minus":
+        pair_cost = 1.0 - iou
+    else:
+        raise ValueError(f"overlap_cost desconocido: {overlap_cost!r}")
     cost = (
         -torch.log(predicted_scores[:, None].clamp(min=1e-8))
-        + iou_weight * -torch.log(iou.clamp(min=1e-8))
+        + iou_weight * pair_cost
         + (~candidate) * BLOCKED_COST
     )
 
@@ -247,16 +282,114 @@ def _dynamic_k_matching(
     return matching
 
 
+def tal_assign(
+    predicted_boxes: torch.Tensor,
+    predicted_class_scores: torch.Tensor,
+    target_boxes: torch.Tensor,
+    target_classes: torch.Tensor,
+    grid: AnchorGrid,
+    *,
+    overlap: OverlapFn,
+    topk: int = 10,
+    alpha: float = 0.5,
+    beta: float = 6.0,
+) -> Assignment:
+    """Task-Aligned Assigner (Feng et al., "TOOD", ICCV 2021). Todo en pixeles.
+
+    Es el asignador de la receta de Ultralytics, implementado desde el paper:
+    su codigo es AGPL y no se ha leido. Los valores por defecto (`topk=10`,
+    `alpha=0.5`, `beta=6.0`) son los que Ultralytics DOCUMENTA para su
+    `TaskAlignedAssigner`; no salen del paper, que usa alpha=1.
+
+    Como decide:
+
+    1. **Metrica de alineacion** por par celda-billete:
+       `t = score^alpha * overlap^beta`, con `score` la probabilidad de la clase
+       correcta y `overlap` el ProbIoU. Premia a la vez clasificar bien y
+       localizar bien, que es la idea de TOOD: que las celdas positivas sean
+       las buenas en las DOS tareas y no en una.
+    2. **Candidatas**: solo celdas cuyo centro cae dentro del rectangulo girado.
+    3. **Top-k** por billete, por metrica.
+    4. **Conflictos**: una celda pedida por dos billetes se queda con el de mas
+       solape.
+    5. **Objetivo suave**: `t` normalizada por billete a `[0, max overlap]` y
+       repartida por clase. Es lo que hace que la BCE de clase y el peso de la
+       perdida de caja lleven la calidad de la localizacion dentro.
+
+    `predicted_class_scores` es (N, C) en probabilidad.
+    """
+    n_points = len(grid)
+    n_classes = predicted_class_scores.shape[-1]
+    device = grid.centers.device
+    empty = Assignment(
+        positive=torch.zeros(n_points, dtype=torch.bool, device=device),
+        matched=torch.zeros(n_points, dtype=torch.long, device=device),
+        matched_iou=torch.zeros(n_points, device=device),
+        target_scores=torch.zeros(n_points, n_classes, device=device),
+    )
+    if target_boxes.numel() == 0:
+        return empty
+
+    overlaps = overlap(predicted_boxes, target_boxes).clamp(min=0.0)  # (N, M)
+    score_of_class = predicted_class_scores[:, target_classes]  # (N, M)
+    metric = score_of_class.clamp(min=0.0) ** alpha * overlaps**beta
+
+    inside = points_in_rotated_boxes(grid.centers, target_boxes)  # (N, M)
+    if not inside.any():
+        return empty
+
+    k = min(topk, n_points)
+    masked = torch.where(inside, metric, torch.zeros_like(metric))
+    top_values, top_indices = torch.topk(masked, k, dim=0)  # (k, M)
+    matching = torch.zeros_like(inside)
+    # Solo cuentan las top-k con metrica > 0: un billete con menos de k
+    # candidatas no debe llevarse celdas de fuera de su caja rellenando.
+    valid = top_values > 0
+    for column in range(matching.shape[1]):
+        matching[top_indices[valid[:, column], column], column] = True
+
+    conflicts = matching.sum(dim=1) > 1
+    if conflicts.any():
+        best = overlaps[conflicts].argmax(dim=1)
+        matching[conflicts] = False
+        matching[conflicts, best] = True
+
+    positive = matching.any(dim=1)
+    matched = matching.float().argmax(dim=1)
+    if not positive.any():
+        return empty
+
+    # Normalizacion por billete: la celda mejor alineada de cada uno recibe
+    # exactamente su mejor solape como objetivo, y el resto en proporcion.
+    aligned = metric * matching
+    max_metric = aligned.max(dim=0, keepdim=True).values
+    max_overlap = (overlaps * matching).max(dim=0, keepdim=True).values
+    normalized = aligned * max_overlap / max_metric.clamp(min=1e-9)  # (N, M)
+    per_cell = normalized.gather(1, matched[:, None]).squeeze(1) * positive
+    target_scores = torch.zeros(n_points, n_classes, device=device)
+    target_scores[positive, target_classes[matched[positive]]] = per_cell[positive]
+
+    return Assignment(
+        positive=positive,
+        matched=matched,
+        matched_iou=overlaps.gather(1, matched[:, None]).squeeze(1) * positive,
+        target_scores=target_scores,
+    )
+
+
 __all__ = [
     "BLOCKED_COST",
     "CENTER_RADIUS",
     "TOP_CANDIDATES",
     "AnchorGrid",
     "Assignment",
+    "OverlapFn",
     "build_anchor_grid",
     "enclosing_boxes",
+    "enclosing_iou",
     "pairwise_iou",
     "points_in_rotated_boxes",
     "points_near_centers",
     "simota_assign",
+    "tal_assign",
 ]

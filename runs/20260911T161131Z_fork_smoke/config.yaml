@@ -1,0 +1,58 @@
+data:
+  root: data\raw
+  splits_dir: splits
+  derived_dir: data\derived
+splits:
+  train: 0.7
+  valid: 0.15
+  test: 0.15
+  seed: 20260910
+  group_key: none
+  group_regex: null
+  group_manifest: null
+  i_confirm_independence: false
+  folds: 5
+annotation_policy:
+  visibility_threshold: 0.25
+  min_relative_area: 0.25
+crop:
+  margin: 0.05
+  margin_sweep:
+  - 0.0
+  - 0.05
+  - 0.1
+detector:
+  variant: nano
+  epochs: 1
+  image_size: 640
+  batch_size: 8
+  confidence_threshold: 0.01
+  nms_iou: 0.5
+  loss:
+    angle_weight:
+      enabled: true
+      ratio_threshold: 1.1
+      min_weight: 0.0
+      decay: smoothstep
+  out_of_bounds: clip
+  pad_fraction: 0.25
+  pad_at_inference: false
+metrics:
+  match_iou: 0.5
+  coverage_target: 0.98
+  coverage_percentile: 5.0
+  contamination:
+    single_max: 0.01
+    fan_max: 0.92
+    percentile: 95.0
+  report_confidence: 0.25
+  bootstrap_samples: 2000
+  bootstrap_unit: image
+  seed: 20260910
+viz:
+  sample_count: 12
+  confidence_threshold: 0.25
+  seed: 20260910
+  output_dir: runs\_inspection
+  dpi: 110
+runs_dir: runs

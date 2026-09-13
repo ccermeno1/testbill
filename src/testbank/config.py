@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -234,10 +235,60 @@ class AngleWeightConfig(StrictModel):
         return value
 
 
-class LossConfig(StrictModel):
-    """Pesos de las pérdidas del candidato propio. Se registran con la ejecucion."""
+class ForkRecipeConfig(StrictModel):
+    """La receta de `buzhidaoshenme/YOLOX-OBB`, con SUS valores por defecto.
 
+    Se copian de su `yolo_head_obb_kld.py` (Apache-2.0): `reg_weight = 5.0`,
+    `taf = 1.0`, y el L1 que se enciende en las ultimas `no_aug_epochs = 15`.
+    Cambiarlos aqui es legitimo -- son config -- pero entonces ya no es "la
+    receta del fork" y la tabla lo tiene que decir.
+    """
+
+    box_gain: float = Field(default=5.0, ge=0.0)
+    tau: float = Field(default=1.0, gt=0.0)
+    #: El fork enciende una L1 sobre la regresion cruda en las ultimas epocas
+    #: (las que van sin mosaico). Aqui: las ultimas `l1_last_epochs`.
+    l1_last_epochs: int = Field(default=15, ge=0)
+
+
+class UltralyticsRecipeConfig(StrictModel):
+    """La receta de Ultralytics YOLO-OBB, con los valores que DOCUMENTA.
+
+    Ganancias `box=7.5, cls=0.5, dfl=1.5`, `reg_max=16`, y el asignador TAL con
+    `topk=10, alpha=0.5, beta=6.0`. Salen de su documentacion publica, no de su
+    codigo, que es AGPL y no se ha leido. Las perdidas en si se implementan
+    desde los papers: ProbIoU (Llerena 2021) y DFL (Li 2020); TAL desde TOOD
+    (Feng 2021).
+    """
+
+    box_gain: float = Field(default=7.5, ge=0.0)
+    cls_gain: float = Field(default=0.5, ge=0.0)
+    dfl_gain: float = Field(default=1.5, ge=0.0)
+    reg_max: int = Field(default=16, ge=2)
+    tal_topk: int = Field(default=10, ge=1)
+    tal_alpha: float = Field(default=0.5, ge=0.0)
+    tal_beta: float = Field(default=6.0, ge=0.0)
+
+
+class LossConfig(StrictModel):
+    """Que receta de perdida entrena la cabeza propia. Se registra con la ejecucion.
+
+    Tres recetas, cada una ENTERA y sin mezclar con las otras:
+
+        own              la propia: IoU alineada + angulo atenuado + BCE, SimOTA
+        yolox_obb_fork   KLD x5 + obj + cls por IoU + L1 tardia, SimOTA con KLD
+        ultralytics_obb  ProbIoU x7.5 + DFL x1.5 + cls x0.5 suave, TAL, sin obj
+
+    La receta fija tambien la CABEZA (`models/yolox_obb.HeadSpec`): Ultralytics
+    exige regresion distribucional y angulo escalar, y no lleva objectness.
+    Comparar las tres es comparar recetas completas sobre el mismo backbone, que
+    es lo que no se podia hacer con el fork ni con Ultralytics de fuera.
+    """
+
+    recipe: Literal["own", "yolox_obb_fork", "ultralytics_obb"] = "own"
     angle_weight: AngleWeightConfig = AngleWeightConfig()
+    fork: ForkRecipeConfig = ForkRecipeConfig()
+    ultralytics: UltralyticsRecipeConfig = UltralyticsRecipeConfig()
 
 
 class DetectorConfig(StrictModel):

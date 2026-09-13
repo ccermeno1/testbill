@@ -174,11 +174,24 @@ def materialize_splits(
     ratios: tuple[float, float, float] = (0.7, 0.15, 0.15),
     seed: int = 20260910,
     overwrite: bool = False,
+    repartition: bool = False,
+    stratify_regex: str | None = None,
 ) -> dict:
     """Materializa la particion en modo adoptar o crear, segun lo que haya en disco.
 
     Modo adoptar: la particion del export ES la particion. No se recalcula ni se
     "mejora"; solo se congela en ficheros.
+
+    `repartition` es la excepcion explicita a eso, y por eso es un flag y no un
+    comportamiento: ignora la particion del export, junta todas las muestras y
+    reparte como en modo crear. Existe porque la particion de Roboflow tiene 42
+    pares de casi-duplicados cruzando particiones (27 medidos en color) y un
+    quinto del test contaminado.
+    El manifiesto lo deja escrito como `mode: repartition`, con el modo del export
+    al lado, para que nadie confunda esta particion con la original.
+
+    `stratify_regex` reparte por estratos (tipo de billete, sacado del nombre):
+    cada particion recibe su proporcion de cada tipo. Ver `Stratifier`.
     """
     data_root = Path(data_root)
     splits_dir = Path(splits_dir)
@@ -194,21 +207,33 @@ def materialize_splits(
         )
 
     layout = detect_layout(data_root)
+    we_decide = layout.mode is LayoutMode.CREATE or repartition
+    if stratify_regex and not we_decide:
+        raise SplitError(
+            "--stratify-regex solo tiene sentido si somos nosotros quienes "
+            "repartimos. En modo adoptar la particion la decide el export; anade "
+            "--repartition si de verdad quieres rehacerla"
+        )
+    stratifier = Stratifier(stratify_regex) if stratify_regex else None
     # La confirmacion de independencia solo se exige si somos nosotros quienes
     # decidimos el reparto.
-    resolver = group_config.resolver(
-        require_independence_confirmation=layout.mode is LayoutMode.CREATE
-    )
+    resolver = group_config.resolver(require_independence_confirmation=we_decide)
 
-    if layout.mode is LayoutMode.ADOPT:
+    split_notes: list[str] = []
+    if we_decide:
+        assignment = _random_assignment(
+            layout.all_samples,
+            resolver,
+            ratios=ratios,
+            seed=seed,
+            stratifier=stratifier,
+            warnings_out=split_notes,
+        )
+    else:
         assignment = {
             name: sorted(s.sample_id for s in layout.groups.get(name, ()))
             for name in SPLIT_NAMES
         }
-    else:
-        assignment = _random_assignment(
-            layout.all_samples, resolver, ratios=ratios, seed=seed
-        )
 
     _check_disjoint(assignment)
     _check_groups_disjoint(assignment, layout, resolver)
@@ -216,12 +241,28 @@ def materialize_splits(
     for name in SPLIT_NAMES:
         _write_split_file(splits_dir / f"{name}.txt", assignment[name])
 
+    strata_counts = None
+    if stratifier is not None:
+        by_id = {smp.sample_id: smp for smp in layout.all_samples}
+        strata_counts = {}
+        for name in SPLIT_NAMES:
+            for sid in assignment[name]:
+                stratum = stratifier.key(by_id[sid])
+                strata_counts.setdefault(stratum, {n: 0 for n in SPLIT_NAMES})
+                strata_counts[stratum][name] += 1
+
+    repartitioned = repartition and layout.mode is LayoutMode.ADOPT
     manifest = {
         "created_utc": _now(),
-        "mode": layout.mode.value,
+        # `repartition` es un modo propio en el manifiesto: quien lo lea tiene que
+        # ver de un vistazo que ESTA particion no es la del export.
+        "mode": "repartition" if repartitioned else layout.mode.value,
+        "export_mode": layout.mode.value,
         "data_root": str(data_root.resolve()),
         "seed": seed,
-        "ratios": dict(zip(SPLIT_NAMES, ratios)) if layout.mode is LayoutMode.CREATE else None,
+        "ratios": dict(zip(SPLIT_NAMES, ratios)) if we_decide else None,
+        "stratify_regex": stratify_regex,
+        "strata": strata_counts,
         "group_strategy": group_config.strategy.value,
         "group_regex": group_config.regex,
         "group_manifest": str(group_config.manifest_path)
@@ -230,7 +271,7 @@ def materialize_splits(
         "independence_confirmed": group_config.independence_confirmed,
         "counts": {name: len(assignment[name]) for name in SPLIT_NAMES},
         "digest": _digest(assignment),
-        "notes": list(layout.notes),
+        "notes": list(layout.notes) + split_notes,
         "history": [{"action": "materialize", "utc": _now()}],
     }
     (splits_dir / MANIFEST_NAME).write_text(
@@ -239,39 +280,115 @@ def materialize_splits(
     return manifest
 
 
+class Stratifier:
+    """Estrato de cada muestra: un grupo de captura de una regex sobre su id.
+
+    En este dataset la denominacion solo existe en el nombre del fichero
+    (`005_Euro_004_...`, `Multiple_Euro_154_...`): la anotacion tiene una sola
+    clase. Asi que estratificar por tipo de billete es, literalmente, una regex
+    sobre el nombre. Se hace explicito en vez de cablear la de Roboflow para que
+    un export con otra convencion no estratifique en silencio por algo que no es.
+    """
+
+    def __init__(self, regex: str) -> None:
+        self.regex = regex
+        self._pattern = re.compile(regex)
+        if self._pattern.groups != 1:
+            raise SplitError(
+                "--stratify-regex necesita exactamente un grupo de captura, que "
+                f"es el estrato; {regex!r} tiene {self._pattern.groups}"
+            )
+
+    def key(self, sample: Sample) -> str:
+        match = self._pattern.search(sample.sample_id)
+        if match is None:
+            raise SplitError(
+                f"{sample.sample_id}: no encaja con --stratify-regex {self.regex!r}. "
+                "Una muestra sin estrato no se puede repartir de forma "
+                "representativa, y saltarsela en silencio dejaria la particion "
+                "coja sin que nadie lo supiera"
+            )
+        return match.group(1)
+
+
+def _split_keys(keys: list[str], ratios, rng) -> dict[str, list[str]]:
+    """Reparte una lista de claves en train/valid/test, barajando con `rng`."""
+    keys = sorted(keys)
+    rng.shuffle(keys)
+    total = len(keys)
+    n_train = min(round(total * ratios[0]), total)
+    n_valid = min(round(total * ratios[1]), total - n_train)
+    return {
+        "train": keys[:n_train],
+        "valid": keys[n_train : n_train + n_valid],
+        "test": keys[n_train + n_valid :],
+    }
+
+
 def _random_assignment(
     samples: tuple[Sample, ...],
     resolver: GroupResolver,
     *,
     ratios: tuple[float, float, float],
     seed: int,
+    stratifier: Stratifier | None = None,
+    warnings_out: list[str] | None = None,
 ) -> dict[str, list[str]]:
-    """Reparto aleatorio por grupo, con semilla fijada.
+    """Reparto aleatorio por grupo, con semilla fijada y estratos opcionales.
 
-    Se reparten grupos, no ficheros: con `none` cada fichero es su propio grupo y
-    el resultado es el split aleatorio por fichero.
+    Se reparten GRUPOS, no ficheros: con `none` cada fichero es su propio grupo y
+    el resultado es el split aleatorio por fichero. Con un manifiesto de
+    casi-duplicados, las dos tomas de la misma foto caen juntas.
+
+    Con estratos, el reparto se hace DENTRO de cada estrato y luego se junta:
+    cada particion recibe su parte de cada tipo de billete. El estrato de un
+    grupo es el de su primer miembro (en orden de id).
+
+    Si un grupo cruza estratos -- dos fotos "casi identicas" de billetes de
+    distinto valor -- se AVISA y se reparte igualmente, no se para. La primera
+    version paraba, y gracias a eso salio a la luz que el detector de duplicados
+    en gris confundia encuadre con contenido (ver `duplicates.py`). Arreglado
+    eso, los cruces que quedan son uno o dos, y para repartir un grupo de mas es
+    barato: dos fotos van juntas sin necesidad, y ya. Bloquear la particion
+    entera por eso seria peor que el problema. Los avisos van al manifiesto.
     """
     if abs(sum(ratios) - 1.0) > 1e-9:
         raise SplitError(f"los porcentajes deben sumar 1, suman {sum(ratios)}")
+    warnings_out = warnings_out if warnings_out is not None else []
 
     by_group: dict[str, list[str]] = {}
-    for sample in samples:
-        by_group.setdefault(resolver.key(sample), []).append(sample.sample_id)
+    stratum_of_group: dict[str, str] = {}
+    crossing: dict[str, set[str]] = {}
+    for sample in sorted(samples, key=lambda s: s.sample_id):
+        key = resolver.key(sample)
+        by_group.setdefault(key, []).append(sample.sample_id)
+        if stratifier is not None:
+            stratum = stratifier.key(sample)
+            previous = stratum_of_group.setdefault(key, stratum)
+            if previous != stratum:
+                crossing.setdefault(key, {previous}).add(stratum)
+    if crossing:
+        warnings_out.extend(
+            f"el grupo {key!r} cruza estratos {sorted(strata)}: dos fotos "
+            "consideradas la misma toma con distinto tipo de billete. Se reparte "
+            f"como {stratum_of_group[key]!r}; conviene mirarlo"
+            for key, strata in sorted(crossing.items())
+        )
 
-    keys = sorted(by_group)
     rng = random.Random(seed)
-    rng.shuffle(keys)
+    if stratifier is None:
+        chunks = _split_keys(list(by_group), ratios, rng)
+    else:
+        chunks = {name: [] for name in SPLIT_NAMES}
+        by_stratum: dict[str, list[str]] = {}
+        for key, stratum in stratum_of_group.items():
+            by_stratum.setdefault(stratum, []).append(key)
+        # Estratos en orden fijo: la semilla solo es reproducible si el orden en
+        # que se consume el generador tambien lo es.
+        for stratum in sorted(by_stratum):
+            for name, keys in _split_keys(by_stratum[stratum], ratios, rng).items():
+                chunks[name].extend(keys)
 
-    total = len(keys)
-    n_train = round(total * ratios[0])
-    n_valid = round(total * ratios[1])
-    n_train = min(n_train, total)
-    n_valid = min(n_valid, total - n_train)
-    chunks = {
-        "train": keys[:n_train],
-        "valid": keys[n_train : n_train + n_valid],
-        "test": keys[n_train + n_valid :],
-    }
     return {
         name: sorted(sid for key in chunk for sid in by_group[key])
         for name, chunk in chunks.items()
@@ -321,6 +438,9 @@ def _check_groups_disjoint(
         raise SplitError(
             "un grupo no puede repartirse entre particiones:\n  "
             + "\n  ".join(sorted(set(clashes))[:20])
+            + "\n  En modo adoptar esto significa que el EXPORT ya venia con la "
+            "fuga. No se arregla en silencio: --repartition rehace la particion "
+            "por grupos y lo deja escrito en el manifiesto"
         )
 
 

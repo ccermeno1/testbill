@@ -95,11 +95,12 @@ class YoloxObbDetector(BaseDetector):
             epochs=config.detector.epochs,
             notes=(
                 f"{len(datasets['train'])} imagenes de entrenamiento",
+                f"receta de perdida: {config.detector.loss.recipe}",
                 "perdidas finales: "
                 + ", ".join(
                     f"{k}={v:.4f}"
                     for k, v in last.items()
-                    if k in ("box", "angle", "objectness", "classes", "total")
+                    if k in ("box", "angle", "objectness", "classes", "dfl", "l1", "total")
                 ),
             ),
         )

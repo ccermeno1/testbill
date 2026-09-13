@@ -257,9 +257,12 @@ def test_las_perdidas_se_reportan_por_separado():
         angle_config=AngleWeightConfig(),
     )
     keys = terms.to_dict()
+    # `dfl` y `l1` son de otras recetas y aqui valen 0: se reportan siempre
+    # para que el registro de toda ejecucion tenga las mismas columnas.
     assert set(keys) == {
-        "box", "angle", "objectness", "classes", "total", "num_positives"
+        "box", "angle", "objectness", "classes", "dfl", "l1", "total", "num_positives"
     }
+    assert keys["dfl"] == 0.0 and keys["l1"] == 0.0
     assert keys["num_positives"] > 0
 
 

@@ -2,21 +2,22 @@
 
 El problema, medido sobre el export actual
 ------------------------------------------
-42 pares de imagenes casi identicas cruzan particiones -- el 14.7% del dataset --
-con correlaciones de hasta 0.999 e indices consecutivos: `Multiple_Euro_090` en
-test y `_091` en train. Son la misma toma repartida entre particiones, asi que
-validacion y test salen optimistas.
+27 pares de imagenes casi identicas cruzan particiones (medido en color; ver
+abajo por que no en gris), con indices consecutivos: `Multiple_Euro_090` en test
+y `_091` en train. Son la misma toma repartida entre particiones, asi que
+validacion y test salen optimistas: 10 de las 50 imagenes de test tienen su
+gemela en train o valid.
 
-Por que esto NO re-particiona
------------------------------
+Por que esto NO re-particiona por su cuenta
+-------------------------------------------
 La especificacion es explicita: en modo adoptar, la particion la decide el export
 y **no se recalcula ni se "mejora"**. Asi que esto no toca `splits/{train,valid,
 test}.txt`. Hace dos cosas:
 
 1. **Informa** de la fuga que ya existe, para que los numeros se lean sabiendola.
-2. **Escribe un manifiesto de grupos** que si sirve para lo que SI generamos
-   nosotros: los pliegues de validacion cruzada. Un pliegue con la misma toma a
-   los dos lados no mide generalizacion, y ese si esta en nuestra mano.
+2. **Escribe un manifiesto de grupos** para quien SI reparte: los pliegues de
+   validacion cruzada, y `make-splits --repartition`, que es la excepcion
+   explicita y opt-in a la regla de arriba (ver `splits.py`).
 
 Por que un manifiesto y no una estrategia nueva
 -----------------------------------------------
@@ -28,10 +29,30 @@ resultado y permite revisarlo a mano antes de fiarse.
 
 Como se comparan
 ----------------
-Gris, 16x16, media cero y norma uno; correlacion por producto escalar. No se usa
+COLOR, 16x16, media cero y norma uno; correlacion por producto escalar. No se usa
 una libreria de hashes perceptuales para no anadir dependencia por algo que son
 cuatro lineas de numpy, y porque una correlacion se razona mejor que un hash: el
 umbral se puede subir o bajar mirando los pares que caen cerca.
+
+Por que en color y no en gris, que fue lo primero
+-------------------------------------------------
+En gris, 18 de los 93 pares "casi identicos" eran billetes de DISTINTO valor: un
+50 con un 500, un 20 con un 200. Vistos, son fotos de stock con el mismo
+encuadre -- fondo blanco y la banda del banco de imagenes en el mismo sitio -- y
+una miniatura de 16x16 en gris ve "blanco con una barra oscura" en las dos. La
+resolucion no lo arregla (16, 32 y 64 dan lo mismo); el color si, porque un 50
+es naranja y un 500 morado:
+
+    par                          gris    color
+    100_035 ~ 100_037 (real)     0.988   0.979
+    050_232 ~ 500_437 (falso)    0.948   0.519
+    020_284 ~ 200_096 (falso)    0.896   0.455
+
+Salio a la luz al estratificar la particion por tipo de billete: un grupo de
+"duplicados" que cruza tipos es imposible por definicion, y el reparto se nego.
+Consecuencia: la cifra de contaminacion que este proyecto dio durante un tiempo
+(42 pares, 36% del test) estaba INFLADA por esos falsos: en color son 27
+pares y el 20% del test.
 
 La agrupacion es por componentes conexas (union-find), no por pares: si A se
 parece a B y B a C, los tres van al mismo grupo aunque A y C no se parezcan.
@@ -48,9 +69,13 @@ import numpy as np
 from PIL import Image
 
 #: Correlacion por encima de la cual dos imagenes se consideran la misma toma.
-#: 0.92 sale de mirar los pares reales: por encima estan las tomas consecutivas
-#: del mismo billete, por debajo empiezan los billetes distintos del mismo valor.
-DEFAULT_THRESHOLD = 0.92
+#: 0.90 sale de mirar los pares reales EN COLOR: por encima de 0.95 hay 48 pares
+#: y ninguno cruza tipo de billete; entre 0.90 y 0.95 estan las tomas
+#: consecutivas (005_111 ~ 005_112, 010_360 ~ 010_361) con un solo cruce de
+#: tipo; por debajo de 0.90 empiezan a dominar los encuadres iguales con
+#: billetes distintos. Se tira a lo bajo a proposito: para REPARTIR, agrupar de
+#: mas es barato y agrupar de menos es la fuga que se quiere evitar.
+DEFAULT_THRESHOLD = 0.90
 
 #: Lado de la miniatura. 16x16 basta para distinguir tomas y es inmune a
 #: diferencias de compresion JPEG que dispararian un hash exacto.
@@ -174,9 +199,14 @@ class DuplicateReport:
 
 
 def signature(path: Path) -> np.ndarray:
-    """Miniatura en gris, centrada y normalizada. Lista para producto escalar."""
+    """Miniatura en COLOR, centrada y normalizada. Lista para producto escalar.
+
+    En color y no en gris: ver el modulo. La media se resta sobre los tres
+    canales juntos, no por canal, para que dos fotos con el mismo encuadre y
+    distinto billete no se vuelvan a parecer al quitarles el color medio.
+    """
     with Image.open(path) as image:
-        thumb = image.convert("L").resize((THUMBNAIL, THUMBNAIL), Image.BILINEAR)
+        thumb = image.convert("RGB").resize((THUMBNAIL, THUMBNAIL), Image.BILINEAR)
     values = np.asarray(thumb, dtype=np.float64).ravel()
     values -= values.mean()
     norm = np.linalg.norm(values)

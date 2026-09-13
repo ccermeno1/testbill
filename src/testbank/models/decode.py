@@ -64,8 +64,14 @@ def decode_level(output, grid_slice: AnchorGrid) -> tuple[torch.Tensor, torch.Te
 
     distances = flat(output.distances) * output.stride
     angle = flat(output.angle)
-    objectness = torch.sigmoid(flat(output.objectness))[:, 0]
     classes = torch.sigmoid(flat(output.classes))
+    # Sin rama de objectness (cabeza al estilo v8), la clase lleva la presencia
+    # dentro: su objetivo de entrenamiento ya es la calidad de la localizacion.
+    objectness = (
+        torch.sigmoid(flat(output.objectness))[:, 0]
+        if output.objectness is not None
+        else torch.ones(classes.shape[0], device=classes.device)
+    )
 
     left, top, right, bottom = distances.unbind(dim=-1)
     width = left + right

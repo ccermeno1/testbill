@@ -141,18 +141,72 @@ class PAFPN(nn.Module):
 
 
 @dataclass(frozen=True, slots=True)
+class HeadSpec:
+    """Que forma tiene la cabeza. Lo fija la receta de perdida, no el usuario.
+
+    Las tres recetas que este proyecto compara no comparten cabeza, y fingir que
+    si -- entrenar la receta de Ultralytics sobre nuestra regresion directa --
+    seria comparar otra cosa con su nombre puesto. Asi que la receta elige:
+
+        propia / fork    regresion directa, angulo (sin 2t, cos 2t), objectness
+        ultralytics      regresion DFL, angulo escalar, SIN objectness
+
+    Va guardada con los pesos: cargar un checkpoint reconstruye la cabeza que
+    lo produjo, no la de la config del momento.
+    """
+
+    #: `direct`: cuatro distancias por celda. `dfl`: una DISTRIBUCION de
+    #: `reg_max` bins por distancia, y la distancia es su esperanza
+    #: (Li et al., "Generalized Focal Loss", NeurIPS 2020).
+    regression: str = "direct"
+    reg_max: int = 16
+    #: `sincos`: (sin 2t, cos 2t), sin discontinuidad. `scalar`: un canal,
+    #: `theta = (sigmoid(x) - 1/4) * pi`, que es como lo documenta Ultralytics.
+    angle: str = "sincos"
+    #: Rama de "hay objeto". Las cabezas al estilo v8 no la llevan: la clase
+    #: absorbe la presencia, con objetivos suaves del asignador.
+    objectness: bool = True
+
+    def __post_init__(self) -> None:
+        if self.regression not in ("direct", "dfl"):
+            raise ValueError(f"regression: {self.regression!r}")
+        if self.angle not in ("sincos", "scalar"):
+            raise ValueError(f"angle: {self.angle!r}")
+        if self.reg_max < 2:
+            raise ValueError("reg_max tiene que ser >= 2")
+
+    def to_dict(self) -> dict:
+        return {
+            "regression": self.regression,
+            "reg_max": self.reg_max,
+            "angle": self.angle,
+            "objectness": self.objectness,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> HeadSpec:
+        return cls(**data) if data else cls()
+
+
+@dataclass(frozen=True, slots=True)
 class HeadOutput:
     """Salida cruda de un nivel, antes de decodificar."""
 
-    #: (B, 4, H, W) -- distancias l, t, r, b al centro de la celda.
+    #: (B, 4, H, W) -- distancias l, t, r, b al centro de la celda, en unidades
+    #: de stride. Con DFL es la ESPERANZA de la distribucion; el decodificador
+    #: no distingue una cabeza de otra.
     distances: torch.Tensor
-    #: (B, 2, H, W) -- (sin 2t, cos 2t). Ver el docstring del modulo.
+    #: (B, 2, H, W) con `sincos`, (B, 1, H, W) con `scalar`. `decode_angle`
+    #: distingue por el numero de canales.
     angle: torch.Tensor
-    #: (B, 1, H, W) -- hay objeto aqui.
-    objectness: torch.Tensor
+    #: (B, 1, H, W) -- hay objeto aqui. None si la cabeza no lleva la rama.
+    objectness: torch.Tensor | None
     #: (B, C, H, W) -- de que clase es.
     classes: torch.Tensor
     stride: int
+    #: (B, 4 * reg_max, H, W) -- logits crudos de la distribucion. Solo con
+    #: DFL, y solo los usa la perdida: la decodificacion ya va en `distances`.
+    distribution: torch.Tensor | None = None
 
 
 class ObbHead(nn.Module):
@@ -170,11 +224,13 @@ class ObbHead(nn.Module):
         width: float = 0.25,
         depthwise: bool = False,
         in_channels: tuple[int, ...] = (256, 512, 1024),
+        spec: HeadSpec | None = None,
     ) -> None:
         super().__init__()
         Conv = conv_factory(depthwise)
         hidden = _round_channels(256, width)
         self.num_classes = num_classes
+        self.spec = spec or HeadSpec()
 
         self.stems = nn.ModuleList(
             [
@@ -189,9 +245,15 @@ class ObbHead(nn.Module):
             Conv(hidden, hidden, 3, 1), Conv(hidden, hidden, 3, 1)
         )
         self.cls_pred = nn.Conv2d(hidden, num_classes, 1)
-        self.reg_pred = nn.Conv2d(hidden, 4, 1)
-        self.angle_pred = nn.Conv2d(hidden, 2, 1)
-        self.obj_pred = nn.Conv2d(hidden, 1, 1)
+        reg_channels = 4 * self.spec.reg_max if self.spec.regression == "dfl" else 4
+        self.reg_pred = nn.Conv2d(hidden, reg_channels, 1)
+        self.angle_pred = nn.Conv2d(hidden, 2 if self.spec.angle == "sincos" else 1, 1)
+        self.obj_pred = nn.Conv2d(hidden, 1, 1) if self.spec.objectness else None
+        if self.spec.regression == "dfl":
+            # Los bins 0..reg_max-1, como buffer para que viajen con el modulo.
+            self.register_buffer(
+                "bins", torch.arange(self.spec.reg_max, dtype=torch.float32)
+            )
         self._init_biases()
 
     def _init_biases(self, prior: float = 0.01) -> None:
@@ -203,31 +265,56 @@ class ObbHead(nn.Module):
         """
         bias = -math.log((1 - prior) / prior)
         for layer in (self.cls_pred, self.obj_pred):
-            nn.init.constant_(layer.bias, bias)
+            if layer is not None:
+                nn.init.constant_(layer.bias, bias)
 
     def forward(self, features) -> list[HeadOutput]:
         outputs = []
         for level, (feature, stride) in enumerate(zip(features, STRIDES)):
             x = self.stems[level](feature)
             reg = self.reg_branch(x)
+            raw = self.reg_pred(reg)
+            if self.spec.regression == "dfl":
+                distribution = raw
+                distances = self.expected_distances(raw)
+            else:
+                distribution = None
+                # softplus, no exp: las distancias son positivas y exp se
+                # dispara al principio, cuando los pesos aun son ruido.
+                distances = nn.functional.softplus(raw)
             outputs.append(
                 HeadOutput(
-                    # softplus, no exp: las distancias son positivas y exp se
-                    # dispara al principio, cuando los pesos aun son ruido.
-                    distances=nn.functional.softplus(self.reg_pred(reg)),
+                    distances=distances,
                     angle=self.angle_pred(reg),
-                    objectness=self.obj_pred(reg),
+                    objectness=self.obj_pred(reg) if self.obj_pred is not None else None,
                     classes=self.cls_pred(self.cls_branch(x)),
                     stride=stride,
+                    distribution=distribution,
                 )
             )
         return outputs
+
+    def expected_distances(self, logits: torch.Tensor) -> torch.Tensor:
+        """`(B, 4 * reg_max, H, W)` -> `(B, 4, H, W)`: la esperanza de cada bin.
+
+        Es la "integral" de DFL: softmax sobre los bins y suma ponderada por su
+        indice. La distancia sale en unidades de stride, en `[0, reg_max - 1]`,
+        que con reg_max=16 y stride 32 son hasta 480 px: mas que la imagen.
+        """
+        batch, _, height, width = logits.shape
+        probabilities = logits.view(batch, 4, self.spec.reg_max, height, width).softmax(dim=2)
+        return (probabilities * self.bins.view(1, 1, -1, 1, 1)).sum(dim=2)
 
 
 class YoloxObb(nn.Module):
     """Backbone + cuello + cabeza OBB. El candidato completo."""
 
-    def __init__(self, variant: str = "nano", num_classes: int = 1) -> None:
+    def __init__(
+        self,
+        variant: str = "nano",
+        num_classes: int = 1,
+        head: HeadSpec | None = None,
+    ) -> None:
         super().__init__()
         if variant not in VARIANTS:
             raise ValueError(
@@ -238,7 +325,11 @@ class YoloxObb(nn.Module):
         self.num_classes = num_classes
         self.backbone = CSPDarknet(depth, width, depthwise)
         self.neck = PAFPN(depth, width, depthwise)
-        self.head = ObbHead(num_classes, width, depthwise)
+        self.head = ObbHead(num_classes, width, depthwise, spec=head)
+
+    @property
+    def head_spec(self) -> HeadSpec:
+        return self.head.spec
 
     def forward(self, x: torch.Tensor) -> list[HeadOutput]:
         return self.head(self.neck(self.backbone(x)))
@@ -248,13 +339,35 @@ class YoloxObb(nn.Module):
 
 
 def decode_angle(angle: torch.Tensor) -> torch.Tensor:
-    """`(sin 2t, cos 2t)` -> theta en radianes, en `[0, pi)`.
+    """Salida cruda de la rama de angulo -> theta en radianes, en `[0, pi)`.
 
-    El factor 1/2 deshace el doblado. El resultado cae siempre en medio giro,
-    que es todo el rango que distingue rectangulos: mas alla se repite.
+    Distingue por canales, para que el decodificador no tenga que saber que
+    cabeza hay detras:
+
+    - 2 canales, `(sin 2t, cos 2t)`: el factor 1/2 deshace el doblado. El
+      resultado cae siempre en medio giro, que es todo el rango que distingue
+      rectangulos: mas alla se repite.
+    - 1 canal, escalar: `theta = (sigmoid(x) - 1/4) * pi`, en `[-pi/4, 3pi/4)`,
+      que es la parametrizacion que documenta Ultralytics. Se lleva a `[0, pi)`
+      con el modulo, porque es lo que espera todo lo demas.
     """
-    sin2, cos2 = angle[:, 0], angle[:, 1]
-    return 0.5 * torch.atan2(sin2, cos2) % math.pi
+    if angle.shape[1] == 2:
+        sin2, cos2 = angle[:, 0], angle[:, 1]
+        return 0.5 * torch.atan2(sin2, cos2) % math.pi
+    if angle.shape[1] == 1:
+        return ((torch.sigmoid(angle[:, 0]) - 0.25) * math.pi) % math.pi
+    raise ValueError(f"la rama de angulo tiene {angle.shape[1]} canales; se esperaban 1 o 2")
+
+
+def encode_scalar_angle(theta: torch.Tensor) -> torch.Tensor:
+    """Inversa de la rama escalar: theta -> logit. Para construir objetivos.
+
+    Se lleva theta a `[-pi/4, 3pi/4)` primero, que es el rango que la sigmoide
+    puede producir; un objetivo fuera de el no seria alcanzable.
+    """
+    shifted = (theta + math.pi / 4) % math.pi - math.pi / 4
+    fraction = (shifted / math.pi + 0.25).clamp(1e-6, 1 - 1e-6)
+    return torch.log(fraction / (1 - fraction))
 
 
 def encode_angle(theta: torch.Tensor) -> torch.Tensor:
@@ -268,8 +381,10 @@ __all__ = [
     "VARIANTS",
     "CSPDarknet",
     "HeadOutput",
+    "HeadSpec",
     "ObbHead",
     "YoloxObb",
     "decode_angle",
     "encode_angle",
+    "encode_scalar_angle",
 ]

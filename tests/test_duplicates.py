@@ -45,7 +45,7 @@ def _jitter(array: np.ndarray, amount: int, seed: int) -> np.ndarray:
 def test_la_firma_esta_normalizada(tmp_path):
     s = _sample(tmp_path, "a", _noise(1))
     vector = signature(s.image_path)
-    assert vector.size == 16 * 16
+    assert vector.size == 16 * 16 * 3  # color: tres canales
     assert np.linalg.norm(vector) == pytest.approx(1.0)
     assert vector.mean() == pytest.approx(0.0, abs=1e-9)
 
@@ -168,7 +168,19 @@ def test_el_manifiesto_tiene_el_formato_de_group_manifest(tmp_path):
 
 
 def test_el_umbral_por_defecto_es_el_medido():
-    assert DEFAULT_THRESHOLD == 0.92
+    assert DEFAULT_THRESHOLD == 0.90
+
+
+def test_mismo_encuadre_con_distinto_color_no_es_duplicado(tmp_path):
+    """REGRESION: en gris, dos fotos de stock con el mismo encuadre y billetes
+    de distinto valor (un 50 naranja, un 500 morado) salian como la misma toma.
+    18 de 93 pares reales eran eso. Aqui: mismo dibujo, distinto tinte."""
+    base = _noise(51).astype(float)
+    naranja = np.clip(base * [1.0, 0.6, 0.2], 0, 255)
+    morado = np.clip(base * [0.6, 0.2, 1.0], 0, 255)
+    a = _sample(tmp_path, "a", naranja)
+    b = _sample(tmp_path, "b", morado)
+    assert find_duplicates([a, b]).pairs == []
 
 
 def test_el_desglose_por_particion_destaca_test(tmp_path):

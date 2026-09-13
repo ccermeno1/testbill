@@ -62,13 +62,14 @@ def max_pixel_error(a: Quad, b: Quad) -> float:
 # --- el registro ----------------------------------------------------------
 
 
-def test_estan_los_cinco_formatos():
+def test_estan_todos_los_formatos():
     assert formats.formats() == [
         "bbox_coco",
         "bbox_yolo",
         "dota",
         "obb_yolo",
         "voc_xml",
+        "yolox_obb_voc",
     ]
 
 

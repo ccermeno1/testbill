@@ -27,11 +27,9 @@ from torch.utils.data import DataLoader
 
 from testbank.config import Config
 from testbank.experiment.provenance import seed_everything
-from testbank.models.assign import build_anchor_grid, simota_assign
 from testbank.models.data import BanknoteDataset, Batch, collate
-from testbank.models.decode import decode_outputs
-from testbank.models.loss import compute_losses
-from testbank.models.yolox_obb import STRIDES, YoloxObb
+from testbank.models.recipes import head_spec_for, losses_for_image
+from testbank.models.yolox_obb import HeadSpec, YoloxObb
 
 #: Fraccion del entrenamiento dedicada a subir el learning rate desde casi cero.
 #: Sin calentamiento, las primeras iteraciones con la cabeza recien inicializada
@@ -78,8 +76,13 @@ def train_one_epoch(
     step: int,
     total_steps: int,
     base_lr: float,
+    epoch: int = 0,
 ) -> tuple[dict, int]:
-    """Una epoca. Devuelve las perdidas promediadas y el paso alcanzado."""
+    """Una epoca. Devuelve las perdidas promediadas y el paso alcanzado.
+
+    `epoch` se pasa porque una receta (la del fork) cambia de forma en las
+    ultimas epocas: enciende una L1. La perdida tiene que saber en cual va.
+    """
     model.train()
     totals: dict[str, float] = {}
     batches = 0
@@ -101,14 +104,31 @@ def train_one_epoch(
                 type(o)(
                     distances=o.distances[index : index + 1],
                     angle=o.angle[index : index + 1],
-                    objectness=o.objectness[index : index + 1],
+                    objectness=(
+                        o.objectness[index : index + 1]
+                        if o.objectness is not None
+                        else None
+                    ),
                     classes=o.classes[index : index + 1],
                     stride=o.stride,
+                    distribution=(
+                        o.distribution[index : index + 1]
+                        if o.distribution is not None
+                        else None
+                    ),
                 )
                 for o in outputs
             ]
             boxes, classes = _batch_targets(batch, index, device)
-            terms = _losses_for_image(single, boxes, classes, config, device)
+            terms = losses_for_image(
+                single,
+                boxes,
+                classes,
+                config,
+                device,
+                epoch=epoch,
+                total_epochs=config.detector.epochs,
+            )
             loss = loss + terms.total
             for key, value in terms.to_dict().items():
                 accumulated[key] = accumulated.get(key, 0.0) + value
@@ -128,40 +148,6 @@ def train_one_epoch(
 
     return {k: v / max(1, batches) for k, v in totals.items()}, step
 
-
-def _losses_for_image(outputs, boxes, classes, config: Config, device):
-    predicted_boxes, scores = decode_outputs(
-        outputs, _size_from(outputs, config.detector.image_size)
-    )
-    flat_angle = torch.cat(
-        [o.angle[0].permute(1, 2, 0).reshape(-1, 2) for o in outputs]
-    )
-    flat_obj = torch.cat([o.objectness[0].reshape(-1) for o in outputs])
-    flat_cls = torch.cat(
-        [o.classes[0].permute(1, 2, 0).reshape(-1, o.classes.shape[1]) for o in outputs]
-    )
-    grid = build_anchor_grid(
-        [tuple(o.distances.shape[-2:]) for o in outputs], STRIDES, device=device
-    )
-    assignment = simota_assign(
-        predicted_boxes.detach(), scores.detach(), boxes, grid,
-    )
-    return compute_losses(
-        predicted_boxes,
-        flat_angle,
-        flat_obj,
-        flat_cls,
-        boxes,
-        classes,
-        assignment,
-        angle_config=config.detector.loss.angle_weight,
-    )
-
-
-def _size_from(outputs, image_size: int):
-    from testbank.dataio.formats import ImageSize
-
-    return ImageSize(image_size, image_size)
 
 
 def fit(
@@ -190,7 +176,9 @@ def fit(
         drop_last=False,
     )
 
-    model = YoloxObb(config.detector.variant, num_classes=1).to(device)
+    model = YoloxObb(
+        config.detector.variant, num_classes=1, head=head_spec_for(config)
+    ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=base_lr, weight_decay=5e-4)
 
     total_steps = max(1, len(loader) * config.detector.epochs)
@@ -200,6 +188,7 @@ def fit(
         terms, step = train_one_epoch(
             model, loader, optimizer, config,
             device=device, step=step, total_steps=total_steps, base_lr=base_lr,
+            epoch=epoch,
         )
         history.record(epoch, terms, learning_rate_at(step, total_steps, base_lr))
 
@@ -209,6 +198,7 @@ def fit(
         {
             "model": model.state_dict(),
             "variant": config.detector.variant,
+            "head": model.head_spec.to_dict(),
             "num_classes": 1,
             "image_size": config.detector.image_size,
         },
@@ -225,7 +215,11 @@ def load_model(weights: Path, device: torch.device | None = None) -> YoloxObb:
     sitio donde esa informacion no se puede desincronizar.
     """
     payload = torch.load(weights, map_location=device or "cpu", weights_only=False)
-    model = YoloxObb(payload["variant"], num_classes=payload["num_classes"])
+    model = YoloxObb(
+        payload["variant"],
+        num_classes=payload["num_classes"],
+        head=HeadSpec.from_dict(payload.get("head")),
+    )
     model.load_state_dict(payload["model"])
     return model.to(device or torch.device("cpu")).eval()
 

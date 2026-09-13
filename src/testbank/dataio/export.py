@@ -6,42 +6,46 @@ etiquetas, y con que nombres.
 
 Que lee cada quien:
 
-    dota      RTMDet-R: un .txt por imagen en labelTxt/
-    voc_xml   VOC con <robndbox> de roLabelImg: un .xml por imagen
-    coco      diagnostico y herramientas de terceros: un solo annotations.json
+    dota            RTMDet-R: un .txt por imagen en labelTxt/
+    yolox_obb_voc   buzhidaoshenme/YOLOX-OBB: VOCdevkit con <angle> en el bndbox
+    voc_xml         VOC con <robndbox> de roLabelImg: hoy no lo consume nadie
+    coco            diagnostico y terceros: un solo annotations.json
 
 Todos pasan por `dataio/view.prepare`, asi que comparten filtro de area y
 politica de borde con la vista de Ultralytics. Es lo que evita que dos
 candidatos entrenen con verdades distintas y la tabla los compare como iguales.
 
-Aviso sobre voc_xml: hoy no lo consume nadie
---------------------------------------------
-Se escribio pensando en `buzhidaoshenme/YOLOX-OBB`. Verificado despues contra su
-`dota_obb.py`, ese fork NO lee `<robndbox>`: espera un `<bndbox>` de VOC con un
-`<angle>` DENTRO y coordenadas en base 1. Asi que este exportador no le vale, y
-el fork quedo descartado por otros motivos (ver README).
+Por que hay DOS exportadores VOC y no uno
+-----------------------------------------
+Parecen el mismo formato y no lo son. `voc_xml` escribe el `<robndbox>` de
+roLabelImg -- cx/cy/w/h/angle en elementos propios -- que es el convenio VOC-OBB
+mas extendido. El fork de YOLOX-OBB no lee eso: mete un `<angle>` DENTRO de un
+`<bndbox>` normal cuyos xmin/xmax son en realidad w y h colocados alrededor del
+centro. Unificarlos habria significado escribir una mentira para uno de los dos.
 
-Se conserva porque `<robndbox>` de roLabelImg es el convenio VOC-OBB mas comun y
-el conversor esta probado, pero **ningun candidato actual lo consume**. Antes de
-usarlo con una herramienta concreta, hay que leer SU parser -- que es la leccion
-de haberlo escrito contra una suposicion.
+`voc_xml` **no lo consume ningun candidato actual**. Se escribio contra una
+suposicion sobre el fork que resulto falsa, y se conserva solo porque el formato
+es comun y el conversor esta probado. Antes de enchufarlo a una herramienta
+concreta hay que leer SU parser: es exactamente la leccion que costo escribirlo.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Protocol, runtime_checkable
 
-from testbank.config import Config, OutOfBoundsPolicy
+from testbank.config import Config
 from testbank.dataio.formats import DEFAULT_CLASS_NAMES, ImageSize
 from testbank.dataio.formats import get as get_format
 from testbank.dataio.view import (
     PreparationReport,
     PreparedSample,
+    pad_image,
     place_image,
     prepare,
 )
@@ -250,6 +254,131 @@ class CocoExporter:
         return entry_point
 
 
+
+@register
+class YoloxObbVocExporter:
+    """El arbol VOC que espera `buzhidaoshenme/YOLOX-OBB`. Leido, no supuesto.
+
+    Estructura, sacada de su `dota_obb.py`::
+
+        <root>/VOC2007/Annotations/<id>.xml
+                      /JPEGImages/<id>.png          <- trainval
+                      /JPEGImages-val/<id>.png      <- val
+                      /JPEGImages-test/<id>.png     <- test
+                      /ImageSets/Main/{trainval,val,test}.txt
+
+    Cuatro trampas que solo se ven leyendo su codigo, no su README:
+
+    1. **La extension .png esta fija**: `_imgpath = "%s/JPEGImages/%s.png"`. Las
+       nuestras son JPEG, asi que hay que RECODIFICARLAS. No vale un enlace con
+       otro nombre: `cv2.imread` mira el contenido, no la extension, pero el
+       resto de la cadena no. Cuesta una segunda copia entera del dataset.
+    2. **Validacion va en `JPEGImages-val/`**, un directorio aparte. Y el path se
+       elige con `image_sets[0][1]`, o sea con la PRIMERA particion de la lista:
+       un mismo objeto no puede servir train y val a la vez.
+    3. **El `VOC2007/` intermedio** sale de `os.path.join(root, "VOC" + year)`.
+    4. **Las clases son las 15 de DOTA**, cableadas en `dota_classes.py`, y el
+       parser hace `self.class_to_ind[name]`. Con nuestro `euro_banknote` da
+       KeyError salvo que se edite ESE fichero al vendorizar el fork. El
+       exportador no puede arreglarlo; queda anotado en el README.
+
+    La base 1 de las coordenadas y el `<difficult>` obligatorio los resuelve el
+    conversor `yolox_obb_voc`, que explica ambos.
+    """
+
+    name = "yolox_obb_voc"
+    annotation_format = "yolox_obb_voc"
+    #: Su `(cx, cy, w, h, angulo)` solo representa rectangulos.
+    requires_rectangles = True
+
+    #: Como llama el fork a cada particion nuestra.
+    SET_NAMES: ClassVar[dict[str, str]] = {"train": "trainval", "valid": "val"}
+    #: El `VOC<year>` intermedio. Su valor por defecto en `image_sets`.
+    YEAR: ClassVar[str] = "2007"
+
+    def _images_dir(self, base: Path, set_name: str) -> Path:
+        return base / (
+            "JPEGImages" if set_name == "trainval" else f"JPEGImages-{set_name}"
+        )
+
+    def write(self, prepared, root, *, class_names) -> Path:
+        import cv2
+
+        writer = get_format(self.annotation_format)
+        base = root / f"VOC{self.YEAR}"
+        annotations_dir = base / "Annotations"
+        sets_dir = base / "ImageSets" / "Main"
+        annotations_dir.mkdir(parents=True, exist_ok=True)
+        sets_dir.mkdir(parents=True, exist_ok=True)
+
+        for split, items in prepared.items():
+            set_name = self.SET_NAMES.get(split, split)
+            images_dir = self._images_dir(base, set_name)
+            images_dir.mkdir(parents=True, exist_ok=True)
+            ids = []
+            for item in items:
+                target = images_dir / f"{item.sample_id}.png"
+                if item.needs_rewrite:
+                    # `pad_image` escribe con cv2, que elige el codec por la
+                    # extension: al apuntar a .png ya sale recodificada.
+                    pad_image(item.sample.image_path, target, item.pad_fraction)
+                else:
+                    image = cv2.imread(str(item.sample.image_path), cv2.IMREAD_COLOR)
+                    if image is None:
+                        raise ExportError(f"no se pudo leer {item.sample.image_path}")
+                    cv2.imwrite(str(target), image)
+
+                ids.append(item.sample_id)
+                element = ET.Element("annotation")
+                ET.SubElement(element, "folder").text = images_dir.name
+                ET.SubElement(element, "filename").text = target.name
+                size = ET.SubElement(element, "size")
+                ET.SubElement(size, "width").text = str(item.size.width)
+                ET.SubElement(size, "height").text = str(item.size.height)
+                ET.SubElement(size, "depth").text = "3"
+                for quad, class_id in zip(item.quads, item.class_ids):
+                    element.append(
+                        writer.from_quad(
+                            quad,
+                            class_id=class_id,
+                            size=item.size,
+                            class_names=class_names,
+                        ).payload
+                    )
+                ET.ElementTree(element).write(
+                    annotations_dir / f"{item.sample_id}.xml", encoding="utf-8"
+                )
+            (sets_dir / f"{set_name}.txt").write_text(
+                "\n".join(ids) + ("\n" if ids else ""), encoding="utf-8"
+            )
+        return sets_dir
+
+
+def _first_non_rectangle(prepared, *, tolerance: float = 1e-3):
+    """El primer cuadrilatero con los lados opuestos desiguales, si lo hay.
+
+    La tolerancia es RELATIVA al lado mayor. Un rectangulo perfecto reconstruido
+    desde coordenadas normalizadas difiere en la ultima cifra, y un umbral
+    absoluto sobre una imagen de 4000 px no significa lo mismo que sobre una de
+    400.
+    """
+    for items in prepared.values():
+        for item in items:
+            for quad in item.quads:
+                points = [
+                    (x * item.size.width, y * item.size.height)
+                    for x, y in quad.points
+                ]
+                sides = [math.dist(points[i], points[(i + 1) % 4]) for i in range(4)]
+                longest = max(sides) or 1.0
+                if (
+                    abs(sides[0] - sides[2]) > tolerance * longest
+                    or abs(sides[1] - sides[3]) > tolerance * longest
+                ):
+                    return item.sample_id, sides
+    return None
+
+
 def export(
     name: str,
     samples_by_split: dict[str, list],
@@ -267,22 +396,29 @@ def export(
         shutil.rmtree(root)
     root.mkdir(parents=True, exist_ok=True)
 
-    policy = OutOfBoundsPolicy(config.detector.out_of_bounds)
-    if exporter.requires_rectangles and policy is OutOfBoundsPolicy.CLIP:
-        # Se comprueba ANTES de escribir. La conversion tambien lo detecta, pero
-        # lo haria a mitad del volcado y despues de dejar cientos de ficheros a
-        # medias, con un mensaje que habla de un quad concreto y no de la causa.
-        raise ExportError(
-            f"el formato {name!r} solo representa rectangulos, y la politica "
-            "de borde 'clip' no los conserva: recortar los vertices de un "
-            "rectangulo girado contra el marco da un cuadrilatero con los lados "
-            "opuestos desiguales.\n"
-            "  Usa --out-of-bounds keep, que deja los vertices fuera de [0,1] "
-            "tal cual. VOC no valida los limites como hace Ultralytics, asi que "
-            f"los acepta: medido, {name!r} exporta las 452 imagenes con 'keep'."
-        )
-
     prepared, report = prepare(samples_by_split, config)
+    # `clip` ya NO veta a los formatos de rectangulo.
+    #
+    # Lo vetaba porque recortaba pinzando cada vertice, y eso convierte un
+    # rectangulo girado en un trapecio -- 82 de 679 anotaciones reales. Desde
+    # que `clip_quad` conserva el angulo y devuelve un rectangulo, la
+    # incompatibilidad no existe.
+    #
+    # Se COMPRUEBA en vez de suponerse: si entra un cuadrilatero irregular por
+    # otra via, salta aqui y antes de escribir nada, no a mitad del volcado y
+    # con cientos de ficheros a medias.
+    if exporter.requires_rectangles:
+        offender = _first_non_rectangle(prepared)
+        if offender is not None:
+            sample_id, sides = offender
+            raise ExportError(
+                f"el formato {name!r} solo representa rectangulos y"
+                f" {sample_id} trae un cuadrilatero irregular: lados "
+                + " x ".join(f"{side:.1f}" for side in sides)
+                + " px, con los opuestos desiguales."
+                "  Con --out-of-bounds keep se exporta sin tocar la geometria."
+            )
+
     entry_point = exporter.write(prepared, root, class_names=class_names)
     return ExportResult(
         name=name, root=root, report=report, entry_point=entry_point
