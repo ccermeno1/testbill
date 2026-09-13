@@ -206,8 +206,8 @@ in that same environment. → *Usage*
 
 ### Not tried yet
 
-- **RTMDet-R has never trained.** Verified that the config builds and the
-  model instantiates (4,873,470 parameters); no training has been launched.
+- **RTMDet-R has trained one smoke epoch on CPU** (§ *RTMDet-R environment*),
+  nothing longer. mAP 0 after one epoch, as with every other smoke run.
 - **The redone split has not been used for training.** `--repartition` is
   measured on the real export (zero pairs crossing, all eight types on each
   side) but the only materialized version, `splits/v1`, is still the export's.
@@ -848,6 +848,71 @@ bumps it on its own and `torch.from_numpy` starts failing with *"Numpy is not
 available"*. Any later install in that environment can break it again
 **silently**: the pin has to be repeated in every `uv pip install`.
 
+### What the first training on CPU needed
+
+RTMDet-R had never trained. The first smoke run on the real data hit three
+things, all in `detectors/rtmdet_r.py:build_train_config`, none in the
+environment:
+
+1. **`persistent_workers`.** The published config keeps workers alive between
+   epochs; we set `num_workers=0` for determinism and MMEngine refuses the
+   combination. Set to `False`.
+2. **`.png` versus `.jpg`.** `DOTADataset` pairs every `labelTxt` with an image
+   of suffix `png` (DOTA's); our export keeps the source `jpg`. Its
+   `img_suffix` parameter.
+3. **The box loss is CUDA-only.** `RotatedIoULoss` computes its IoU with
+   `mmcv.ops.diff_iou_rotated_2d`, which has a CUDA kernel and nothing else:
+   the first iteration dies with `implementation for device cpu not found`.
+   The assigner's `box_iou_rotated` and the NMS do have CPU code; this is the
+   only piece that does not. The adapter registers a twin of that loss --
+   same class, same `1 − IoU` in `linear` mode, same weight 2.0 -- whose IoU
+   comes from `models/overlap.rotated_iou`, the pure-torch polygon IoU already
+   used by the DDGRCF port and matched against shapely to 2.5e-6. The recipe
+   does not change; the operator does. MMRotate is built for CUDA and nobody
+   needed this kernel on CPU; it is the same wall the two YOLOX-OBB clones
+   hit.
+
+Two more things that are not failures but would silently waste the run:
+
+4. **Resolution.** The published pipelines work at DOTA's 1024 px: a
+   `Resize` AND a `Pad`, both to 1024. At 1024 one epoch is 44 iterations at
+   ~21 s, **15 minutes**. Both steps now follow `detector.image_size`
+   (`--image-size`), the same knob as every other candidate; moving only the
+   `Resize` shrank the images and padded them back to 1024 with gray, and the
+   epoch took the same 20 s per iteration -- measured. At a true 416 it is
+   3.9 s per iteration, **~3 minutes per epoch**; 100 epochs is ~5 hours here.
+5. **The learning-rate schedule is pinned to their 36 epochs**: a 1000-iteration
+   warmup and a cosine from epoch 18 to 36. Left alone, `--epochs 100` would
+   sit at the minimum rate from epoch 36 on, and `--epochs 1` never leaves the
+   warmup (44 of 1000 iterations: the `lr 1e-5` of the smoke runs). Rescaled
+   to `detector.epochs` with the same shape: warmup capped at 10% of the
+   iterations, cosine over the second half.
+
+`predict` builds the model from the same one-class, same-resolution config as
+training (`build_inference_config`): a one-class checkpoint does not load into
+the published 15-class head, and inferring at another resolution would change
+every number without saying so.
+
+```bash
+.venv-rtmdet\Scripts	estbank.exe train rtmdet-r-tiny --epochs 100 --image-size 416 --name rtmdet_416_e100
+```
+
+MMEngine keeps its own log in `_train/work/<timestamp>/`; there is no
+`training.json` or `plot-training` for this candidate.
+
+### Not on Apple Silicon
+
+The `mmcv==2.0.1` wheel on that index is **x86_64 only**; there is none for
+macOS arm64 (M1–M4), so the recipe above does not resolve on a Mac. Decision:
+RTMDet-R runs on the Windows PC, where the recipe is verified end to end,
+and everything else (own variants, DDGRCF port, Ultralytics) runs on the Mac
+with MPS. Nothing is lost: this environment is CPU-only either way, and the
+comparison was already across environments — the `run.json` records platform
+and versions, so the row is labelled. Alternatives, not verified: an x86_64
+Python under Rosetta (`uv python install cpython-3.11-macos-x86_64-none`,
+then the same recipe), or building mmcv from source with `MMCV_WITH_OPS=1`,
+which often fails against the torch 2.0.0 headers.
+
 ### [DEVIATION] COCO pretraining does not exist for tiny
 
 The specification asked for *"the config with COCO pretraining, not
@@ -984,6 +1049,7 @@ Options valid for all:
 
 ```bash
 --epochs N                  # overrides the config's; it is recorded
+--image-size S              # input side for every candidate; the export is 416x416
 --out-of-bounds clip|pad|keep   # border policy; clip by default
 --loss-recipe own|yolox_obb_fork|ultralytics_obb|ddgrcf   # own head (ddgrcf: the port); § Recipes
 --pretrained path.pth       # foreign checkpoint to START from; stays in the config
@@ -1057,8 +1123,8 @@ dependent on `tools/make_synthetic.py`, which is kept for the tests.
 
 **Pending.**
 
-- RTMDet-R smoke test: the environment resolved and the `Runner` builds, but
-  not a single epoch has run.
+- RTMDet-R baseline: the smoke epoch runs on CPU (~3 min/epoch at 416);
+  100 epochs is ~5 hours here.
 - Polygon masking for the crop, rectangular today (§ *Caveats*).
 - Long baselines and the comparison table. Everything run so far is 1–2 epoch
   smoke runs to verify the plumbing does not leak, **not results**: no

@@ -315,6 +315,8 @@ def cmd_train(args, config: Config) -> int:
     updates = {}
     if args.epochs is not None:
         updates["epochs"] = args.epochs
+    if args.image_size is not None:
+        updates["image_size"] = args.image_size
     if args.out_of_bounds is not None:
         updates["out_of_bounds"] = OutOfBoundsPolicy(args.out_of_bounds)
     if args.pretrained is not None:
@@ -514,6 +516,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="overrides detector.epochs; it is recorded in the resolved config",
+    )
+    train.add_argument(
+        "--image-size",
+        type=int,
+        default=None,
+        help=(
+            "input side in pixels for every candidate (own head, port, "
+            "Ultralytics, RTMDet-R); overrides detector.image_size and is "
+            "recorded. The export is 416x416: 416 uses the pixels as they are"
+        ),
     )
     train.add_argument(
         "--loss-recipe",
