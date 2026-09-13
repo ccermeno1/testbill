@@ -1,17 +1,17 @@
-"""Una ejecucion es un directorio en disco. Nada de MLflow ni W&B.
+"""A run is a directory on disk. No MLflow or W&B.
 
-`runs/{timestamp}_{nombre}/` con todo lo necesario para saber que se ejecuto,
-con que codigo, sobre que datos y con que licencia:
+`runs/{timestamp}_{name}/` with everything needed to know what ran, with which
+code, on which data and under which license:
 
-    config.yaml     la config RESUELTA, no la que se paso por linea de comandos
-    run.json        procedencia, componentes, veredicto de aptitud
-    metrics.json    los numeros
-    weights/        los pesos
-    viz/            visualizaciones sobre la muestra fija de validacion
+    config.yaml     the RESOLVED config, not the one passed on the command line
+    run.json        provenance, components, fitness verdict
+    metrics.json    the numbers
+    weights/        the weights
+    viz/            visualizations over the fixed validation sample
 
-El veredicto de aptitud se calcula aqui y no en `compare`, porque depende de
-cosas que solo se conocen en el momento de ejecutar: la licencia del detector,
-las de los datasets de la cadena y el estado del arbol de codigo.
+The fitness verdict is computed here and not in `compare`, because it depends
+on things only known at run time: the detector's license, those of the
+datasets in the chain and the state of the code tree.
 """
 
 from __future__ import annotations
@@ -28,37 +28,38 @@ RUN_RECORD = "run.json"
 CONFIG_SNAPSHOT = "config.yaml"
 METRICS = "metrics.json"
 
-#: Licencias que contaminan un producto cerrado. La comprobacion es por lista
-#: explicita y no por heuristica sobre el texto: equivocarse aqui es un problema
-#: legal, no un bug.
+#: Licenses that contaminate a closed product. The check is by explicit list
+#: and not by heuristic over the text: getting this wrong is a legal problem,
+#: not a bug.
 COPYLEFT = ("AGPL-3.0", "GPL-3.0", "GPL-2.0", "SSPL-1.0")
 
 
 @dataclass(frozen=True, slots=True)
 class ComponentInfo:
-    """Algo con licencia que entra en una ejecucion: un dataset o un detector."""
+    """Something with a license that enters a run: a dataset or a detector."""
 
     name: str
     license: str
     production_ready: bool
-    #: Solo para datasets agregados: la licencia de CADA fuente. La licencia de
-    #: un agregado no anula la de sus fuentes, asi que se comprueban todas.
+    #: Only for aggregated datasets: the license of EACH source. The license
+    #: of an aggregate does not override that of its sources, so all are
+    #: checked.
     sources: tuple[str, ...] = ()
 
     def blockers(self, role: str) -> list[str]:
         found: list[str] = []
         if not self.production_ready:
             found.append(
-                f"{role} {self.name!r} esta marcado production_ready=False "
-                f"(licencia {self.license})"
+                f"{role} {self.name!r} is marked production_ready=False "
+                f"(license {self.license})"
             )
         if self.license in COPYLEFT:
-            found.append(f"{role} {self.name!r} tiene licencia {self.license}")
+            found.append(f"{role} {self.name!r} has license {self.license}")
         for source in self.sources:
             if source in COPYLEFT:
                 found.append(
-                    f"{role} {self.name!r} agrega una fuente con licencia "
-                    f"{source}, que la licencia del agregado no anula"
+                    f"{role} {self.name!r} aggregates a source with license "
+                    f"{source}, which the aggregate's license does not override"
                 )
         return found
 
@@ -72,28 +73,32 @@ class RunRecord:
     detector: ComponentInfo | None = None
     datasets: tuple[ComponentInfo, ...] = ()
     metrics: dict = field(default_factory=dict)
-    #: Identidad del export de datos: proyecto, version y fecha. El hash de git
-    #: fija el CODIGO; las imagenes no estan en el repositorio, asi que sin esto
-    #: dos ejecuciones del mismo commit podrian haber corrido sobre anotaciones
-    #: distintas y nada lo delataria.
+    #: Identity of the data export: project, version and date. The git hash
+    #: pins the CODE; the images are not in the repository, so without this
+    #: two runs of the same commit could have run on different annotations and
+    #: nothing would give it away.
     dataset_provenance: tuple[dict, ...] = ()
+    #: Which split version the run used (`SplitLoader.describe()`): version,
+    #: mode and digest. Two runs on different versions are not comparable,
+    #: and `compare` shows the version so that is visible.
+    split: dict = field(default_factory=dict)
     notes: tuple[str, ...] = ()
 
     def license_blockers(self) -> list[str]:
-        """Lo que impide llevar esta ejecucion a produccion.
+        """What prevents taking this run to production.
 
-        Separado a proposito de `provenance_blockers`: no poder reproducir una
-        ejecucion y no poder desplegarla son dos problemas distintos, con
-        arreglos distintos, y mezclarlos en una sola lista hace que el lector
-        no sepa cual esta leyendo.
+        Deliberately separate from `provenance_blockers`: not being able to
+        reproduce a run and not being able to deploy it are two different
+        problems, with different fixes, and mixing them in a single list
+        leaves the reader not knowing which one they are reading.
         """
         found: list[str] = []
         if self.detector is None:
-            found.append("no se declaro detector, asi que no hay licencia que revisar")
+            found.append("no detector was declared, so there is no license to review")
         else:
-            found.extend(self.detector.blockers("el detector"))
+            found.extend(self.detector.blockers("the detector"))
         for dataset in self.datasets:
-            found.extend(dataset.blockers("el dataset"))
+            found.extend(dataset.blockers("the dataset"))
         return found
 
     def provenance_blockers(self) -> list[str]:
@@ -101,11 +106,11 @@ class RunRecord:
 
     @property
     def caveats(self) -> list[str]:
-        """Cosas que cambian COMO HAY QUE LEER estos numeros.
+        """Things that change HOW these numbers must be read.
 
-        No impiden desplegar ni repetir la ejecucion, asi que no son bloqueos.
-        Pero sin ellas delante, las cifras se interpretan mal, y eso es peor que
-        no tenerlas.
+        They do not prevent deploying or repeating the run, so they are not
+        blockers. But without them up front, the figures are misread, and that
+        is worse than not having them.
         """
         found: list[str] = []
         detector = self.config.detector
@@ -114,10 +119,11 @@ class RunRecord:
             and not detector.pad_at_inference
         ):
             found.append(
-                "entrenado con padding pero inferido SIN el: estos numeros miden "
-                "el pipeline desajustado. Si salen mal no prueban que el padding "
-                "no sirva, solo que entrenar y predecir con encuadres distintos "
-                "no funciona. Para juzgar el padding, pad_at_inference=True."
+                "trained with padding but inferred WITHOUT it: these numbers "
+                "measure the mismatched pipeline. If they come out bad they do "
+                "not prove padding is useless, only that training and "
+                "predicting with different framings does not work. To judge "
+                "padding, pad_at_inference=True."
             )
         return found
 
@@ -126,10 +132,10 @@ class RunRecord:
 
     @property
     def production_ready(self) -> bool:
-        """Apto solo si NADA de la cadena lo impide.
+        """Fit only if NOTHING in the chain prevents it.
 
-        Un detector Apache sobre un dataset con una fuente AGPL no es apto. Es
-        el punto de que la comprobacion recorra la cadena entera.
+        An Apache detector on a dataset with an AGPL source is not fit. That
+        is the point of the check walking the whole chain.
         """
         if self.detector is None:
             return False
@@ -149,6 +155,7 @@ class RunRecord:
             "detector": asdict(self.detector) if self.detector else None,
             "datasets": [asdict(d) for d in self.datasets],
             "dataset_provenance": list(self.dataset_provenance),
+            "split": dict(self.split),
             "production_ready": self.production_ready,
             "reproducible": self.provenance.reproducible,
             "caveats": self.caveats,
@@ -165,7 +172,7 @@ def _timestamp(moment: datetime | None = None) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ExperimentRun:
-    """Directorio de una ejecucion, ya creado en disco."""
+    """Directory of a run, already created on disk."""
 
     directory: Path
     record: RunRecord
@@ -187,16 +194,17 @@ class ExperimentRun:
         detector: ComponentInfo | None = None,
         datasets: tuple[ComponentInfo, ...] = (),
         dataset_provenance: tuple[dict, ...] = (),
+        split: dict | None = None,
         runs_dir: Path | None = None,
         seed: int | None = None,
         moment: datetime | None = None,
         notes: tuple[str, ...] = (),
     ) -> ExperimentRun:
-        """Crea el directorio y congela config y procedencia ANTES de ejecutar.
+        """Creates the directory and freezes config and provenance BEFORE running.
 
-        Escribir la config despues de entrenar permitiria que una ejecucion que
-        peto por la mitad no dejara rastro de con que se lanzo, que es justo
-        cuando mas falta hace.
+        Writing the config after training would let a run that crashed
+        halfway leave no trace of what it was launched with, which is exactly
+        when it is most needed.
         """
         stamp = _timestamp(moment)
         base = Path(runs_dir or config.runs_dir)
@@ -213,6 +221,7 @@ class ExperimentRun:
             detector=detector,
             datasets=datasets,
             dataset_provenance=dataset_provenance,
+            split=dict(split or {}),
             notes=notes,
         )
         (directory / CONFIG_SNAPSHOT).write_text(config.dump_yaml(), encoding="utf-8")
@@ -241,16 +250,16 @@ class ExperimentRun:
 
 
 def load_run(directory: str | Path) -> dict:
-    """Lee una ejecucion de disco. Devuelve el registro crudo mas las metricas.
+    """Reads a run from disk. Returns the raw record plus the metrics.
 
-    Deliberadamente no reconstruye `RunRecord`: una ejecucion antigua pudo
-    escribirse con otra version del esquema, y `compare` tiene que poder
-    listarla igualmente en vez de reventar.
+    Deliberately does not rebuild `RunRecord`: an old run may have been
+    written with another version of the schema, and `compare` has to be able
+    to list it anyway instead of blowing up.
     """
     directory = Path(directory)
     record_path = directory / RUN_RECORD
     if not record_path.exists():
-        raise FileNotFoundError(f"{directory}: no hay {RUN_RECORD}")
+        raise FileNotFoundError(f"{directory}: no {RUN_RECORD}")
     data = json.loads(record_path.read_text(encoding="utf-8"))
     metrics_path = directory / METRICS
     data["metrics"] = (
@@ -263,7 +272,7 @@ def load_run(directory: str | Path) -> dict:
 
 
 def discover_runs(runs_dir: str | Path) -> list[dict]:
-    """Todas las ejecuciones de `runs/`, de la mas reciente a la mas antigua."""
+    """All runs in `runs/`, from most recent to oldest."""
     runs_dir = Path(runs_dir)
     if not runs_dir.exists():
         return []

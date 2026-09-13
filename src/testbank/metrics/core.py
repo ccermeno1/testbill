@@ -1,18 +1,19 @@
-"""Nucleo geometrico de las metricas. Todo en PIXELES, sin excepciones.
+"""Geometric core of the metrics. Everything in PIXELS, no exceptions.
 
-Por que pixeles y no normalizado
---------------------------------
-Normalizar divide x por el ancho e y por el alto: un escalado ANISOTROPO. Las
-razones de area (IoU, cobertura, contaminacion) sobreviven a cualquier afinidad
-y darian igual en los dos espacios, pero el ANGULO y la DISTANCIA POR VERTICE
-no. Un billete 2:1 tumbado en una imagen 20:9 cambia de angulo y de ratio al
-normalizar, y el ancla canonica llega a saltar de lado.
+Why pixels and not normalized
+-----------------------------
+Normalizing divides x by the width and y by the height: an ANISOTROPIC scaling.
+Area ratios (IoU, coverage, contamination) survive any affinity and would come
+out the same in both spaces, but the ANGLE and the PER-VERTEX DISTANCE do not.
+A 2:1 banknote lying flat in a 20:9 image changes angle and ratio when
+normalized, and the canonical anchor can even jump sides.
 
-Mezclar espacios segun la metrica seria pedir el error. La regla es una sola:
-aqui dentro todo esta en pixeles, y la conversion ocurre en la frontera.
+Mixing spaces depending on the metric would be asking for the error. The rule
+is a single one: in here everything is in pixels, and the conversion happens
+at the boundary.
 
-Nada de operadores compilados: IoU rotado y NMS rotado con shapely. Lento y
-suficiente para 500 imagenes.
+No compiled operators: rotated IoU and rotated NMS via shapely. Slow, and
+enough for 500 images.
 """
 
 from __future__ import annotations
@@ -26,19 +27,19 @@ from shapely.ops import unary_union
 from testbank.dataio.formats import ImageSize
 from testbank.geometry.quad import Quad
 
-#: Angulos que difieren en 180 grados describen el mismo rectangulo.
+#: Angles that differ by 180 degrees describe the same rectangle.
 HALF_TURN = 180.0
 
 
 @dataclass(frozen=True, slots=True)
 class Prediction:
-    """Una deteccion. `score` ordena el emparejamiento greedy.
+    """A detection. `score` orders the greedy matching.
 
-    `quad` puede ser None: una caja que la red predijo tan fuera de la imagen
-    que `Quad` no la admite (mas de medio marco). Sigue siendo una deteccion
-    que el modelo hizo, asi que CUENTA como falso positivo a su puntuacion --
-    no se empareja con nada porque no tiene con que -- en vez de descartarse,
-    que seria regalarle a la metrica un error que el modelo si cometio.
+    `quad` may be None: a box the network predicted so far outside the image
+    that `Quad` will not accept it (more than half a frame). It is still a
+    detection the model made, so it COUNTS as a false positive at its score --
+    it matches nothing because it has nothing to match with -- instead of being
+    discarded, which would gift the metric an error the model did commit.
     """
 
     quad: Quad | None
@@ -48,11 +49,11 @@ class Prediction:
 
 @dataclass(frozen=True, slots=True)
 class ImageEval:
-    """Todo lo que hace falta para evaluar UNA imagen.
+    """Everything needed to evaluate ONE image.
 
-    `ignored` son los quads que el filtro de area relativa dejo fuera. No son
-    verdad que haya que detectar ni fondo que penalice: son anotaciones reales
-    que decidimos no usar. Ver `matching.py`.
+    `ignored` are the quads the relative area filter left out. They are neither
+    truth to be detected nor background to penalize: they are real annotations
+    we decided not to use. See `matching.py`.
     """
 
     sample_id: str
@@ -63,15 +64,15 @@ class ImageEval:
 
     def __post_init__(self) -> None:
         if self.size.width <= 0 or self.size.height <= 0:
-            raise ValueError(f"{self.sample_id}: tamano de imagen invalido")
+            raise ValueError(f"{self.sample_id}: invalid image size")
 
 
 def to_polygon(quad: Quad | None, size: ImageSize) -> Polygon:
-    """Quad normalizado -> poligono en pixeles, saneado.
+    """Normalized quad -> polygon in pixels, sanitized.
 
-    None -> poligono vacio: no interseca con nada, area cero, IoU cero con
-    todo. Es como una prediccion sin geometria se queda sin pareja y pasa a
-    falso positivo sin tocar el emparejamiento.
+    None -> empty polygon: intersects nothing, zero area, zero IoU with
+    everything. That is how a prediction without geometry stays unmatched and
+    becomes a false positive without touching the matching.
     """
     if quad is None:
         return Polygon()
@@ -84,8 +85,8 @@ def to_polygon(quad: Quad | None, size: ImageSize) -> Polygon:
 
 
 def iou(a: Polygon, b: Polygon) -> float:
-    """IoU rotado. Las razones de area no dependen del espacio, pero el resto
-    del modulo si, asi que entra en pixeles como todo lo demas."""
+    """Rotated IoU. Area ratios do not depend on the space, but the rest of the
+    module does, so it takes pixels like everything else."""
     if not a.intersects(b):
         return 0.0
     intersection = a.intersection(b).area
@@ -96,21 +97,21 @@ def iou(a: Polygon, b: Polygon) -> float:
 
 
 def angle_error_deg(a: Quad, b: Quad, size: ImageSize) -> float:
-    """Error de angulo modulo 180: `min(|d|, 180 - |d|)`.
+    """Angle error modulo 180: `min(|d|, 180 - |d|)`.
 
-    Un rectangulo girado 179 grados y otro girado 1 grado son casi el mismo
-    rectangulo, no dos que difieren en 178. Sin el modulo, esos casos dominan
-    la media y la metrica deja de medir nada.
+    A rectangle rotated 179 degrees and one rotated 1 degree are almost the
+    same rectangle, not two that differ by 178. Without the modulo those cases
+    dominate the mean and the metric stops measuring anything.
     """
     delta = abs(a.angle_deg(size.aspect) - b.angle_deg(size.aspect)) % HALF_TURN
     return min(delta, HALF_TURN - delta)
 
 
 def vertex_distances_px(a: Quad, b: Quad, size: ImageSize) -> list[float]:
-    """Distancia por vertice, ya en el orden canonico de cada uno.
+    """Per-vertex distance, already in the canonical order of each.
 
-    Diagnostico, no criterio de exito: la especificacion dice que la precision
-    geometrica exacta no es el objetivo.
+    Diagnostic, not a success criterion: the specification says exact
+    geometric precision is not the goal.
     """
     pa = [(x * size.width, y * size.height) for x, y in a.points]
     pb = [(x * size.width, y * size.height) for x, y in b.points]
@@ -125,18 +126,18 @@ def longest_side_px(quad: Quad, size: ImageSize) -> float:
 
 
 def expand(polygon: Polygon, margin: float) -> Polygon:
-    """Recorte con margen: escala el rectangulo respecto a su centro.
+    """Crop with margin: scale the rectangle about its center.
 
-    `margin` es la fraccion de CADA LADO que se anade en CADA BORDE, asi que
-    el lado total queda multiplicado por `1 + 2*margin`. Con margin=0.05 el
-    recorte lleva un 5% de holgura por cada lado, no un 5% repartido.
+    `margin` is the fraction of EACH SIDE added on EACH BORDER, so the total
+    side is multiplied by `1 + 2*margin`. With margin=0.05 the crop carries 5%
+    of slack per side, not 5% shared out.
 
-    Se escala en vez de dilatar con `buffer` porque `buffer` redondea las
-    esquinas y el recorte tiene que seguir siendo un cuadrilatero para poder
-    rectificarlo por homografia.
+    It scales instead of dilating with `buffer` because `buffer` rounds the
+    corners and the crop has to stay a quadrilateral so it can be rectified by
+    homography.
     """
     if margin < 0:
-        raise ValueError(f"el margen no puede ser negativo: {margin}")
+        raise ValueError(f"the margin cannot be negative: {margin}")
     if margin == 0:
         return polygon
     from shapely import affinity
@@ -146,7 +147,7 @@ def expand(polygon: Polygon, margin: float) -> Polygon:
 
 
 def union_of(polygons) -> Polygon | None:
-    """Union de una lista, o None si esta vacia. Evita el caso especial fuera."""
+    """Union of a list, or None if empty. Keeps the special case out of callers."""
     valid = [p for p in polygons if p is not None and p.area > 0]
     if not valid:
         return None
@@ -156,12 +157,12 @@ def union_of(polygons) -> Polygon | None:
 
 @dataclass
 class PolygonCache:
-    """Poligonos en pixeles de una imagen, calculados una vez.
+    """Pixel polygons of one image, computed once.
 
-    El emparejamiento greedy y las metricas de recorte recorren los mismos
-    quads varias veces, y `Polygon` no es gratis. El bootstrap remuestrea 2000
-    veces sobre las MISMAS imagenes, asi que sin cache se recalcularia todo
-    dos mil veces.
+    The greedy matching and the crop metrics walk the same quads several
+    times, and `Polygon` is not free. The bootstrap resamples 2000 times over
+    the SAME images, so without a cache everything would be recomputed two
+    thousand times.
     """
 
     size: ImageSize

@@ -1,4 +1,4 @@
-"""Protocolo Detector, registro, aislamiento de Ultralytics y vista derivada."""
+"""Detector protocol, registry, Ultralytics isolation and derived view."""
 
 from __future__ import annotations
 
@@ -37,63 +37,63 @@ ADAPTER = SRC / "detectors" / "ultralytics_obb.py"
 ULTRALYTICS_NAME = "ultralytics-yolo-obb"
 
 
-# --- el registro ----------------------------------------------------------
+# --- the registry ---------------------------------------------------------
 
 
-def test_ultralytics_esta_registrado():
+def test_ultralytics_is_registered():
     assert ULTRALYTICS_NAME in detectors()
 
 
-def test_ultralytics_es_agpl_y_no_apto_para_produccion():
+def test_ultralytics_is_agpl_and_not_fit_for_production():
     detector = get(ULTRALYTICS_NAME)
     assert detector.license == "AGPL-3.0"
     assert detector.production_ready is False
 
 
-def test_no_aparece_entre_los_candidatos_de_produccion():
-    """Sirve de referencia de rendimiento, nunca de candidato."""
+def test_it_does_not_appear_among_the_production_candidates():
+    """It serves as a performance reference, never as a candidate."""
     assert ULTRALYTICS_NAME not in production_candidates()
 
 
-def test_cumple_el_protocolo():
+def test_it_satisfies_the_protocol():
     assert isinstance(get(ULTRALYTICS_NAME), Detector)
 
 
-def test_el_componente_lleva_la_licencia_a_la_ejecucion():
+def test_the_component_carries_the_license_into_the_run():
     component = get(ULTRALYTICS_NAME).component()
     assert component.license == "AGPL-3.0"
-    assert component.blockers("el detector")
+    assert component.blockers("the detector")
 
 
-def test_detector_desconocido_dice_cuales_hay():
-    with pytest.raises(DetectorError, match="desconocido"):
-        get("no_existe")
+def test_unknown_detector_says_which_exist():
+    with pytest.raises(DetectorError, match="unknown"):
+        get("does_not_exist")
 
 
-def test_registrar_dos_veces_el_mismo_nombre_es_error():
-    with pytest.raises(DetectorError, match="duplicado"):
+def test_registering_the_same_name_twice_is_an_error():
+    with pytest.raises(DetectorError, match="duplicate"):
 
         @register
-        class Otro(BaseDetector):
+        class Other(BaseDetector):
             name = ULTRALYTICS_NAME
 
 
-def test_un_detector_sin_nombre_no_se_registra():
+def test_a_detector_without_a_name_is_not_registered():
     with pytest.raises(DetectorError, match="name"):
 
         @register
-        class SinNombre(BaseDetector):
+        class Nameless(BaseDetector):
             pass
 
 
-# --- aislamiento ----------------------------------------------------------
+# --- isolation ------------------------------------------------------------
 
 
 def _imports_ultralytics(path: Path) -> bool:
-    """Busca imports de verdad, no menciones.
+    """Looks for real imports, not mentions.
 
-    Un grep marcaria los comentarios que explican por que `val` se llama asi o
-    el nombre del directorio derivado, y el test dejaria de significar nada.
+    A grep would flag the comments explaining why `val` is called that or the
+    name of the derived directory, and the test would stop meaning anything.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
@@ -108,26 +108,26 @@ def _imports_ultralytics(path: Path) -> bool:
     return False
 
 
-def test_aislamiento_de_ultralytics():
-    """Ningun modulo fuera del adaptador importa `ultralytics`."""
+def test_ultralytics_isolation():
+    """No module outside the adapter imports `ultralytics`."""
     offenders = [
         path.relative_to(SRC).as_posix()
         for path in sorted(SRC.rglob("*.py"))
         if path != ADAPTER and _imports_ultralytics(path)
     ]
     assert offenders == [], (
-        "estos modulos importan ultralytics fuera del adaptador: " + str(offenders)
+        "these modules import ultralytics outside the adapter: " + str(offenders)
     )
 
 
-def test_el_adaptador_si_lo_importa():
-    """Guarda del guarda: si el adaptador dejara de importarlo, el test de
-    aislamiento pasaria por vacio y no estaria comprobando nada."""
+def test_the_adapter_does_import_it():
+    """Guard of the guard: if the adapter stopped importing it, the isolation
+    test would pass vacuously and would not be checking anything."""
     assert _imports_ultralytics(ADAPTER)
 
 
-def test_importar_testbank_no_arrastra_ultralytics():
-    """El import es perezoso: el paquete es opcional y AGPL."""
+def test_importing_testbank_does_not_drag_in_ultralytics():
+    """The import is lazy: the package is optional and AGPL."""
     code = (
         "import sys; import testbank.detectors; "
         "print('ultralytics' in sys.modules)"
@@ -140,14 +140,14 @@ def test_importar_testbank_no_arrastra_ultralytics():
 
 @pytest.mark.skipif(
     importlib.util.find_spec("ultralytics") is not None,
-    reason="ultralytics esta instalado en este entorno",
+    reason="ultralytics is installed in this environment",
 )
-def test_sin_ultralytics_el_error_explica_por_que_es_opcional():
-    """`find_spec`, no `sys.modules`: lo que importa es si esta INSTALADO.
+def test_without_ultralytics_the_error_explains_why_it_is_optional():
+    """`find_spec`, not `sys.modules`: what matters is whether it is INSTALLED.
 
-    Mirar `sys.modules` comprobaba si estaba importado, que con el import
-    perezoso es siempre falso, asi que el test se ejecutaba tambien con el
-    paquete instalado y fallaba.
+    Looking at `sys.modules` checked whether it was imported, which with the
+    lazy import is always false, so the test also ran with the package
+    installed and failed.
     """
     from testbank.detectors.ultralytics_obb import _import_ultralytics
 
@@ -157,16 +157,16 @@ def test_sin_ultralytics_el_error_explica_por_que_es_opcional():
 
 @pytest.mark.skipif(
     importlib.util.find_spec("ultralytics") is None,
-    reason="ultralytics no esta instalado",
+    reason="ultralytics is not installed",
 )
-def test_con_ultralytics_instalado_el_import_perezoso_funciona():
-    """La cara opuesta del test de arriba: uno de los dos corre siempre."""
+def test_with_ultralytics_installed_the_lazy_import_works():
+    """The opposite face of the test above: one of the two always runs."""
     from testbank.detectors.ultralytics_obb import _import_ultralytics
 
     assert _import_ultralytics() is not None
 
 
-# --- la vista derivada ----------------------------------------------------
+# --- the derived view -----------------------------------------------------
 
 
 def _write_sample(directory: Path, sample_id: str, quads, size=(160, 120)) -> Sample:
@@ -197,32 +197,32 @@ def config(tmp_path) -> Config:
     )
 
 
-def test_la_vista_derivada_escribe_las_etiquetas_ya_filtradas(tmp_path, config):
-    """Entrenar con la verdad sin filtrar y medir contra la filtrada no vale."""
-    grande = _quad(0.5, 0.5, half_long=0.30)
-    franja = _quad(0.5, 0.5, half_long=0.30, ratio=30.0)
-    sample = _write_sample(tmp_path / "src", "a", [grande, franja])
+def test_the_derived_view_writes_the_labels_already_filtered(tmp_path, config):
+    """Training with the unfiltered truth and measuring against the filtered one is no good."""
+    large = _quad(0.5, 0.5, half_long=0.30)
+    strip = _quad(0.5, 0.5, half_long=0.30, ratio=30.0)
+    sample = _write_sample(tmp_path / "src", "a", [large, strip])
 
     view = dataset_view.materialize({"train": [sample]}, config, out_dir=tmp_path / "out")
 
-    escritas = (view.root / "train" / "labels" / "a.txt").read_text().strip().splitlines()
-    assert len(escritas) == 1, "la franja filtrada no debe llegar al entrenador"
+    written = (view.root / "train" / "labels" / "a.txt").read_text().strip().splitlines()
+    assert len(written) == 1, "the filtered strip must not reach the trainer"
     assert view.dropped == 1
     assert view.counts == {"train": 1}
 
 
-def test_la_vista_derivada_no_toca_el_origen(tmp_path, config):
-    grande = _quad(0.5, 0.5, half_long=0.30)
-    franja = _quad(0.5, 0.5, half_long=0.30, ratio=30.0)
-    sample = _write_sample(tmp_path / "src", "a", [grande, franja])
-    antes = hashlib.sha256(sample.label_path.read_bytes()).hexdigest()
+def test_the_derived_view_does_not_touch_the_source(tmp_path, config):
+    large = _quad(0.5, 0.5, half_long=0.30)
+    strip = _quad(0.5, 0.5, half_long=0.30, ratio=30.0)
+    sample = _write_sample(tmp_path / "src", "a", [large, strip])
+    before = hashlib.sha256(sample.label_path.read_bytes()).hexdigest()
 
     dataset_view.materialize({"train": [sample]}, config, out_dir=tmp_path / "out")
 
-    assert hashlib.sha256(sample.label_path.read_bytes()).hexdigest() == antes
+    assert hashlib.sha256(sample.label_path.read_bytes()).hexdigest() == before
 
 
-def test_el_data_yaml_usa_val_apuntando_a_valid(tmp_path, config):
+def test_the_data_yaml_uses_val_pointing_to_valid(tmp_path, config):
     import yaml
 
     sample = _write_sample(tmp_path / "src", "a", [_quad(0.5, 0.5)])
@@ -234,19 +234,19 @@ def test_el_data_yaml_usa_val_apuntando_a_valid(tmp_path, config):
     assert data["names"] == {0: "euro_banknote"}
 
 
-def test_la_imagen_llega_a_la_vista(tmp_path, config):
+def test_the_image_reaches_the_view(tmp_path, config):
     sample = _write_sample(tmp_path / "src", "a", [_quad(0.5, 0.5)])
     view = dataset_view.materialize({"train": [sample]}, config, out_dir=tmp_path / "out")
     assert (view.root / "train" / "images" / "a.jpg").exists()
 
 
-# --- evaluate es comun a todos los candidatos -----------------------------
+# --- evaluate is common to all candidates ---------------------------------
 
 
 class _PerfectDetector(BaseDetector):
-    """Predice exactamente la verdad ya filtrada. Solo para probar `evaluate`."""
+    """Predicts exactly the already filtered truth. Only to test `evaluate`."""
 
-    name = "_perfecto_de_prueba"
+    name = "_perfect_for_testing"
     license = "Apache-2.0"
     production_ready = True
 
@@ -260,8 +260,8 @@ class _PerfectDetector(BaseDetector):
         }
 
 
-def test_evaluate_lo_pone_la_base_y_usa_nuestras_metricas(tmp_path, config):
-    """Si cada adaptador trajera el suyo, las filas no serian comparables."""
+def test_evaluate_is_provided_by_the_base_and_uses_our_metrics(tmp_path, config):
+    """If each adapter brought its own, the rows would not be comparable."""
     quads = [_quad(0.3, 0.5, half_long=0.12), _quad(0.7, 0.5, half_long=0.12)]
     samples = [_write_sample(tmp_path / "src", f"s{i}", quads) for i in range(3)]
 
@@ -269,30 +269,30 @@ def test_evaluate_lo_pone_la_base_y_usa_nuestras_metricas(tmp_path, config):
         update={"metrics": config.metrics.model_copy(update={"bootstrap_samples": 40})}
     )
     detector = _PerfectDetector({s.sample_id: quads for s in samples})
-    report = detector.evaluate(samples, fast, weights=tmp_path / "no-se-usa.pt")
+    report = detector.evaluate(samples, fast, weights=tmp_path / "unused.pt")
 
     assert report["map50"]["value"] == pytest.approx(1.0, abs=1e-6)
     assert report["n_images"] == 3
     assert report["bootstrap"]["unit"] == "image"
 
 
-def test_la_verdad_de_evaluate_pasa_por_el_filtro(tmp_path, config):
-    """La franja filtrada no es verdad que haya que detectar, pero tampoco fondo."""
-    grande = _quad(0.5, 0.5, half_long=0.30)
-    franja = _quad(0.5, 0.5, half_long=0.30, ratio=30.0)
-    sample = _write_sample(tmp_path / "src", "a", [grande, franja])
+def test_the_truth_of_evaluate_goes_through_the_filter(tmp_path, config):
+    """The filtered strip is not truth to detect, but not background either."""
+    large = _quad(0.5, 0.5, half_long=0.30)
+    strip = _quad(0.5, 0.5, half_long=0.30, ratio=30.0)
+    sample = _write_sample(tmp_path / "src", "a", [large, strip])
 
     items = build_image_evals([sample], {"a": []}, config=config)
     assert len(items[0].truths) == 1
     assert len(items[0].ignored) == 1
 
 
-def test_el_registro_es_lo_unico_que_decide():
-    """`get` no conoce ningun nombre: todo sale del diccionario."""
+def test_the_registry_is_the_only_thing_that_decides():
+    """`get` knows no name: everything comes from the dictionary."""
     assert set(detectors()) == set(detector_base.REGISTRY)
 
 
-# --- billetes que cruzan el borde -----------------------------------------
+# --- banknotes crossing the border ----------------------------------------
 
 
 def _cfg(config, **detector):
@@ -301,8 +301,8 @@ def _cfg(config, **detector):
     )
 
 
-def _fuera_del_marco() -> Quad:
-    """Billete que se sale por la izquierda: vertices en x negativo."""
+def _outside_the_frame() -> Quad:
+    """Banknote sticking out on the left: vertices at negative x."""
     return canonicalize(Quad.from_xy([(-0.15, 0.3), (0.5, 0.3), (0.5, 0.7), (-0.15, 0.7)]))
 
 
@@ -310,8 +310,8 @@ def _coords(path: Path) -> list[float]:
     return [float(t) for t in path.read_text().split()[1:]]
 
 
-def test_clip_pega_el_quad_al_marco(tmp_path, config):
-    sample = _write_sample(tmp_path / "src", "a", [_fuera_del_marco()])
+def test_clip_pins_the_quad_to_the_frame(tmp_path, config):
+    sample = _write_sample(tmp_path / "src", "a", [_outside_the_frame()])
     view = dataset_view.materialize(
         {"train": [sample]}, _cfg(config, out_of_bounds="clip"), out_dir=tmp_path / "out"
     )
@@ -321,9 +321,9 @@ def test_clip_pega_el_quad_al_marco(tmp_path, config):
     assert view.out_of_bounds == "clip"
 
 
-def test_keep_no_toca_nada_pero_lo_cuenta(tmp_path, config):
-    """Con `keep` Ultralytics descartara la imagen; al menos queda registrado."""
-    sample = _write_sample(tmp_path / "src", "a", [_fuera_del_marco()])
+def test_keep_touches_nothing_but_counts_it(tmp_path, config):
+    """With `keep` Ultralytics will discard the image; at least it is recorded."""
+    sample = _write_sample(tmp_path / "src", "a", [_outside_the_frame()])
     view = dataset_view.materialize(
         {"train": [sample]}, _cfg(config, out_of_bounds="keep"), out_dir=tmp_path / "out"
     )
@@ -331,8 +331,8 @@ def test_keep_no_toca_nada_pero_lo_cuenta(tmp_path, config):
     assert view.adjusted == 1
 
 
-def test_pad_mete_el_quad_dentro_y_agranda_la_imagen(tmp_path, config):
-    sample = _write_sample(tmp_path / "src", "a", [_fuera_del_marco()], size=(160, 120))
+def test_pad_puts_the_quad_inside_and_enlarges_the_image(tmp_path, config):
+    sample = _write_sample(tmp_path / "src", "a", [_outside_the_frame()], size=(160, 120))
     view = dataset_view.materialize(
         {"train": [sample]},
         _cfg(config, out_of_bounds="pad", pad_fraction=0.25),
@@ -345,44 +345,45 @@ def test_pad_mete_el_quad_dentro_y_agranda_la_imagen(tmp_path, config):
         assert im.size == (160 + 2 * 40, 120 + 2 * 30)
 
 
-def test_pad_y_su_inversa_se_cancelan():
-    """Si no fueran inversas exactas, las predicciones saldrian desplazadas."""
+def test_pad_and_its_inverse_cancel_out():
+    """If they were not exact inverses, predictions would come out shifted."""
     from testbank.detectors.dataset import pad_quad
     from testbank.detectors.ultralytics_obb import _unpad
 
     original = _quad(0.4, 0.5, half_long=0.2, ratio=2.0, theta=0.6)
-    ida = pad_quad(original, 0.25)
-    vuelta = _unpad(Prediction(ida, 0.9), 0.25).quad
-    for (x0, y0), (x1, y1) in zip(original.points, vuelta.points):
+    forward = pad_quad(original, 0.25)
+    back = _unpad(Prediction(forward, 0.9), 0.25).quad
+    for (x0, y0), (x1, y1) in zip(original.points, back.points):
         assert x1 == pytest.approx(x0, abs=1e-6)
         assert y1 == pytest.approx(y0, abs=1e-6)
 
 
-def test_la_inversa_conserva_lo_que_sale_del_marco():
-    """Es el unico motivo de existir de `pad`: si se recortara al volver, daria
-    igual que clip y el coste del padding no compraria nada."""
+def test_the_inverse_preserves_what_sticks_out_of_the_frame():
+    """It is the only reason for `pad` to exist: if it clipped on the way back,
+    it would equal clip and the cost of padding would buy nothing."""
     from testbank.detectors.dataset import pad_quad
     from testbank.detectors.ultralytics_obb import _unpad
 
-    fuera = _fuera_del_marco()
-    vuelta = _unpad(Prediction(pad_quad(fuera, 0.25), 0.9), 0.25).quad
-    assert min(vuelta.flat()) < 0.0
+    outside = _outside_the_frame()
+    back = _unpad(Prediction(pad_quad(outside, 0.25), 0.9), 0.25).quad
+    assert min(back.flat()) < 0.0
 
 
-def test_la_politica_por_defecto_es_clip(config):
+def test_the_default_policy_is_clip(config):
     assert config.detector.out_of_bounds.value == "clip"
 
 
-def test_pad_recorta_lo_que_el_borde_no_alcanza(tmp_path, config):
-    """Sin este recorte, `pad` con fraccion pequena perderia la imagen entera.
+def test_pad_clips_what_the_border_does_not_reach(tmp_path, config):
+    """Without this clipping, `pad` with a small fraction would lose the whole image.
 
-    Es lo que permite padear POCO: el borde cubre el caso comun y el recorte se
-    ocupa del residuo, en vez de tener que padear para el peor caso.
+    It is what allows padding LITTLE: the border covers the common case and
+    the clipping handles the residue, instead of having to pad for the worst
+    case.
     """
-    muy_fuera = canonicalize(
+    far_outside = canonicalize(
         Quad.from_xy([(-0.40, 0.3), (0.5, 0.3), (0.5, 0.7), (-0.40, 0.7)])
     )
-    sample = _write_sample(tmp_path / "src", "a", [muy_fuera])
+    sample = _write_sample(tmp_path / "src", "a", [far_outside])
     view = dataset_view.materialize(
         {"train": [sample]},
         _cfg(config, out_of_bounds="pad", pad_fraction=0.05),
@@ -393,8 +394,8 @@ def test_pad_recorta_lo_que_el_borde_no_alcanza(tmp_path, config):
     assert view.clipped_after_pad == 1
 
 
-def test_con_padding_de_sobra_no_hace_falta_recortar(tmp_path, config):
-    sample = _write_sample(tmp_path / "src", "a", [_fuera_del_marco()])
+def test_with_plenty_of_padding_no_clipping_is_needed(tmp_path, config):
+    sample = _write_sample(tmp_path / "src", "a", [_outside_the_frame()])
     view = dataset_view.materialize(
         {"train": [sample]},
         _cfg(config, out_of_bounds="pad", pad_fraction=0.25),

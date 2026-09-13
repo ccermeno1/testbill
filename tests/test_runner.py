@@ -1,4 +1,4 @@
-"""El recorrido completo: particion -> entrenamiento -> metricas -> disco."""
+"""The full path: split -> training -> metrics -> disk."""
 
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ from testbank.experiment.runner import run_candidate
 from testbank.geometry.quad import Quad, canonicalize
 from testbank.metrics.core import Prediction
 
-FAKE_DETECTOR = "_fake_de_prueba"
-FAKE_DATASET = "_dataset_de_prueba"
+FAKE_DETECTOR = "_test_fake"
+FAKE_DATASET = "_test_dataset"
 
 
 def _quad(cx, cy, half_long=0.12, ratio=2.0, theta=0.0) -> Quad:
@@ -34,7 +34,7 @@ QUADS = (_quad(0.3, 0.5), _quad(0.7, 0.5))
 
 
 def _build_dataset(root: Path, counts: dict[str, int]) -> None:
-    """Arbol Roboflow minimo: train/valid/test con images/ y labels/."""
+    """Minimal Roboflow tree: train/valid/test with images/ and labels/."""
     writer = get_format("obb_yolo")
     payload = "\n".join(f"0 {writer.from_quad(q).payload}" for q in QUADS) + "\n"
     for split, count in counts.items():
@@ -49,22 +49,22 @@ def _build_dataset(root: Path, counts: dict[str, int]) -> None:
 
 
 class _FakeDetector(BaseDetector):
-    """Entrena de mentira y predice la verdad. Ejercita el recorrido, no el modelo."""
+    """Trains for pretend and predicts the truth. Exercises the path, not the model."""
 
     name = FAKE_DETECTOR
     license = "Apache-2.0"
     production_ready = True
-    notes = ("detector de prueba",)
+    notes = ("test detector",)
 
-    #: Particiones que `train` recibio. Es como se comprueba que test no se toca.
+    #: Splits that `train` received. It is how it is checked that test is not touched.
     seen_splits: tuple[str, ...] = ()
 
     def train(self, samples_by_split, config, *, output_dir: Path) -> TrainResult:
         type(self).seen_splits = tuple(sorted(samples_by_split))
         output_dir.mkdir(parents=True, exist_ok=True)
         weights = output_dir / "best.pt"
-        weights.write_bytes(b"pesos de mentira")
-        return TrainResult(weights=weights, epochs=1, notes=("entrenamiento falso",))
+        weights.write_bytes(b"fake weights")
+        return TrainResult(weights=weights, epochs=1, notes=("fake training",))
 
     def predict(self, samples, *, weights, config):
         return {s.sample_id: [Prediction(q, 0.9) for q in QUADS] for s in samples}
@@ -79,7 +79,7 @@ def registered():
         license="CC-BY-4.0",
         production_ready=True,
         sources=("CC-BY-4.0",),
-        origin="https://ejemplo/proyecto",
+        origin="https://example/project",
         version="v9",
         exported="2026-09-10",
     )
@@ -111,7 +111,7 @@ def prepared(tmp_path):
     return root, splits_dir, config
 
 
-def test_la_ejecucion_deja_todo_en_disco(registered, prepared):
+def test_the_run_leaves_everything_on_disk(registered, prepared):
     root, splits_dir, config = prepared
     outcome = run_candidate(
         registered, config, splits_dir=splits_dir, data_root=root,
@@ -127,8 +127,8 @@ def test_la_ejecucion_deja_todo_en_disco(registered, prepared):
     assert list(outcome.run.viz_dir.glob("*.png"))
 
 
-def test_test_nunca_se_carga(registered, prepared):
-    """El sello solo lo rompe `evaluate-test`, que lleva su propio registro."""
+def test_test_is_never_loaded(registered, prepared):
+    """The seal is broken only by `evaluate-test`, which keeps its own log."""
     root, splits_dir, config = prepared
     run_candidate(
         registered, config, splits_dir=splits_dir, data_root=root,
@@ -137,7 +137,7 @@ def test_test_nunca_se_carga(registered, prepared):
     assert _FakeDetector.seen_splits == ("train", "valid")
 
 
-def test_se_evalua_sobre_valid_no_sobre_train(registered, prepared):
+def test_evaluation_is_on_valid_not_on_train(registered, prepared):
     root, splits_dir, config = prepared
     outcome = run_candidate(
         registered, config, splits_dir=splits_dir, data_root=root,
@@ -146,9 +146,45 @@ def test_se_evalua_sobre_valid_no_sobre_train(registered, prepared):
     assert outcome.metrics["n_images"] == 4
 
 
-def test_la_procedencia_del_dataset_queda_registrada(registered, prepared):
-    """El commit fija el codigo; las imagenes no estan en git, asi que sin esto
-    dos ejecuciones del mismo commit podrian ser sobre datos distintos."""
+def test_the_split_version_is_recorded_in_the_run(registered, prepared):
+    """Two runs on different split versions were evaluated on different
+    images; without this the table would compare them as equals."""
+    root, splits_dir, config = prepared
+    outcome = run_candidate(
+        registered, config, splits_dir=splits_dir, data_root=root,
+        dataset_name=FAKE_DATASET,
+    )
+    record = json.loads((outcome.run.directory / "run.json").read_text(encoding="utf-8"))
+    assert record["split"]["version"] == "v1"
+    assert record["split"]["mode"] == "adopt"
+    assert len(record["split"]["digest"]) == 64
+    assert "split v1" in outcome.summary()
+
+
+def test_a_pinned_split_version_is_the_one_used(registered, prepared):
+    from testbank.data.splits import GroupConfig, materialize_splits
+
+    root, splits_dir, config = prepared
+    materialize_splits(
+        root, splits_dir, repartition=True, ratios=(0.5, 0.25, 0.25), seed=1,
+        groups=GroupConfig(independence_confirmed=True),
+    )
+    latest = run_candidate(
+        registered, config, splits_dir=splits_dir, data_root=root,
+        dataset_name=FAKE_DATASET,
+    )
+    pinned = run_candidate(
+        registered, config, splits_dir=splits_dir, data_root=root,
+        dataset_name=FAKE_DATASET, split_version="v1", run_name="pinned",
+    )
+    assert latest.run.record.split["version"] == "v2"
+    assert pinned.run.record.split["version"] == "v1"
+    assert pinned.metrics["n_images"] == 4  # v1's valid: the export's 4
+
+
+def test_the_dataset_provenance_is_recorded(registered, prepared):
+    """The commit pins the code; the images are not in git, so without this
+    two runs of the same commit could be on different data."""
     root, splits_dir, config = prepared
     outcome = run_candidate(
         registered, config, splits_dir=splits_dir, data_root=root,
@@ -158,53 +194,53 @@ def test_la_procedencia_del_dataset_queda_registrada(registered, prepared):
     provenance = record["dataset_provenance"][0]
     assert provenance["version"] == "v9"
     assert provenance["exported"] == "2026-09-10"
-    assert provenance["origin"] == "https://ejemplo/proyecto"
+    assert provenance["origin"] == "https://example/project"
 
 
-def test_los_pesos_se_copian_dentro_de_la_ejecucion(registered, prepared):
-    """Si viven fuera, en dos semanas nadie sabe que pesos dieron ese metrics.json."""
+def test_the_weights_are_copied_inside_the_run(registered, prepared):
+    """If they live outside, in two weeks nobody knows which weights gave that metrics.json."""
     root, splits_dir, config = prepared
     outcome = run_candidate(
         registered, config, splits_dir=splits_dir, data_root=root,
         dataset_name=FAKE_DATASET,
     )
-    assert outcome.weights.read_bytes() == b"pesos de mentira"
+    assert outcome.weights.read_bytes() == b"fake weights"
     assert outcome.run.directory in outcome.weights.parents
 
 
-def test_se_pueden_reutilizar_pesos_sin_entrenar(registered, prepared, tmp_path):
+def test_weights_can_be_reused_without_training(registered, prepared, tmp_path):
     root, splits_dir, config = prepared
-    weights = tmp_path / "previos.pt"
-    weights.write_bytes(b"previos")
+    weights = tmp_path / "previous.pt"
+    weights.write_bytes(b"previous")
     _FakeDetector.seen_splits = ()
 
     outcome = run_candidate(
         registered, config, splits_dir=splits_dir, data_root=root,
         dataset_name=FAKE_DATASET, weights=weights,
     )
-    assert _FakeDetector.seen_splits == (), "no debia entrenar"
-    assert outcome.weights.read_bytes() == b"previos"
+    assert _FakeDetector.seen_splits == (), "it should not have trained"
+    assert outcome.weights.read_bytes() == b"previous"
 
 
-def test_el_resumen_dice_lo_que_decide(registered, prepared):
+def test_the_summary_says_what_decides(registered, prepared):
     root, splits_dir, config = prepared
     outcome = run_candidate(
         registered, config, splits_dir=splits_dir, data_root=root,
         dataset_name=FAKE_DATASET,
     )
     summary = outcome.summary()
-    assert "mAP50" in summary and "cobertura p5" in summary
-    assert "contaminacion" in summary
+    assert "mAP50" in summary and "coverage p5" in summary
+    assert "contamination" in summary
 
 
-# --- coherencia del registro de datasets ----------------------------------
+# --- consistency of the dataset registry ----------------------------------
 
 
-def test_un_dataset_apto_no_puede_agregar_fuentes_copyleft():
-    """La licencia de un agregado no anula la de sus fuentes."""
-    with pytest.raises(DatasetError, match="no anula"):
+def test_a_fit_dataset_cannot_aggregate_copyleft_sources():
+    """The license of an aggregate does not override that of its sources."""
+    with pytest.raises(DatasetError, match="does not override"):
         DatasetInfo(
-            name="incoherente",
+            name="inconsistent",
             root=Path("."),
             license="CC-BY-4.0",
             production_ready=True,
@@ -212,11 +248,11 @@ def test_un_dataset_apto_no_puede_agregar_fuentes_copyleft():
         )
 
 
-def test_sources_no_puede_estar_vacio():
-    """Vacio por descuido pasaria la comprobacion de licencias sin mirar nada."""
+def test_sources_cannot_be_empty():
+    """Empty by oversight would pass the license check without looking at anything."""
     with pytest.raises(DatasetError, match="sources"):
         DatasetInfo(
-            name="sin_fuentes",
+            name="no_sources",
             root=Path("."),
             license="CC-BY-4.0",
             production_ready=True,
@@ -224,19 +260,20 @@ def test_sources_no_puede_estar_vacio():
         )
 
 
-def test_el_dataset_real_declara_atribucion():
+def test_the_real_dataset_declares_attribution():
     real = datasets_mod.get("annotated-banknotes-2")
     assert real.license == "CC-BY-4.0"
-    assert any("atribucion" in n.lower() for n in real.notes)
+    assert any("attribution" in n.lower() for n in real.notes)
     assert real.origin.startswith("https://universe.roboflow.com/")
 
 
-# --- avisos de lectura ----------------------------------------------------
+# --- reading caveats ------------------------------------------------------
 
 
-def test_entrenar_con_padding_e_inferir_sin_el_se_avisa(registered, prepared):
-    """Un desajuste silencioso haria leer mal el resultado: sin el aviso, un mal
-    numero se atribuiria al padding y no al desajuste."""
+def test_training_with_padding_and_inferring_without_it_warns(registered, prepared):
+    """A silent mismatch would make the result be misread: without the
+    warning, a bad number would be attributed to the padding and not to the
+    mismatch."""
     root, splits_dir, config = prepared
     config = config.model_copy(
         update={
@@ -252,13 +289,13 @@ def test_entrenar_con_padding_e_inferir_sin_el_se_avisa(registered, prepared):
         registered, config, splits_dir=splits_dir, data_root=root,
         dataset_name=FAKE_DATASET,
     )
-    assert any("desajustado" in c for c in outcome.run.record.caveats)
-    assert "AVISO" in outcome.summary()
+    assert any("mismatched" in c for c in outcome.run.record.caveats)
+    assert "WARNING" in outcome.summary()
     record = json.loads((outcome.run.directory / "run.json").read_text(encoding="utf-8"))
     assert record["caveats"]
 
 
-def test_sin_padding_no_hay_aviso(registered, prepared):
+def test_without_padding_there_is_no_warning(registered, prepared):
     root, splits_dir, config = prepared
     outcome = run_candidate(
         registered, config, splits_dir=splits_dir, data_root=root,
@@ -267,7 +304,7 @@ def test_sin_padding_no_hay_aviso(registered, prepared):
     assert outcome.run.record.caveats == []
 
 
-# --- el conjunto sellado --------------------------------------------------
+# --- the sealed set -------------------------------------------------------
 
 
 def _prepare_test_run(registered, prepared):
@@ -279,7 +316,7 @@ def _prepare_test_run(registered, prepared):
     return root, splits_dir, config, outcome
 
 
-def test_evaluar_en_test_deja_constancia(registered, prepared, tmp_path):
+def test_evaluating_on_test_leaves_a_record(registered, prepared, tmp_path):
     from testbank.data.splits import read_test_accesses
     from testbank.experiment.runner import evaluate_on_test
 
@@ -290,60 +327,62 @@ def test_evaluar_en_test_deja_constancia(registered, prepared, tmp_path):
         registered, config,
         run_directory=outcome.run.directory,
         weights=outcome.weights,
-        reason="linea base definitiva",
+        reason="definitive baseline",
         splits_dir=splits_dir,
         data_root=root,
         log_path=log,
     )
     entries = read_test_accesses(log)
     assert len(entries) == 1
-    assert entries[0]["reason"] == "linea base definitiva"
+    assert entries[0]["reason"] == "definitive baseline"
     assert entries[0]["access_number"] == 1
+    assert entries[0]["split"]["version"] == "v1", "the log says WHICH test was opened"
     assert result.metrics["split"] == "test"
+    assert result.metrics["split_version"]["version"] == "v1"
     assert (outcome.run.directory / "metrics_test.json").exists()
 
 
-def test_el_segundo_acceso_ve_el_primero(registered, prepared, tmp_path):
-    """Es lo que hace util el registro: el siguiente que mire ve que ya se miro."""
+def test_the_second_access_sees_the_first(registered, prepared, tmp_path):
+    """It is what makes the log useful: the next one who looks sees it was already looked at."""
     from testbank.experiment.runner import evaluate_on_test
 
     root, splits_dir, config, outcome = _prepare_test_run(registered, prepared)
     log = tmp_path / "log.jsonl"
-    comun = {
+    common = {
         "run_directory": outcome.run.directory,
         "weights": outcome.weights,
         "splits_dir": splits_dir,
         "data_root": root,
         "log_path": log,
     }
-    evaluate_on_test(registered, config, reason="primera", **comun)
-    segundo = evaluate_on_test(registered, config, reason="segunda", **comun)
+    evaluate_on_test(registered, config, reason="first", **common)
+    second = evaluate_on_test(registered, config, reason="second", **common)
 
-    assert len(segundo.previous_accesses) == 1
-    assert segundo.previous_accesses[0]["reason"] == "primera"
-    assert segundo.entry["access_number"] == 2
+    assert len(second.previous_accesses) == 1
+    assert second.previous_accesses[0]["reason"] == "first"
+    assert second.entry["access_number"] == 2
 
 
-def test_sin_razon_no_se_abre_el_test(registered, prepared, tmp_path):
+def test_without_a_reason_the_test_is_not_opened(registered, prepared, tmp_path):
     from testbank.data.splits import SplitError
     from testbank.experiment.runner import evaluate_on_test
 
     root, splits_dir, config, outcome = _prepare_test_run(registered, prepared)
     log = tmp_path / "log.jsonl"
-    with pytest.raises(SplitError, match="razon"):
+    with pytest.raises(SplitError, match="reason"):
         evaluate_on_test(
             registered, config, run_directory=outcome.run.directory,
             weights=outcome.weights, reason="   ",
             splits_dir=splits_dir, data_root=root, log_path=log,
         )
-    assert not log.exists(), "un intento rechazado no debe dejar entrada"
+    assert not log.exists(), "a rejected attempt must not leave an entry"
 
 
-def test_se_registra_antes_de_evaluar(registered, prepared, tmp_path):
-    """Si fallara la evaluacion, el acceso tiene que constar igualmente.
+def test_it_is_recorded_before_evaluating(registered, prepared, tmp_path):
+    """If the evaluation failed, the access has to be on record anyway.
 
-    Registrar despues dejaria que una evaluacion abandonada al ver un mal
-    numero no dejara rastro, y el recuento dejaria de significar nada.
+    Recording afterwards would let an evaluation abandoned upon seeing a bad
+    number leave no trace, and the count would stop meaning anything.
     """
     from testbank.data.splits import read_test_accesses
     from testbank.experiment.runner import evaluate_on_test
@@ -351,20 +390,20 @@ def test_se_registra_antes_de_evaluar(registered, prepared, tmp_path):
     root, splits_dir, config, outcome = _prepare_test_run(registered, prepared)
     log = tmp_path / "log.jsonl"
 
-    class _Revienta(type(registered)):
+    class _BlowsUp(type(registered)):
         def predict(self, samples, *, weights, config):
             raise RuntimeError("boom")
 
     with pytest.raises(RuntimeError, match="boom"):
         evaluate_on_test(
-            _Revienta(), config, run_directory=outcome.run.directory,
-            weights=outcome.weights, reason="intento fallido",
+            _BlowsUp(), config, run_directory=outcome.run.directory,
+            weights=outcome.weights, reason="failed attempt",
             splits_dir=splits_dir, data_root=root, log_path=log,
         )
     assert len(read_test_accesses(log)) == 1
 
 
-def test_el_runner_normal_nunca_abre_el_test(registered, prepared, tmp_path):
+def test_the_normal_runner_never_opens_the_test(registered, prepared, tmp_path):
     from testbank.data.splits import read_test_accesses
 
     _prepare_test_run(registered, prepared)

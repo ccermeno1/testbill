@@ -1,22 +1,22 @@
-"""Protocolo `Detector` y registro por decorador.
+"""`Detector` protocol and registration by decorator.
 
-Anadir un candidato es escribir `train` y `predict` en una clase y decorarla con
-`@register`. Nada de `if candidato ==`.
+Adding a candidate is writing `train` and `predict` in a class and decorating
+it with `@register`. No `if candidate ==`.
 
-Por que `evaluate` NO lo implementa cada adaptador
---------------------------------------------------
-La especificacion pide `train`, `predict` y `evaluate` en el protocolo. Los dos
-primeros son necesariamente propios de cada candidato. El tercero NO puede serlo.
+Why `evaluate` is NOT implemented by each adapter
+-------------------------------------------------
+The specification asks for `train`, `predict` and `evaluate` in the protocol.
+The first two are necessarily specific to each candidate. The third CANNOT be.
 
-Si cada adaptador trajera su `evaluate`, cada uno usaria el de su libreria:
-Ultralytics calcula el mAP a su manera, MMDetection a la suya, y las cifras de la
-tabla comparativa dejarian de ser comparables aunque compartieran nombre. Seria
-justo el error que la tabla existe para evitar.
+If each adapter brought its own `evaluate`, each would use its library's:
+Ultralytics computes mAP its way, MMDetection its own, and the figures of the
+comparison table would stop being comparable even though they share a name.
+It would be exactly the mistake the table exists to avoid.
 
-Asi que `evaluate` es concreto, vive aqui, y esta escrito sobre `predict`: todos
-los candidatos se puntuan con NUESTRAS metricas, el mismo IoU rotado y el mismo
-emparejamiento. Un adaptador puede sobrescribirlo, pero entonces sus numeros no
-son comparables y mas vale que quede dicho en el sitio.
+So `evaluate` is concrete, lives here, and is written on top of `predict`: all
+candidates are scored with OUR metrics, the same rotated IoU and the same
+matching. An adapter can override it, but then its numbers are not comparable
+and it had better be said in place.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from testbank.metrics.evaluate import evaluate as evaluate_metrics
 
 
 class DetectorError(RuntimeError):
-    """El candidato no se puede usar en este entorno."""
+    """The candidate cannot be used in this environment."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,12 +60,12 @@ class Detector(Protocol):
 
 
 class BaseDetector:
-    """Implementa `evaluate` sobre `predict`. Los adaptadores heredan de aqui."""
+    """Implements `evaluate` on top of `predict`. Adapters inherit from here."""
 
     name: ClassVar[str] = ""
     license: ClassVar[str] = ""
     production_ready: ClassVar[bool] = False
-    #: Que se dice de este candidato en el registro de la ejecucion.
+    #: What is said about this candidate in the run record.
     notes: ClassVar[tuple[str, ...]] = ()
 
     def component(self) -> ComponentInfo:
@@ -79,15 +79,16 @@ class BaseDetector:
         raise NotImplementedError
 
     def predict(self, samples, *, weights: Path, config: Config) -> dict:
-        """`sample_id -> lista de Prediction`, en coordenadas normalizadas."""
+        """`sample_id -> list of Prediction`, in normalized coordinates."""
         raise NotImplementedError
 
     def evaluate(self, samples, config: Config, *, weights: Path) -> dict:
-        """Puntua con NUESTRAS metricas. Igual para todos los candidatos.
+        """Score with OUR metrics. The same for all candidates.
 
-        La verdad se lee por la puerta unica (`load_samples`), asi que el filtro
-        de area relativa se aplica aqui igual que en todas partes, y lo que el
-        filtro descarta entra como `ignored`: detectarlo no penaliza.
+        The truth is read through the single door (`load_samples`), so the
+        relative area filter is applied here just like everywhere else, and
+        what the filter discards enters as `ignored`: detecting it does not
+        penalize.
         """
         samples = list(samples)
         predictions = self.predict(samples, weights=weights, config=config)
@@ -97,7 +98,7 @@ class BaseDetector:
 
 
 def build_image_evals(samples, predictions: dict, *, config: Config) -> list[ImageEval]:
-    """Une verdad filtrada, descartes y predicciones en lo que comen las metricas."""
+    """Joins filtered truth, drops and predictions into what the metrics consume."""
     sizes = SizeIndex.for_samples(
         samples, cache_path=config.data.derived_dir / "image_sizes.json"
     )
@@ -126,9 +127,9 @@ REGISTRY: dict[str, BaseDetector] = {}
 
 def register(cls: type) -> type:
     if not cls.name:
-        raise DetectorError(f"{cls.__name__} no declara `name`")
+        raise DetectorError(f"{cls.__name__} does not declare `name`")
     if cls.name in REGISTRY:
-        raise DetectorError(f"detector duplicado en el registro: {cls.name!r}")
+        raise DetectorError(f"duplicate detector in the registry: {cls.name!r}")
     REGISTRY[cls.name] = cls()
     return cls
 
@@ -138,7 +139,7 @@ def get(name: str) -> BaseDetector:
         return REGISTRY[name]
     except KeyError:
         raise DetectorError(
-            f"detector desconocido: {name!r}; registrados: {sorted(REGISTRY)}"
+            f"unknown detector: {name!r}; registered: {sorted(REGISTRY)}"
         ) from None
 
 
@@ -147,7 +148,7 @@ def detectors() -> list[str]:
 
 
 def production_candidates() -> list[str]:
-    """Los que pueden ir a produccion. Los demas son referencia de rendimiento."""
+    """The ones that can go to production. The rest are performance references."""
     return sorted(n for n, d in REGISTRY.items() if d.production_ready)
 
 

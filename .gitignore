@@ -1,4 +1,4 @@
-# --- entorno y caches -------------------------------------------------------
+# --- environment and caches --------------------------------------------------
 .venv/
 .venv-*/
 __pycache__/
@@ -10,34 +10,34 @@ __pycache__/
 build/
 dist/
 
-# --- editor y sistema operativo ---------------------------------------------
+# --- editor and operating system ---------------------------------------------
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# --- datos ------------------------------------------------------------------
-# El dataset no entra: son 16 MB de imagenes cuya fuente de verdad es Roboflow
-# (clara-cermeno/annotated-banknotes-2-rwayh), no este repositorio. Se recupera
-# reexportando desde alli.
+# --- data --------------------------------------------------------------------
+# The dataset does not go in: it is 16 MB of images whose source of truth is
+# Roboflow (clara-cermeno/annotated-banknotes-2-rwayh), not this repository. It
+# is recovered by re-exporting from there.
 #
-# Lo que SI entra es splits/, que es donde vive la particion congelada. Ese es el
-# punto de materializarla: los .txt sobreviven aunque el arbol de datos cambie, y
-# versionarlos es lo que permite repetir una ejecucion.
+# What DOES go in is splits/, which is where the frozen split lives. That is the
+# point of materializing it: the .txt files survive even if the data tree
+# changes, and versioning them is what allows repeating a run.
 data/*
 !data/.gitkeep
 
-# Todo lo derivado se regenera: indice de tamanos, vista para Ultralytics.
+# Everything derived is regenerated: size index, view for Ultralytics.
 data/derived/
 
-# Los datos sinteticos los rehace tools/make_synthetic.py con semilla fija.
+# Synthetic data is rebuilt by tools/make_synthetic.py with a fixed seed.
 data/synth_*/
 
-# --- ejecuciones ------------------------------------------------------------
-# Los pesos y las imagenes fuera; el REGISTRO dentro. run.json, metrics.json y
-# config.yaml son pequenos y son el historial de experimentos: versionarlos es
-# lo que hace que `compare` tenga memoria mas alla de esta maquina.
+# --- runs --------------------------------------------------------------------
+# Weights and images out; the RECORD in. run.json, metrics.json and
+# config.yaml are small and are the experiment history: versioning them is what
+# gives `compare` a memory beyond this machine.
 runs/**/weights/
 runs/**/viz/
 runs/_inspection/
@@ -46,12 +46,13 @@ runs/_inspection/
 *.onnx
 *.tflite
 
-# Ultralytics deja esto donde le pillas.
+# Ultralytics leaves this wherever it happens to be.
 yolo*.pt
 runs/detect/
 .venv-*/
 
-# Checkpoints descargados a mano (Megvii COCO, DDGRCF DOTA). Nunca al repo.
-/weights/
-*.pth
-*.pth.tar
+# Foreign checkpoints (Megvii COCO, DDGRCF DOTA) live in weights/ and go through
+# Git LFS (see .gitattributes): the repo keeps a pointer, the binaries go apart.
+# `*.pt`/`*.pth` anywhere else (runs/, the working tree) stay out.
+!/weights/*.pth
+!/weights/*.pth.tar

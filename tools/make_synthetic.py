@@ -1,18 +1,18 @@
-"""Genera datos sinteticos con la estructura y las patologias del export real.
+"""Generates synthetic data with the structure and pathologies of the real export.
 
-Sustituye al export de Roboflow hasta que llegue. Reproduce a proposito lo que
-hace dificil el problema:
+Stands in for the Roboflow export until it arrives. Deliberately reproduces
+what makes the problem hard:
 
-  - billetes en abanico y adyacentes en angulos distintos (el caso que rompe la
-    caja alineada al eje y motiva el OBB)
-  - billetes que se solapan y se tocan, del mismo color y textura
-  - billetes que cruzan el borde de la imagen, con vertices fuera de [0,1]
-  - algun billete casi cuadrado, que dispara el aviso de ancla inestable
-  - unas pocas imagenes que INCUMPLEN la politica de visibilidad a proposito,
-    para que el chequeo de consistencia tenga algo real que encontrar
+  - fanned and adjacent banknotes at different angles (the case that breaks
+    the axis-aligned box and motivates the OBB)
+  - banknotes that overlap and touch, of the same color and texture
+  - banknotes crossing the image border, with vertices outside [0,1]
+  - the odd nearly square banknote, which triggers the unstable-anchor warning
+  - a few images that VIOLATE the visibility policy on purpose, so the
+    consistency check has something real to find
 
-La visibilidad se calcula con shapely contra la union de los billetes dibujados
-DESPUES, que son los que quedan encima.
+Visibility is computed with shapely against the union of the banknotes drawn
+AFTERWARDS, which are the ones that end up on top.
 """
 
 from __future__ import annotations
@@ -33,8 +33,8 @@ VISIBILITY_THRESHOLD = 0.25
 MIN_INSIDE_FRAME = 0.40
 BILL_ASPECT = (1.85, 2.25)
 
-# Billetes claramente separables del fondo: la visualizacion de inspeccion no
-# sirve de nada si no se distingue el billete de la mesa.
+# Banknotes clearly separable from the background: the inspection
+# visualization is useless if the banknote cannot be told from the table.
 _PALETTE = [
     (96, 158, 120),
     (168, 132, 96),
@@ -46,7 +46,7 @@ _PALETTE = [
 
 @dataclass
 class Bill:
-    corners: np.ndarray  # (4,2) en pixeles, orden horario
+    corners: np.ndarray  # (4,2) in pixels, clockwise order
     polygon: Polygon
 
 
@@ -89,7 +89,7 @@ def _bill_texture(rng: random.Random, width: int, height: int) -> np.ndarray:
         cv2.line(patch, (int(width * 0.08), y), (int(width * 0.5), y),
                  tuple(float(v * 0.7) for v in base), 1)
 
-    # Manchas: el clasificador aguas abajo busca justo esto.
+    # Stains: the downstream classifier looks for exactly this.
     for _ in range(rng.randint(0, 3)):
         centre = (rng.randint(0, width), rng.randint(0, height))
         axes = (rng.randint(4, max(5, width // 10)), rng.randint(4, max(5, height // 6)))
@@ -126,7 +126,7 @@ def _paste(canvas: np.ndarray, corners: np.ndarray, texture: np.ndarray) -> None
 
 
 def _scene(rng: random.Random, kind: str, width: int, height: int) -> list[np.ndarray]:
-    """Devuelve los rectangulos en orden de dibujo: el ultimo queda encima."""
+    """Returns the rectangles in drawing order: the last one ends up on top."""
     out: list[np.ndarray] = []
     span = min(width, height)
 
@@ -220,7 +220,7 @@ def _scene(rng: random.Random, kind: str, width: int, height: int) -> list[np.nd
 
 
 def _visibility(index: int, polys: list[Polygon]) -> float:
-    """Fraccion visible: lo que no tapan los billetes dibujados despues."""
+    """Visible fraction: what the banknotes drawn afterwards do not cover."""
     above = polys[index + 1 :]
     if not above:
         return 1.0
@@ -338,8 +338,8 @@ def main() -> None:
     parser.add_argument("--layout", choices=["roboflow", "flat"], default="roboflow")
     args = parser.parse_args()
     summary = generate(args.out, args.count, args.seed, args.layout)
-    print(f"{summary['count']} imagenes en {args.out} ({args.layout})")
-    print(f"incumplimientos deliberados: {len(summary['deliberate_violations'])}")
+    print(f"{summary['count']} images in {args.out} ({args.layout})")
+    print(f"deliberate violations: {len(summary['deliberate_violations'])}")
 
 
 if __name__ == "__main__":

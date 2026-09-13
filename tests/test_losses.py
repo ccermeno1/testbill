@@ -1,14 +1,15 @@
-"""Las tres recetas de perdida: cada una entera, sobre la misma cabeza propia.
+"""The loss recipes: each one whole, on the same own head.
 
-Que se comprueba y por que:
+What is checked and why:
 
-- Que la cabeza que exige cada receta es la que sale, y que un checkpoint la
-  lleva dentro: cargar pesos DFL en una cabeza directa reventaria a mitad.
-- Que `target_distances` es la inversa EXACTA del decodificador: si no lo
-  fuera, la DFL y la L1 tardia aprenderian hacia una caja que no es la verdad.
-- Propiedades de TAL y DFL que los papers garantizan.
-- Que las tres recetas producen perdidas finitas con gradiente finito sobre
-  una red sin entrenar, y que cada una reporta SUS terminos y no los de otra.
+- That the head each recipe demands is the one that comes out, and that a
+  checkpoint carries it inside: loading DFL weights into a direct head would
+  blow up halfway.
+- That `target_distances` is the EXACT inverse of the decoder: if it were
+  not, the DFL and the late L1 would learn towards a box that is not the truth.
+- Properties of TAL and DFL that the papers guarantee.
+- That every recipe produces finite losses with finite gradient on an
+  untrained network, and that each reports ITS terms and not another's.
 """
 
 from __future__ import annotations
@@ -60,37 +61,37 @@ def _targets():
     return boxes, torch.zeros(2, dtype=torch.long)
 
 
-# --- la cabeza que exige cada receta ---------------------------------------
+# --- the head each recipe demands ------------------------------------------
 
 
-def test_cada_receta_fija_su_cabeza():
+def test_each_recipe_fixes_its_head():
     assert head_spec_for(_config("own")) == HeadSpec()
     assert head_spec_for(_config("yolox_obb_fork")) == HeadSpec()
     ul = head_spec_for(_config("ultralytics_obb"))
     assert (ul.regression, ul.angle, ul.objectness) == ("dfl", "scalar", False)
 
 
-def test_la_cabeza_dfl_saca_las_formas_correctas():
+def test_the_dfl_head_outputs_the_right_shapes():
     model = YoloxObb("nano", head=HeadSpec(regression="dfl", angle="scalar", objectness=False))
     for o in _single_image_outputs(model):
         assert o.distances.shape[1] == 4
         assert o.distribution.shape[1] == 4 * 16
         assert o.angle.shape[1] == 1
         assert o.objectness is None
-        # La esperanza de la distribucion cae en [0, reg_max - 1].
+        # The expectation of the distribution falls in [0, reg_max - 1].
         assert (o.distances >= 0).all() and (o.distances <= 15).all()
 
 
-def test_la_cabeza_directa_no_cambia():
+def test_the_direct_head_does_not_change():
     model = YoloxObb("nano")
     for o in _single_image_outputs(model):
         assert o.distribution is None and o.objectness is not None
         assert o.angle.shape[1] == 2
 
 
-def test_el_checkpoint_lleva_la_cabeza_dentro(tmp_path):
-    """Cargar unos pesos DFL en una cabeza directa fallaria por tamanos. La
-    especificacion de la cabeza viaja con los pesos, no con la config."""
+def test_the_checkpoint_carries_the_head_inside(tmp_path):
+    """Loading DFL weights into a direct head would fail on sizes. The head
+    specification travels with the weights, not with the config."""
     model = YoloxObb("nano", head=HeadSpec(regression="dfl", angle="scalar", objectness=False))
     path = tmp_path / "w.pt"
     torch.save(
@@ -106,30 +107,30 @@ def test_el_checkpoint_lleva_la_cabeza_dentro(tmp_path):
     assert loaded.head_spec == model.head_spec
 
 
-def test_un_checkpoint_viejo_sin_cabeza_carga_como_directa(tmp_path):
+def test_an_old_checkpoint_without_head_loads_as_direct(tmp_path):
     model = YoloxObb("nano")
     path = tmp_path / "w.pt"
     torch.save({"model": model.state_dict(), "variant": "nano", "num_classes": 1}, path)
     assert load_model(path).head_spec == HeadSpec()
 
 
-# --- angulo escalar ---------------------------------------------------------
+# --- scalar angle ----------------------------------------------------------
 
 
-def test_el_angulo_escalar_cubre_medio_giro():
+def test_the_scalar_angle_covers_half_a_turn():
     logits = torch.linspace(-12, 12, 200).view(1, 1, 200, 1)
     theta = decode_angle(logits.permute(0, 1, 2, 3).reshape(200, 1), "scalar")
     assert (theta >= 0).all() and (theta < math.pi).all()
-    # Sigmoide de -inf a +inf recorre (-pi/4, 3pi/4): modulo pi, todo el rango.
+    # Sigmoid from -inf to +inf sweeps (-pi/4, 3pi/4): modulo pi, the whole range.
     assert theta.max() - theta.min() > 0.95 * math.pi
 
 
-# --- target_distances es la inversa del decodificador ------------------------
+# --- target_distances is the inverse of the decoder -------------------------
 
 
-def test_target_distances_deshace_el_decodificador():
-    """Se construyen distancias, se decodifican a cajas, y se vuelve: tiene que
-    salir lo mismo. Si no, la DFL aprenderia hacia otra caja."""
+def test_target_distances_undoes_the_decoder():
+    """Distances are built, decoded to boxes, and taken back: the same thing
+    has to come out. Otherwise the DFL would learn towards another box."""
     from testbank.models.yolox_obb import HeadOutput, encode_angle
 
     grid_sizes = [(SIDE // s, SIDE // s) for s in STRIDES]
@@ -164,7 +165,7 @@ def _grid_for(side=SIDE) -> AnchorGrid:
     return build_anchor_grid([(side // s, side // s) for s in STRIDES], STRIDES, device=torch.device("cpu"))
 
 
-def test_tal_solo_elige_celdas_dentro_de_la_caja():
+def test_tal_only_picks_cells_inside_the_box():
     grid = _grid_for()
     boxes, classes = _targets()
     n = len(grid)
@@ -175,10 +176,10 @@ def test_tal_solo_elige_celdas_dentro_de_la_caja():
 
     inside = points_in_rotated_boxes(grid.centers, boxes)
     assert a.positive.any()
-    assert inside[a.positive].any(dim=1).all(), "una positiva fuera de toda caja"
+    assert inside[a.positive].any(dim=1).all(), "a positive outside every box"
 
 
-def test_tal_da_a_lo_sumo_topk_por_billete_y_objetivos_suaves_en_cero_uno():
+def test_tal_gives_at_most_topk_per_banknote_and_soft_targets_in_zero_one():
     grid = _grid_for()
     boxes, classes = _targets()
     n = len(grid)
@@ -189,11 +190,11 @@ def test_tal_da_a_lo_sumo_topk_por_billete_y_objetivos_suaves_en_cero_uno():
         assert int(((a.matched == target) & a.positive).sum()) <= 5
     ts = a.target_scores
     assert ts is not None and (ts >= 0).all() and (ts <= 1).all()
-    assert (ts[~a.positive] == 0).all(), "el fondo tiene objetivo cero"
+    assert (ts[~a.positive] == 0).all(), "the background has target zero"
     assert (ts[a.positive].sum(dim=1) > 0).all()
 
 
-def test_tal_sin_billetes_devuelve_todo_fondo():
+def test_tal_without_banknotes_returns_all_background():
     grid = _grid_for()
     n = len(grid)
     predicted = torch.cat([grid.centers, torch.ones(n, 2) * 10, torch.zeros(n, 1)], dim=1)
@@ -201,8 +202,8 @@ def test_tal_sin_billetes_devuelve_todo_fondo():
     assert not a.positive.any() and (a.target_scores == 0).all()
 
 
-def test_tal_la_celda_mejor_alineada_recibe_su_mejor_solape():
-    """Es la normalizacion de TOOD: max(metrica) -> max(solape) por billete."""
+def test_tal_the_best_aligned_cell_receives_its_best_overlap():
+    """It is TOOD's normalization: max(metric) -> max(overlap) per banknote."""
     grid = _grid_for()
     boxes, classes = _targets()
     n = len(grid)
@@ -219,7 +220,7 @@ def test_tal_la_celda_mejor_alineada_recibe_su_mejor_solape():
 # --- DFL -----------------------------------------------------------------
 
 
-def test_dfl_es_minima_cuando_la_masa_esta_en_los_bins_correctos():
+def test_dfl_is_minimal_when_the_mass_is_in_the_right_bins():
     reg_max = 16
     target = torch.tensor([[3.25, 7.0, 0.5, 14.9]])
     logits = torch.full((1, 4 * reg_max), -20.0).view(1, 4, reg_max)
@@ -227,25 +228,25 @@ def test_dfl_es_minima_cuando_la_masa_esta_en_los_bins_correctos():
         lo = int(y.floor())
         logits[0, side, lo] = math.log(float(lo + 1 - y) + 1e-9) + 20
         logits[0, side, min(lo + 1, reg_max - 1)] = math.log(float(y - lo) + 1e-9) + 20
-    perfecta = distribution_focal_loss(logits.view(1, -1), target, reg_max)
-    peor = distribution_focal_loss(torch.zeros(1, 4 * reg_max), target, reg_max)
-    assert perfecta.item() < peor.item()
-    assert perfecta.item() >= 0
+    perfect = distribution_focal_loss(logits.view(1, -1), target, reg_max)
+    worse = distribution_focal_loss(torch.zeros(1, 4 * reg_max), target, reg_max)
+    assert perfect.item() < worse.item()
+    assert perfect.item() >= 0
 
 
-def test_dfl_clampa_el_objetivo_al_ultimo_bin():
-    """Un objetivo mas alla de reg_max-1 no puede representarse: se clampa en
-    vez de indexar fuera y reventar."""
+def test_dfl_clamps_the_target_to_the_last_bin():
+    """A target beyond reg_max-1 cannot be represented: it is clamped instead
+    of indexing out of bounds and blowing up."""
     logits = torch.randn(3, 4 * 16)
     loss = distribution_focal_loss(logits, torch.full((3, 4), 40.0), 16)
     assert torch.isfinite(loss).all()
 
 
-# --- las tres recetas, de punta a punta --------------------------------------
+# --- the recipes, end to end --------------------------------------------------
 
 
 @pytest.mark.parametrize("recipe", RECIPES)
-def test_cada_receta_da_perdida_finita_con_gradiente(recipe):
+def test_each_recipe_gives_a_finite_loss_with_gradient(recipe):
     config = _config(recipe)
     model = YoloxObb("nano", head=head_spec_for(config))
     outputs = _single_image_outputs(model)
@@ -258,7 +259,7 @@ def test_cada_receta_da_perdida_finita_con_gradiente(recipe):
     assert grads and all(torch.isfinite(g).all() for g in grads)
 
 
-def test_cada_receta_reporta_sus_terminos_y_no_los_de_otra():
+def test_each_recipe_reports_its_terms_and_not_another_recipe_s():
     boxes, classes = _targets()
     reported = {}
     for recipe in RECIPES:
@@ -273,7 +274,7 @@ def test_cada_receta_reporta_sus_terminos_y_no_los_de_otra():
     assert reported["ultralytics_obb"]["objectness"] == 0 and reported["ultralytics_obb"]["angle"] == 0
 
 
-def test_la_l1_del_fork_solo_se_enciende_al_final():
+def test_the_fork_l1_only_switches_on_at_the_end():
     boxes, classes = _targets()
     config = _config("yolox_obb_fork", epochs=20)
     model = YoloxObb("nano")
@@ -284,15 +285,15 @@ def test_la_l1_del_fork_solo_se_enciende_al_final():
     assert late.to_dict()["l1"] > 0.0
 
 
-def test_la_receta_ultralytics_exige_la_cabeza_dfl():
+def test_the_ultralytics_recipe_requires_the_dfl_head():
     config = _config("ultralytics_obb")
-    model = YoloxObb("nano")  # cabeza directa, a proposito
+    model = YoloxObb("nano")  # direct head, on purpose
     boxes, classes = _targets()
-    with pytest.raises(ValueError, match="cabeza DFL"):
+    with pytest.raises(ValueError, match="DFL head"):
         losses_for_image(_single_image_outputs(model), boxes, classes, config, torch.device("cpu"))
 
 
-def test_las_ganancias_por_defecto_son_las_de_cada_original():
+def test_the_default_gains_are_those_of_each_original():
     config = Config()
     assert config.detector.loss.fork.box_gain == 5.0
     assert config.detector.loss.fork.tau == 1.0
@@ -301,18 +302,19 @@ def test_las_ganancias_por_defecto_son_las_de_cada_original():
     assert (ul.reg_max, ul.tal_topk, ul.tal_alpha, ul.tal_beta) == (16, 10, 0.5, 6.0)
 
 
-def test_la_receta_es_una_literal_y_no_acepta_otra_cosa():
-    """Por el constructor, que valida. `model_copy(update=...)` NO valida -- es
-    el footgun documentado en `StrictModel` -- y por eso `_config` no sirve
-    aqui: aceptaria la cadena y reventaria mas tarde en el despacho."""
+def test_the_recipe_is_a_literal_and_accepts_nothing_else():
+    """Through the constructor, which validates. `model_copy(update=...)` does
+    NOT validate -- it is the footgun documented in `StrictModel` -- and that
+    is why `_config` is no good here: it would accept the string and blow up
+    later in the dispatch."""
     from testbank.config import LossConfig
 
     with pytest.raises(ValueError):
-        LossConfig(recipe="gaussiana_mezclada")
+        LossConfig(recipe="mixed_gaussian")
 
 
-def test_una_receta_colada_sin_validar_revienta_en_el_despacho_con_mensaje():
+def test_an_unvalidated_recipe_that_slips_through_blows_up_in_the_dispatch_with_a_message():
     boxes, classes = _targets()
-    config = _config("gaussiana_mezclada")  # se cuela: model_copy no valida
-    with pytest.raises(ValueError, match="receta desconocida"):
+    config = _config("mixed_gaussian")  # slips through: model_copy does not validate
+    with pytest.raises(ValueError, match="unknown recipe"):
         losses_for_image(_single_image_outputs(YoloxObb("nano")), boxes, classes, config, torch.device("cpu"))

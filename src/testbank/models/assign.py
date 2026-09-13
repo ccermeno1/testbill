@@ -1,30 +1,30 @@
-"""SimOTA: que celda se hace responsable de que billete.
+"""SimOTA: which cell becomes responsible for which banknote.
 
-Un detector sin anclas tiene ~3500 celdas para 416x416 y, en nuestras imagenes,
-uno o dos billetes. Casi todo es fondo. Decidir MAL que celdas son positivas es
-lo que mas cuesta en un detector de una etapa: elegir pocas y no aprende,
-elegir muchas y el fondo domina.
+An anchor-free detector has ~3500 cells at 416x416 and, in our images, one or
+two banknotes. Almost everything is background. Deciding BADLY which cells are
+positive is what costs the most in a one-stage detector: pick too few and it
+does not learn, pick too many and the background dominates.
 
-SimOTA lo resuelve en dos pasos: filtrar candidatos geometricamente, y entre
-esos elegir por coste, con un numero de positivos que se ADAPTA a cada billete
-en vez de ser fijo. Un billete bien definido se lleva mas celdas que uno dudoso.
+SimOTA solves it in two steps: filter candidates geometrically, and among those
+choose by cost, with a number of positives that ADAPTS to each banknote instead
+of being fixed. A well-defined banknote takes more cells than a doubtful one.
 
-Por que aqui no se usa el IoU rotado de shapely
------------------------------------------------
-Porque no cabe en el bucle. Nuestro IoU rotado construye poligonos y los
-intersecta; para evaluar 100 imagenes una vez es perfecto, pero aqui haria falta
-`candidatos x billetes` intersecciones por imagen y por iteracion. Medido en el
-proyecto: shapely tarda milisegundos por par.
+Why shapely's rotated IoU is not used here
+------------------------------------------
+Because it does not fit in the loop. Our rotated IoU builds polygons and
+intersects them; to evaluate 100 images once it is perfect, but here it would
+take `candidates x banknotes` intersections per image and per iteration.
+Measured in the project: shapely takes milliseconds per pair.
 
-Asi que el coste de asignacion usa una APROXIMACION en torch: IoU de las cajas
-alineadas envolventes mas la distancia entre centros. Es un proxy, y se declara
-como tal. Dos cosas lo hacen aceptable:
+So the assignment cost uses an APPROXIMATION in torch: IoU of the axis-aligned
+enclosing boxes plus the distance between centers. It is a proxy, and it is
+declared as such. Two things make it acceptable:
 
-1. El filtro de candidatos SI es exacto: mira si el centro de la celda cae
-   dentro del rectangulo GIRADO, y eso es barato en torch.
-2. La metrica de verdad sigue siendo el IoU rotado por shapely en evaluacion.
-   Si el proxy asigna mal, el numero final lo delata. Entrenamos con proxy y
-   medimos con lo bueno, que es el orden correcto de las dos cosas.
+1. The candidate filter IS exact: it checks whether the cell center falls
+   inside the ROTATED rectangle, and that is cheap in torch.
+2. The real metric is still shapely's rotated IoU at evaluation. If the proxy
+   assigns badly, the final number gives it away. We train with the proxy and
+   measure with the real thing, which is the right order for the two.
 """
 
 from __future__ import annotations
@@ -34,28 +34,28 @@ from dataclasses import dataclass
 
 import torch
 
-#: Radio, en celdas, de la region central que tambien se acepta como candidata.
-#: Un billete muy fino puede no contener el centro de NINGUNA celda en los
-#: niveles gruesos; sin esta ventana se quedaria sin positivos y sin aprender.
+#: Radius, in cells, of the central region that is also accepted as candidate.
+#: A very thin banknote may contain the center of NO cell at the coarse levels;
+#: without this window it would have no positives and learn nothing.
 CENTER_RADIUS = 2.5
 
-#: Cuantos de los mejores IoU se suman para decidir cuantos positivos lleva cada
-#: billete. Es el `dynamic k` de SimOTA.
+#: How many of the best IoUs are summed to decide how many positives each
+#: banknote takes. It is SimOTA's `dynamic k`.
 TOP_CANDIDATES = 10
 
-#: Coste que se suma a lo que no es candidato geometrico. Grande, pero finito:
-#: con infinito la seleccion por `topk` propaga NaN si un billete se queda sin
-#: candidatos, y preferimos un positivo malo a un gradiente envenenado.
+#: Cost added to whatever is not a geometric candidate. Large, but finite: with
+#: infinity the `topk` selection propagates NaN if a banknote is left without
+#: candidates, and we prefer a bad positive to a poisoned gradient.
 BLOCKED_COST = 1e5
 
 
 @dataclass(frozen=True, slots=True)
 class AnchorGrid:
-    """Centros de celda de todos los niveles, ya en pixeles de la imagen."""
+    """Cell centers of every level, already in image pixels."""
 
-    #: (N, 2) -- centro de cada celda.
+    #: (N, 2) -- center of each cell.
     centers: torch.Tensor
-    #: (N,) -- reduccion espacial del nivel al que pertenece cada celda.
+    #: (N,) -- spatial stride of the level each cell belongs to.
     strides: torch.Tensor
 
     def __len__(self) -> int:
@@ -67,10 +67,10 @@ def build_anchor_grid(
     strides: tuple[int, ...],
     device: torch.device | None = None,
 ) -> AnchorGrid:
-    """Un punto por celda, en el CENTRO de la celda, no en su esquina.
+    """One point per cell, at the CENTER of the cell, not its corner.
 
-    El medio pixel importa: sin el, todas las cajas salen sesgadas media celda
-    hacia arriba y hacia la izquierda, que a stride 32 son 16 pixeles.
+    The half pixel matters: without it every box comes out biased half a cell
+    up and to the left, which at stride 32 is 16 pixels.
     """
     centers, all_strides = [], []
     for (height, width), stride in zip(sizes, strides):
@@ -90,18 +90,18 @@ def build_anchor_grid(
 def points_in_rotated_boxes(
     points: torch.Tensor, boxes: torch.Tensor
 ) -> torch.Tensor:
-    """(N, M) -- si el punto n cae dentro del rectangulo girado m.
+    """(N, M) -- whether point n falls inside rotated rectangle m.
 
-    Exacto y barato: se lleva cada punto al sistema de referencia de la caja
-    girando -theta, y ahi la pregunta es una comparacion con w/2 y h/2. No hace
-    falta construir ningun poligono.
+    Exact and cheap: each point is taken to the box's frame by rotating -theta,
+    and there the question is a comparison against w/2 and h/2. No polygon
+    needs to be built.
 
-    `boxes` es (M, 5) con `cx, cy, w, h, theta`.
+    `boxes` is (M, 5) with `cx, cy, w, h, theta`.
     """
     cx, cy, w, h, theta = boxes.unbind(dim=-1)
     offset = points[:, None, :] - torch.stack((cx, cy), dim=-1)[None, :, :]
     cos_t, sin_t = torch.cos(theta), torch.sin(theta)
-    # Rotacion inversa: girar el punto -theta alrededor del centro de la caja.
+    # Inverse rotation: rotate the point by -theta around the box center.
     local_x = offset[..., 0] * cos_t + offset[..., 1] * sin_t
     local_y = -offset[..., 0] * sin_t + offset[..., 1] * cos_t
     return (local_x.abs() <= w / 2) & (local_y.abs() <= h / 2)
@@ -110,10 +110,10 @@ def points_in_rotated_boxes(
 def points_near_centers(
     points: torch.Tensor, boxes: torch.Tensor, strides: torch.Tensor
 ) -> torch.Tensor:
-    """Ventana cuadrada alrededor del centro, medida en celdas del nivel.
+    """Square window around the center, measured in cells of the level.
 
-    En celdas y no en pixeles a proposito: un nivel grueso necesita una ventana
-    fisicamente mayor para tener el mismo numero de candidatos.
+    In cells and not pixels on purpose: a coarse level needs a physically
+    larger window to get the same number of candidates.
     """
     centers = boxes[:, :2]
     radius = (CENTER_RADIUS * strides)[:, None]
@@ -122,11 +122,11 @@ def points_near_centers(
 
 
 def enclosing_boxes(boxes: torch.Tensor) -> torch.Tensor:
-    """(M, 4) -- envolvente alineada al eje `x1, y1, x2, y2` de cada caja girada.
+    """(M, 4) -- axis-aligned envelope `x1, y1, x2, y2` of each rotated box.
 
-    Es la aproximacion que sostiene el coste. Para una caja alineada es exacta;
-    para una girada 45 grados es generosa. El sesgo esta acotado y va siempre en
-    la misma direccion, que es lo que lo hace usable como coste RELATIVO.
+    It is the approximation the cost rests on. For an aligned box it is exact;
+    for one rotated 45 degrees it is generous. The bias is bounded and always
+    goes the same way, which is what makes it usable as a RELATIVE cost.
     """
     cx, cy, w, h, theta = boxes.unbind(dim=-1)
     cos_t, sin_t = torch.cos(theta).abs(), torch.sin(theta).abs()
@@ -136,7 +136,7 @@ def enclosing_boxes(boxes: torch.Tensor) -> torch.Tensor:
 
 
 def pairwise_iou(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    """(N, M) -- IoU de cajas alineadas `x1, y1, x2, y2`."""
+    """(N, M) -- IoU of axis-aligned boxes `x1, y1, x2, y2`."""
     area_a = (a[:, 2] - a[:, 0]).clamp(min=0) * (a[:, 3] - a[:, 1]).clamp(min=0)
     area_b = (b[:, 2] - b[:, 0]).clamp(min=0) * (b[:, 3] - b[:, 1]).clamp(min=0)
     left_top = torch.maximum(a[:, None, :2], b[None, :, :2])
@@ -148,17 +148,17 @@ def pairwise_iou(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 
 @dataclass(frozen=True, slots=True)
 class Assignment:
-    """Resultado: que celda va con que billete."""
+    """Result: which cell goes with which banknote."""
 
-    #: (N,) bool -- celdas positivas.
+    #: (N,) bool -- positive cells.
     positive: torch.Tensor
-    #: (N,) long -- indice del billete asignado. Solo vale donde `positive`.
+    #: (N,) long -- index of the assigned banknote. Only valid where `positive`.
     matched: torch.Tensor
-    #: (N,) -- IoU de la pareja, para ponderar la perdida de objectness.
+    #: (N,) -- IoU of the pair, to weight the objectness loss.
     matched_iou: torch.Tensor
-    #: (N, C) -- solo TAL: objetivo SUAVE de clasificacion por celda, con la
-    #: metrica de alineacion normalizada. Con SimOTA es None y el objetivo es
-    #: duro (one-hot, o one-hot por IoU en la receta del fork).
+    #: (N, C) -- TAL only: SOFT classification target per cell, with the
+    #: normalized alignment metric. With SimOTA it is None and the target is
+    #: hard (one-hot, or IoU-weighted one-hot in the fork's recipe).
     target_scores: torch.Tensor | None = None
 
     @property
@@ -166,12 +166,12 @@ class Assignment:
         return int(self.positive.sum())
 
 
-#: (N, 5) x (M, 5) -> (N, M) de "parecido" en [0, 1]: 1 es la misma caja.
+#: (N, 5) x (M, 5) -> (N, M) of "likeness" in [0, 1]: 1 is the same box.
 OverlapFn = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 
 
 def enclosing_iou(predicted: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """El solape por defecto: IoU de las envolventes alineadas."""
+    """The default overlap: IoU of the axis-aligned envelopes."""
     return pairwise_iou(enclosing_boxes(predicted), enclosing_boxes(target))
 
 
@@ -185,23 +185,23 @@ def simota_assign(
     overlap: OverlapFn = enclosing_iou,
     overlap_cost: str = "neg_log",
 ) -> Assignment:
-    """Asigna celdas a billetes. Todo en pixeles.
+    """Assign cells to banknotes. Everything in pixels.
 
-    `predicted_boxes` y `target_boxes` son (·, 5) con `cx, cy, w, h, theta`.
-    `predicted_scores` es (N,) con la confianza ya en probabilidad.
+    `predicted_boxes` and `target_boxes` are (·, 5) with `cx, cy, w, h, theta`.
+    `predicted_scores` is (N,) with the confidence already as a probability.
 
-    `overlap` y `overlap_cost` existen para reproducir la receta del fork de
-    YOLOX-OBB SIN tocar la propia:
+    `overlap` and `overlap_cost` exist to reproduce the YOLOX-OBB fork's recipe
+    WITHOUT touching our own:
 
-        propia   overlap = IoU de envolventes,   coste = -log(overlap)     (YOLOX)
-        fork     overlap = 1 - kld_loss,         coste = 1 - overlap       (= kld_loss)
+        own    overlap = envelope IoU,    cost = -log(overlap)     (YOLOX)
+        fork   overlap = 1 - kld_loss,    cost = 1 - overlap       (= kld_loss)
 
-    El `dynamic k` usa `overlap` en los dos casos, que es lo que hace el fork
+    The `dynamic k` uses `overlap` in both cases, which is what the fork does
     (`pair_wise_iou_approximate = 1 - kld_loss`).
 
-    El coste de clase es `-log(score)`. En el fork es una BCE contra el one-hot
-    de la clase; con UNA clase, `BCE(p, 1) = -log(p)` y es lo mismo. Con mas
-    clases dejaria de serlo, y este proyecto tiene una.
+    The class cost is `-log(score)`. In the fork it is a BCE against the
+    class one-hot; with ONE class, `BCE(p, 1) = -log(p)` and it is the same.
+    With more classes it would stop being so, and this project has one.
     """
     n_points = len(grid)
     device = grid.centers.device
@@ -211,9 +211,9 @@ def simota_assign(
         matched_iou=torch.zeros(n_points, device=device),
     )
     if target_boxes.numel() == 0:
-        # Imagen sin billetes: todo es fondo y no hay nada que asignar. Es un
-        # caso legitimo, no un error -- el filtro de area puede dejar vacia una
-        # imagen que solo tenia franjas.
+        # Image with no banknotes: everything is background and there is
+        # nothing to assign. A legitimate case, not an error -- the area filter
+        # can empty an image that only had strips.
         return empty
 
     inside = points_in_rotated_boxes(grid.centers, target_boxes)
@@ -224,14 +224,14 @@ def simota_assign(
 
     iou = overlap(predicted_boxes, target_boxes)
     if overlap_cost == "neg_log":
-        # El log del IoU castiga con dureza creciente el solape malo, que es lo
-        # que se quiere -- entre 0.8 y 0.9 la diferencia importa poco; entre
-        # 0.1 y 0.2, mucho.
+        # The log of the IoU punishes bad overlap with increasing harshness,
+        # which is what we want -- between 0.8 and 0.9 the difference matters
+        # little; between 0.1 and 0.2, a lot.
         pair_cost = -torch.log(iou.clamp(min=1e-8))
     elif overlap_cost == "one_minus":
         pair_cost = 1.0 - iou
     else:
-        raise ValueError(f"overlap_cost desconocido: {overlap_cost!r}")
+        raise ValueError(f"unknown overlap_cost: {overlap_cost!r}")
     cost = (
         -torch.log(predicted_scores[:, None].clamp(min=1e-8))
         + iou_weight * pair_cost
@@ -251,19 +251,19 @@ def simota_assign(
 def _dynamic_k_matching(
     cost: torch.Tensor, iou: torch.Tensor, candidate: torch.Tensor
 ) -> torch.Tensor:
-    """(N, M) bool -- la parte "OTA" de SimOTA.
+    """(N, M) bool -- the "OTA" part of SimOTA.
 
-    Cada billete se lleva `k` celdas, y `k` sale de la suma de sus mejores IoU:
-    un billete que el modelo ya localiza bien recibe mas positivos que uno que
-    apenas encuentra. Un `k` fijo trataria igual al caso facil y al dificil.
+    Each banknote takes `k` cells, and `k` comes from the sum of its best IoUs:
+    a banknote the model already localizes well gets more positives than one
+    it barely finds. A fixed `k` would treat the easy and the hard case alike.
     """
     n_points, n_targets = cost.shape
     matching = torch.zeros_like(cost, dtype=torch.bool)
 
     top = min(TOP_CANDIDATES, n_points)
     top_iou, _ = torch.topk(iou * candidate, top, dim=0)
-    # Al menos uno: un billete sin ningun positivo no genera gradiente y es
-    # como si no estuviera anotado.
+    # At least one: a banknote with no positive at all produces no gradient
+    # and is as if it were not annotated.
     dynamic_k = top_iou.sum(dim=0).int().clamp(min=1)
 
     for target in range(n_targets):
@@ -271,9 +271,9 @@ def _dynamic_k_matching(
         _, indices = torch.topk(cost[:, target], k, largest=False)
         matching[indices, target] = True
 
-    # Una celda no puede servir a dos billetes: se queda con el mas barato. Sin
-    # esto, la celda recibiria dos objetivos distintos y aprenderia el promedio,
-    # que no es ninguno de los dos.
+    # A cell cannot serve two banknotes: it keeps the cheapest. Without this
+    # the cell would receive two different targets and learn the average,
+    # which is neither.
     conflicts = matching.sum(dim=1) > 1
     if conflicts.any():
         best = cost[conflicts].argmin(dim=1)
@@ -294,29 +294,28 @@ def tal_assign(
     alpha: float = 0.5,
     beta: float = 6.0,
 ) -> Assignment:
-    """Task-Aligned Assigner (Feng et al., "TOOD", ICCV 2021). Todo en pixeles.
+    """Task-Aligned Assigner (Feng et al., "TOOD", ICCV 2021). Everything in pixels.
 
-    Es el asignador de la receta de Ultralytics, implementado desde el paper:
-    su codigo es AGPL y no se ha leido. Los valores por defecto (`topk=10`,
-    `alpha=0.5`, `beta=6.0`) son los que Ultralytics DOCUMENTA para su
-    `TaskAlignedAssigner`; no salen del paper, que usa alpha=1.
+    It is the assigner of the Ultralytics recipe, implemented from the paper:
+    its code is AGPL and has not been read. The defaults (`topk=10`,
+    `alpha=0.5`, `beta=6.0`) are the ones Ultralytics DOCUMENTS for its
+    `TaskAlignedAssigner`; they do not come from the paper, which uses alpha=1.
 
-    Como decide:
+    How it decides:
 
-    1. **Metrica de alineacion** por par celda-billete:
-       `t = score^alpha * overlap^beta`, con `score` la probabilidad de la clase
-       correcta y `overlap` el ProbIoU. Premia a la vez clasificar bien y
-       localizar bien, que es la idea de TOOD: que las celdas positivas sean
-       las buenas en las DOS tareas y no en una.
-    2. **Candidatas**: solo celdas cuyo centro cae dentro del rectangulo girado.
-    3. **Top-k** por billete, por metrica.
-    4. **Conflictos**: una celda pedida por dos billetes se queda con el de mas
-       solape.
-    5. **Objetivo suave**: `t` normalizada por billete a `[0, max overlap]` y
-       repartida por clase. Es lo que hace que la BCE de clase y el peso de la
-       perdida de caja lleven la calidad de la localizacion dentro.
+    1. **Alignment metric** per cell-banknote pair:
+       `t = score^alpha * overlap^beta`, with `score` the probability of the
+       right class and `overlap` the ProbIoU. It rewards classifying well AND
+       localizing well at once, which is TOOD's idea: that the positive cells
+       be the good ones at BOTH tasks and not at one.
+    2. **Candidates**: only cells whose center falls inside the rotated rectangle.
+    3. **Top-k** per banknote, by metric.
+    4. **Conflicts**: a cell claimed by two banknotes keeps the one with more overlap.
+    5. **Soft target**: `t` normalized per banknote to `[0, max overlap]` and
+       spread by class. It is what makes the class BCE and the box loss weight
+       carry the localization quality inside.
 
-    `predicted_class_scores` es (N, C) en probabilidad.
+    `predicted_class_scores` is (N, C) as probabilities.
     """
     n_points = len(grid)
     n_classes = predicted_class_scores.shape[-1]
@@ -342,8 +341,8 @@ def tal_assign(
     masked = torch.where(inside, metric, torch.zeros_like(metric))
     top_values, top_indices = torch.topk(masked, k, dim=0)  # (k, M)
     matching = torch.zeros_like(inside)
-    # Solo cuentan las top-k con metrica > 0: un billete con menos de k
-    # candidatas no debe llevarse celdas de fuera de su caja rellenando.
+    # Only the top-k with metric > 0 count: a banknote with fewer than k
+    # candidates must not take cells from outside its box as filler.
     valid = top_values > 0
     for column in range(matching.shape[1]):
         matching[top_indices[valid[:, column], column], column] = True
@@ -359,8 +358,8 @@ def tal_assign(
     if not positive.any():
         return empty
 
-    # Normalizacion por billete: la celda mejor alineada de cada uno recibe
-    # exactamente su mejor solape como objetivo, y el resto en proporcion.
+    # Per-banknote normalization: the best-aligned cell of each receives
+    # exactly its best overlap as target, and the rest in proportion.
     aligned = metric * matching
     max_metric = aligned.max(dim=0, keepdim=True).values
     max_overlap = (overlaps * matching).max(dim=0, keepdim=True).values

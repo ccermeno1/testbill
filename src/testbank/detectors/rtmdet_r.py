@@ -1,21 +1,22 @@
-"""Adaptador de RTMDet-R (MMRotate). Apache-2.0 y apto para produccion.
+"""RTMDet-R (MMRotate) adapter. Apache-2.0 and fit for production.
 
-ESTE ES EL UNICO MODULO DEL PROYECTO QUE PUEDE IMPORTAR `mmrotate`, `mmdet` o
-`mmcv`. `tests/test_detectors.py` lo verifica sobre el arbol de fuentes, igual
-que con `ultralytics`.
+THIS IS THE ONLY MODULE IN THE PROJECT THAT MAY IMPORT `mmrotate`, `mmdet` or
+`mmcv`. `tests/test_detectors.py` verifies it over the source tree, just like
+with `ultralytics`.
 
-No corre en el entorno principal
---------------------------------
-Necesita torch 2.0 y una cadena de versiones muy estrecha que ningun resolutor
-declara. La receta verificada esta en el README; el grupo opcional `rtmdet` del
-pyproject la lleva clavada. Aqui el import es PEREZOSO y el mensaje de error
-manda al sitio correcto en vez de dejar un ImportError pelado.
+Does not run in the main environment
+------------------------------------
+It needs torch 2.0 and a very narrow chain of versions that no resolver
+declares. The verified recipe is in the README; the optional `rtmdet` group of
+the pyproject carries it pinned. Here the import is LAZY and the error message
+points to the right place instead of leaving a bare ImportError.
 
-Punto de partida
-----------------
-`rotated_rtmdet_tiny-3x-dota`: un detector rotado YA ENTRENADO en DOTA, no un
-preentreno de clasificacion. La especificacion pedia preentreno COCO, que para
-la variante tiny no esta publicado -- ver la desviacion documentada en el README.
+Starting point
+--------------
+`rotated_rtmdet_tiny-3x-dota`: a rotated detector ALREADY TRAINED on DOTA, not
+a classification pretraining. The specification asked for COCO pretraining,
+which for the tiny variant is not published -- see the deviation documented in
+the README.
 """
 
 from __future__ import annotations
@@ -32,35 +33,36 @@ from testbank.detectors.base import (
     register,
 )
 
-#: Config de MMRotate del que se parte. `tiny` por el despliegue movil.
+#: MMRotate config to start from. `tiny` because of the mobile deployment.
 DEFAULT_CONFIG = "rotated_rtmdet_tiny-3x-dota"
 
-#: Pesos publicados: detector rotado entrenado en DOTA, mAP 75.60.
+#: Published weights: rotated detector trained on DOTA, mAP 75.60.
 DEFAULT_CHECKPOINT = (
     "https://download.openmmlab.com/mmrotate/v1.0/rotated_rtmdet/"
     "rotated_rtmdet_tiny-3x-dota/rotated_rtmdet_tiny-3x-dota-9d821076.pth"
 )
 
 _INSTALL_HINT = (
-    "RTMDet-R necesita mmrotate, mmdet y mmcv, que NO caben en el entorno "
-    "principal: exigen torch 2.0 y una cadena de versiones muy estrecha "
-    "(mmrotate 1.x -> mmdet <3.2 -> mmcv <2.1 -> indice de torch 2.0). "
-    "La receta verificada esta en el README, seccion 'Entorno para RTMDet-R'."
+    "RTMDet-R needs mmrotate, mmdet and mmcv, which do NOT fit in the main "
+    "environment: they require torch 2.0 and a very narrow chain of versions "
+    "(mmrotate 1.x -> mmdet <3.2 -> mmcv <2.1 -> torch 2.0 index). "
+    "The verified recipe is in the README, section 'RTMDet-R environment'."
 )
 
 
 def _import_mmrotate():
-    """Importa y REGISTRA los modulos de MMRotate.
+    """Imports and REGISTERS the MMRotate modules.
 
-    `register_all_modules(init_default_scope=True)` no es opcional, y el flag
-    tampoco. El modelo se declara como `mmdet.RTMDet`, asi que al construirlo
-    mmengine salta al registro de mmdet -- donde `RotatedRTMDetSepBNHead` no
-    esta, porque vive en mmrotate. Con `init_default_scope=False` falla con
-    `RotatedRTMDetSepBNHead is not in the mmdet::model registry`, que no dice
-    nada del ambito y manda a buscar en el sitio equivocado.
+    `register_all_modules(init_default_scope=True)` is not optional, and
+    neither is the flag. The model is declared as `mmdet.RTMDet`, so when
+    building it mmengine jumps to the mmdet registry -- where
+    `RotatedRTMDetSepBNHead` is not, because it lives in mmrotate. With
+    `init_default_scope=False` it fails with `RotatedRTMDetSepBNHead is not in
+    the mmdet::model registry`, which says nothing about the scope and sends
+    you looking in the wrong place.
 
-    El Runner lo hace por su cuenta desde `default_scope` de la config; cualquier
-    uso manual del registro, no.
+    The Runner does it on its own from the config's `default_scope`; any
+    manual use of the registry does not.
     """
     try:
         from mmdet.apis import inference_detector, init_detector
@@ -77,13 +79,13 @@ class RtmdetRDetector(BaseDetector):
     license = "Apache-2.0"
     production_ready = True
     _NOTE = (
-        "Parte de rotated_rtmdet_tiny-3x-dota: detector rotado ya entrenado en "
-        "DOTA. El preentreno COCO que pedia la especificacion no esta publicado "
-        "para tiny; ver la desviacion en el README."
+        "Starts from rotated_rtmdet_tiny-3x-dota: rotated detector already "
+        "trained on DOTA. The COCO pretraining the specification asked for is "
+        "not published for tiny; see the deviation in the README."
     )
     _ENV_NOTE = (
-        "Corre en un entorno APARTE con torch 2.0. Sus numeros no son "
-        "estrictamente comparables con los de candidatos en torch 2.14."
+        "Runs in a SEPARATE environment with torch 2.0. Its numbers are not "
+        "strictly comparable with those of candidates on torch 2.14."
     )
     notes = (_NOTE, _ENV_NOTE)
 
@@ -95,14 +97,14 @@ class RtmdetRDetector(BaseDetector):
         self.config_name = config_name
         self.checkpoint = checkpoint
 
-    # --- entrenamiento ----------------------------------------------------
+    # --- training ---------------------------------------------------------
 
     def train(self, samples_by_split, config: Config, *, output_dir: Path) -> TrainResult:
-        """Ajusta sobre la vista DOTA que exportamos.
+        """Fine-tunes on the DOTA view we export.
 
-        MMRotate lee un arbol `images/` + `labelTxt/`, que es exactamente lo que
-        escribe nuestro exportador `dota`. Asi comparte filtro de area y politica
-        de borde con los demas candidatos.
+        MMRotate reads an `images/` + `labelTxt/` tree, which is exactly what
+        our `dota` exporter writes. So it shares the area filter and border
+        policy with the other candidates.
         """
         _import_mmrotate()
         from mmengine.runner import Runner
@@ -117,22 +119,23 @@ class RtmdetRDetector(BaseDetector):
         resolved = _resolve_checkpoint(output_dir / "work")
         if resolved is None:
             raise DetectorError(
-                f"el entrenamiento no dejo pesos en {weights.parent}"
+                f"training left no weights in {weights.parent}"
             )
         return TrainResult(
             weights=resolved,
             epochs=config.detector.epochs,
-            notes=(view.describe(), f"partiendo de {self.checkpoint.rsplit('/', 1)[-1]}"),
+            notes=(view.describe(), f"starting from {self.checkpoint.rsplit('/', 1)[-1]}"),
         )
 
-    # --- inferencia -------------------------------------------------------
+    # --- inference --------------------------------------------------------
 
     def predict(self, samples, *, weights: Path, config: Config) -> dict:
-        """`sample_id -> [Prediction]` en coordenadas NORMALIZADAS.
+        """`sample_id -> [Prediction]` in NORMALIZED coordinates.
 
-        MMRotate devuelve `cx, cy, w, h, theta` en pixeles de la imagen, asi que
-        la conversion pasa por el mismo `boxes_to_quads` que el candidato propio:
-        una sola implementacion del paso a quad canonico para los dos.
+        MMRotate returns `cx, cy, w, h, theta` in image pixels, so the
+        conversion goes through the same `boxes_to_quads` as the own
+        candidate: a single implementation of the step to canonical quad for
+        both.
         """
         init_detector, inference_detector = _import_mmrotate()
         import torch
@@ -170,15 +173,15 @@ class RtmdetRDetector(BaseDetector):
 __all__ = ["DEFAULT_CHECKPOINT", "DEFAULT_CONFIG", "RtmdetRDetector"]
 
 
-# --- config de MMRotate ----------------------------------------------------
+# --- MMRotate config -------------------------------------------------------
 
 
 def _resolve_checkpoint(work_dir: Path) -> Path | None:
-    """El ultimo checkpoint que dejo el Runner.
+    """The last checkpoint the Runner left.
 
-    Se busca en vez de reconstruir el nombre: MMEngine lo decide segun el
-    planificador y el intervalo de guardado, y adivinarlo ya fallo una vez con
-    Ultralytics. `last_checkpoint` es un fichero de texto con la ruta dentro.
+    Searched for instead of rebuilding the name: MMEngine decides it from the
+    scheduler and the save interval, and guessing it already failed once with
+    Ultralytics. `last_checkpoint` is a text file with the path inside.
     """
     pointer = work_dir / "last_checkpoint"
     if pointer.is_file():
@@ -190,29 +193,29 @@ def _resolve_checkpoint(work_dir: Path) -> Path | None:
 
 
 def build_train_config(dota_root: Path, config: Config, *, output_dir: Path):
-    """Config de MMRotate para UNA clase sobre nuestra vista DOTA.
+    """MMRotate config for ONE class on our DOTA view.
 
-    Se parte de la config publicada y solo se sobrescribe lo que cambia. Copiar
-    la config entera aqui la dejaria desincronizada del paquete en cuanto este
-    se actualice, y ademas son 200 lineas que no aportan nada.
+    Starts from the published config and only overrides what changes. Copying
+    the whole config here would leave it out of sync with the package as soon
+    as it updates, and besides it is 200 lines that add nothing.
 
-    Tres cosas que hay que tocar y no son evidentes:
+    Three things that must be touched and are not obvious:
 
-    1. `ann_file` apunta a `labelTxt/`. MMRotate usa `annfiles/` por defecto,
-       pero `labelTxt/` es el nombre del convenio DOTA y es el que escribe
-       nuestro exportador. Cambiar el exportador para complacer a MMRotate
-       romperia a cualquier otro consumidor de DOTA.
-    2. `metainfo` con una sola clase. Sin esto, `DOTADataset` espera las 15
-       clases de DOTA y las anotaciones de `euro_banknote` no casan con ninguna.
-    3. `load_from`, no `init_cfg`. Queremos partir del DETECTOR entrenado en
-       DOTA, no del backbone preentrenado en ImageNet que trae la config.
+    1. `ann_file` points to `labelTxt/`. MMRotate uses `annfiles/` by default,
+       but `labelTxt/` is the name of the DOTA convention and it is what our
+       exporter writes. Changing the exporter to please MMRotate would break
+       any other DOTA consumer.
+    2. `metainfo` with a single class. Without this, `DOTADataset` expects the
+       15 DOTA classes and the `euro_banknote` annotations match none.
+    3. `load_from`, not `init_cfg`. We want to start from the DETECTOR trained
+       on DOTA, not from the ImageNet-pretrained backbone the config ships.
     """
     from mmengine.config import Config as MMConfig
     from mmengine.utils import get_installed_path
 
     package = Path(get_installed_path("mmrotate"))
     base = package / ".mim" / "configs" / "rotated_rtmdet"
-    if not base.exists():  # instalado desde git sin .mim
+    if not base.exists():  # installed from git without .mim
         base = package.parent / "configs" / "rotated_rtmdet"
     cfg = MMConfig.fromfile(str(base / f"{DEFAULT_CONFIG}.py"))
 
@@ -227,9 +230,9 @@ def build_train_config(dota_root: Path, config: Config, *, output_dir: Path):
         if section is None:
             continue
         section["batch_size"] = config.detector.batch_size
-        # Sin workers: con `num_workers > 0` el orden de los lotes depende de la
-        # planificacion del sistema y dos ejecuciones con la misma semilla dejan
-        # de coincidir. Es la misma decision que en el candidato propio.
+        # No workers: with `num_workers > 0` the batch order depends on the
+        # system's scheduling and two runs with the same seed stop matching.
+        # It is the same decision as in the own candidate.
         section["num_workers"] = 0
         dataset = section["dataset"]
         dataset["data_root"] = str((dota_root / split).resolve()) + "/"
@@ -238,9 +241,9 @@ def build_train_config(dota_root: Path, config: Config, *, output_dir: Path):
         dataset["metainfo"] = {"classes": classes}
 
     if cfg.get("test_dataloader") is not None:
-        # El test esta SELLADO. Se apunta a valid para que MMRotate no intente
-        # abrir un directorio que no existe, pero nada de aqui lo evalua: eso
-        # solo lo hace `evaluate-test`, con su registro de accesos.
+        # The test is SEALED. It is pointed at valid so MMRotate does not try
+        # to open a directory that does not exist, but nothing here evaluates
+        # it: only `evaluate-test` does, with its access log.
         cfg.test_dataloader = cfg.val_dataloader
 
     cfg.model["bbox_head"]["num_classes"] = len(classes)

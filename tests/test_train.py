@@ -1,4 +1,4 @@
-"""Bucle de entrenamiento y adaptador del candidato propio."""
+"""Training loop and adapter of the own candidate."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-torch = pytest.importorskip("torch", reason="el candidato propio necesita torch")
+torch = pytest.importorskip("torch", reason="the own candidate needs torch")
 
 from conftest import rotated_rect_points
 
@@ -59,12 +59,12 @@ def setup(tmp_path):
     return samples, config
 
 
-# --- el dataset -----------------------------------------------------------
+# --- the dataset ----------------------------------------------------------
 
 
-def test_el_quad_canonico_da_el_lado_largo_como_w():
-    """No es casualidad que aprovecho: es la razon de que exista el orden
-    canonico. `p0->p1` ancla el lado mas largo, asi que `w` sale siendo ese."""
+def test_the_canonical_quad_gives_the_long_side_as_w():
+    """It is not a coincidence being exploited: it is the reason the canonical
+    order exists. `p0->p1` anchors the longest side, so `w` comes out as that."""
     quad = _quad(0.5, 0.5, half_long=0.25, ratio=3.0, theta=0.4)
     _, _, w, h, theta = quad_to_box(quad, 400, 400)
     assert w > h
@@ -72,33 +72,33 @@ def test_el_quad_canonico_da_el_lado_largo_como_w():
     assert 0.0 <= theta < math.pi
 
 
-def test_el_centro_de_la_caja_es_el_centro_del_quad():
+def test_the_box_center_is_the_quad_center():
     quad = _quad(0.3, 0.7, half_long=0.15)
     cx, cy = quad_to_box(quad, 200, 200)[:2]
     assert cx == pytest.approx(0.3 * 200, abs=1.0)
     assert cy == pytest.approx(0.7 * 200, abs=1.0)
 
 
-def test_el_dataset_entrega_imagen_y_cajas(setup):
+def test_the_dataset_delivers_image_and_boxes(setup):
     samples, config = setup
     dataset = build_datasets(samples, config)["train"]
     image, boxes, classes, sample_id = dataset[0]
     assert image.shape == (3, SIDE, SIDE)
-    # BGR crudo en 0-255, la convencion de YOLOX: es lo que esperan los pesos
-    # preentrenados (COCO de Megvii, DOTA de DDGRCF). Antes iba en [0, 1] y el
-    # preentreno llegaba destrozado; ver `image_to_input`.
+    # Raw BGR in 0-255, the YOLOX convention: it is what the pretrained
+    # weights expect (Megvii's COCO, DDGRCF's DOTA). Before it went in [0, 1]
+    # and the pretraining arrived wrecked; see `image_to_input`.
     assert image.min() >= 0.0 and image.max() <= 255.0 and image.max() > 1.0
     assert boxes.shape == (2, 5)
     assert classes.shape == (2,)
     assert sample_id == "s0"
 
 
-def test_el_dataset_pasa_por_el_filtro_de_area(tmp_path):
-    """Si cargara los ficheros por su cuenta, este candidato entrenaria con una
-    verdad distinta de la de Ultralytics."""
-    grande = _quad(0.5, 0.5, half_long=0.30)
-    franja = _quad(0.5, 0.5, half_long=0.30, ratio=30.0)
-    sample = _write(tmp_path / "src", "a", [grande, franja])
+def test_the_dataset_goes_through_the_area_filter(tmp_path):
+    """If it loaded the files on its own, this candidate would train on a
+    different truth than Ultralytics."""
+    large = _quad(0.5, 0.5, half_long=0.30)
+    strip = _quad(0.5, 0.5, half_long=0.30, ratio=30.0)
+    sample = _write(tmp_path / "src", "a", [large, strip])
     base = Config()
     config = base.model_copy(
         update={
@@ -108,12 +108,12 @@ def test_el_dataset_pasa_por_el_filtro_de_area(tmp_path):
     )
     dataset = build_datasets({"train": [sample]}, config)["train"]
     _, boxes, _, _ = dataset[0]
-    assert boxes.shape[0] == 1, "la franja filtrada no debe llegar al entrenador"
+    assert boxes.shape[0] == 1, "the filtered strip must not reach the trainer"
 
 
-def test_el_lote_no_apila_las_cajas(setup):
-    """Cada imagen tiene un numero distinto; apilarlas exigiria rellenar con
-    basura que luego hay que acordarse de ignorar."""
+def test_the_batch_does_not_stack_the_boxes(setup):
+    """Every image has a different number; stacking would require padding
+    with garbage that one must then remember to ignore."""
     samples, config = setup
     dataset = build_datasets(samples, config)["train"]
     batch = collate([dataset[0], dataset[1]])
@@ -121,29 +121,29 @@ def test_el_lote_no_apila_las_cajas(setup):
     assert isinstance(batch.boxes, list) and len(batch.boxes) == 2
 
 
-# --- el planificador ------------------------------------------------------
+# --- the scheduler --------------------------------------------------------
 
 
-def test_el_calentamiento_arranca_bajo():
-    """Sin el, las primeras iteraciones con la cabeza recien inicializada dan
-    gradientes enormes que desestabilizan la BatchNorm."""
+def test_the_warmup_starts_low():
+    """Without it, the first iterations with the freshly initialized head give
+    huge gradients that destabilize the BatchNorm."""
     assert learning_rate_at(0, 1000, 1.0) < 0.1
 
 
-def test_el_coseno_termina_casi_en_cero():
+def test_the_cosine_ends_almost_at_zero():
     assert learning_rate_at(999, 1000, 1.0) < 0.01
 
 
-def test_el_maximo_esta_en_medio_del_arranque():
-    valores = [learning_rate_at(s, 1000, 1.0) for s in range(1000)]
-    assert max(valores) == pytest.approx(1.0, abs=0.01)
-    assert valores.index(max(valores)) < 100
+def test_the_maximum_is_in_the_middle_of_the_start():
+    values = [learning_rate_at(s, 1000, 1.0) for s in range(1000)]
+    assert max(values) == pytest.approx(1.0, abs=0.01)
+    assert values.index(max(values)) < 100
 
 
-# --- entrenar de verdad ---------------------------------------------------
+# --- training for real ----------------------------------------------------
 
 
-def test_entrenar_deja_pesos_y_historial(setup, tmp_path):
+def test_training_leaves_weights_and_history(setup, tmp_path):
     samples, config = setup
     dataset = build_datasets(samples, config)["train"]
     weights, history = fit(dataset, config, output_dir=tmp_path / "out")
@@ -154,22 +154,22 @@ def test_entrenar_deja_pesos_y_historial(setup, tmp_path):
         assert {"box", "angle", "objectness", "classes", "total"} <= set(entry)
 
 
-def test_la_perdida_baja(setup, tmp_path):
-    """La prueba minima de que el bucle aprende algo en vez de dar vueltas."""
+def test_the_loss_goes_down(setup, tmp_path):
+    """The minimal proof that the loop learns something instead of going in circles."""
     samples, config = setup
     config = config.model_copy(
         update={"detector": config.detector.model_copy(update={"epochs": 6})}
     )
     dataset = build_datasets(samples, config)["train"]
     _, history = fit(dataset, config, output_dir=tmp_path / "out")
-    primera = history.epochs[0]["total"]
-    ultima = history.epochs[-1]["total"]
-    assert ultima < primera, f"no bajo: {primera:.4f} -> {ultima:.4f}"
+    first = history.epochs[0]["total"]
+    last = history.epochs[-1]["total"]
+    assert last < first, f"it did not go down: {first:.4f} -> {last:.4f}"
 
 
-def test_los_pesos_recuerdan_su_variante(setup, tmp_path):
-    """Cargar unos pesos de nano en un tiny fallaria con un error de formas
-    incomprensible; el fichero es el unico sitio que no se desincroniza."""
+def test_the_weights_remember_their_variant(setup, tmp_path):
+    """Loading nano weights into a tiny would fail with an incomprehensible
+    shape error; the file is the only place that does not drift out of sync."""
     samples, config = setup
     dataset = build_datasets(samples, config)["train"]
     weights, _ = fit(dataset, config, output_dir=tmp_path / "out")
@@ -177,8 +177,8 @@ def test_los_pesos_recuerdan_su_variante(setup, tmp_path):
     assert model.variant == config.detector.variant
 
 
-def test_entrenar_es_determinista(setup, tmp_path):
-    """Misma semilla, misma perdida. Sin esto no hay comparacion posible."""
+def test_training_is_deterministic(setup, tmp_path):
+    """Same seed, same loss. Without this there is no possible comparison."""
     samples, config = setup
     dataset = build_datasets(samples, config)["train"]
     _, a = fit(dataset, config, output_dir=tmp_path / "a")
@@ -186,23 +186,23 @@ def test_entrenar_es_determinista(setup, tmp_path):
     assert a.epochs[-1]["total"] == pytest.approx(b.epochs[-1]["total"], rel=1e-6)
 
 
-# --- el adaptador ---------------------------------------------------------
+# --- the adapter ----------------------------------------------------------
 
 
-def test_esta_registrado_y_es_apto_para_produccion():
+def test_it_is_registered_and_fit_for_production():
     detector = get_detector("yolox-obb-nano")
     assert detector.license == "Apache-2.0"
     assert detector.production_ready is True
-    assert not detector.component().blockers("el detector")
+    assert not detector.component().blockers("the detector")
 
 
-def test_aparece_entre_los_candidatos_de_produccion():
+def test_it_appears_among_the_production_candidates():
     from testbank.detectors import production_candidates
 
     assert "yolox-obb-nano" in production_candidates()
 
 
-def test_el_recorrido_completo_del_adaptador(setup, tmp_path):
+def test_the_full_path_of_the_adapter(setup, tmp_path):
     samples, config = setup
     detector = get_detector("yolox-obb-nano")
     result = detector.train(samples, config, output_dir=tmp_path / "train")
@@ -218,21 +218,21 @@ def test_el_recorrido_completo_del_adaptador(setup, tmp_path):
             assert len(prediction.quad.points) == 4
 
 
-# --- una variante por candidato -------------------------------------------
+# --- one candidate per variant --------------------------------------------
 
 
-def test_hay_un_candidato_por_variante():
+def test_there_is_one_candidate_per_variant():
     from testbank.detectors import detectors
     from testbank.models.yolox_obb import VARIANTS
 
-    registrados = set(detectors())
+    registered = set(detectors())
     for variant in VARIANTS:
-        assert f"yolox-obb-{variant}" in registrados
+        assert f"yolox-obb-{variant}" in registered
 
 
-def test_el_nombre_registrado_coincide_con_la_variante():
-    """Regresion: el nombre estaba fijo en "nano" mientras la variante venia de
-    la config, asi que un tiny de 4.37M se registraba como el nano de 857k."""
+def test_the_registered_name_matches_the_variant():
+    """Regression: the name was fixed at "nano" while the variant came from
+    the config, so a 4.37M tiny was registered as the 857k nano."""
     from testbank.detectors import get as get_detector
     from testbank.models.yolox_obb import VARIANTS
 
@@ -241,22 +241,22 @@ def test_el_nombre_registrado_coincide_con_la_variante():
         assert detector.variant == variant
 
 
-def test_la_variante_del_candidato_manda_sobre_la_config(setup, tmp_path):
-    """Y se ESCRIBE en la config, para que el config.yaml congelado no mienta."""
+def test_the_candidate_variant_overrides_the_config(setup, tmp_path):
+    """And it is WRITTEN into the config, so the frozen config.yaml does not lie."""
     samples, config = setup
     from testbank.detectors import get as get_detector
     from testbank.models.train import load_model
 
     detector = get_detector("yolox-obb-tiny")
-    assert config.detector.variant == "nano", "la config dice otra cosa a proposito"
+    assert config.detector.variant == "nano", "the config says otherwise on purpose"
 
     result = detector.train(samples, config, output_dir=tmp_path / "t")
     assert load_model(result.weights).variant == "tiny"
 
 
-def test_cada_variante_declara_sus_parametros():
+def test_each_variant_declares_its_parameters():
     from testbank.detectors import get as get_detector
 
-    nota = " ".join(get_detector("yolox-obb-tiny").notes)
-    assert "tiny" in nota
-    assert "4,366,808" in nota
+    note = " ".join(get_detector("yolox-obb-tiny").notes)
+    assert "tiny" in note
+    assert "4,366,808" in note

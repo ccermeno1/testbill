@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "testbank"
 version = "0.1.0"
-description = "Localizacion de billetes por deteccion OBB de una etapa"
+description = "Banknote localization by single-stage OBB detection"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 dependencies = [
@@ -17,34 +17,36 @@ dependencies = [
     "opencv-python-headless>=4.9",
 ]
 
-# Sin AGPL/GPL en el conjunto base. Ver README, seccion Licencias.
+# No AGPL/GPL in the base set. See README, section Licenses.
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "hypothesis>=6.98", "ruff>=0.3"]
 torch = ["torch>=2.2"]
-# AGPL-3.0. Solo referencia de rendimiento, production_ready=False.
-# Aislado tras el adaptador; ningun otro modulo puede importarlo (test_isolation.py).
+# AGPL-3.0. Performance reference only, production_ready=False.
+# Isolated behind the adapter; no other module may import it (test_detectors.py).
 ultralytics = ["ultralytics>=8.3"]
 
-# RTMDet-R. Apache-2.0 y apto para produccion, pero exige un entorno APARTE y
-# una cadena de versiones MUY estrecha. Nadie la declara: son `assert` dentro del
-# __init__.py de cada paquete, que solo saltan al importar.
+# RTMDet-R. Apache-2.0 and fit for production, but it requires a SEPARATE
+# environment and a VERY narrow chain of versions. Nobody declares it: they are
+# `assert`s inside each package's __init__.py, which only fire on import.
 #
 #   mmrotate 1.0.0rc1  ->  mmdet >=3.0.0rc6, <3.2.0
 #   mmdet 3.1.0        ->  mmcv  >=2.0.0rc4, <2.1.0
-#   mmcv 2.0.x         ->  solo existe en el indice de torch 2.0
+#   mmcv 2.0.x         ->  only exists on the torch 2.0 index
 #
-# Cada eslabon empuja al siguiente. El resultado es torch 2.0.0 -- marzo de 2023.
-# El indice de torch 2.1 solo trae mmcv 2.1.0 y 2.2.0, las dos por encima del
-# tope de mmdet, asi que 2.1 NO sirve aunque MMCV instale.
+# Each link pushes the next. The result is torch 2.0.0 -- March 2023. The torch
+# 2.1 index only carries mmcv 2.1.0 and 2.2.0, both above mmdet's cap, so 2.1
+# does NOT work even though MMCV installs.
 #
-# `numpy<2` va clavado: torch 2.0 es anterior a NumPy 2 y no lo restringe, y
-# mmcv/mmengine piden `numpy` sin tope. El resolutor lo sube y `torch.from_numpy`
-# empieza a fallar con "Numpy is not available", sin que nada lo avise.
+# `numpy<2` is pinned: torch 2.0 predates NumPy 2 and does not restrict it, and
+# mmcv/mmengine ask for `numpy` without a cap. The resolver bumps it and
+# `torch.from_numpy` starts failing with "Numpy is not available", with no
+# warning from anything.
 #
-# `mmrotate` NO esta publicado en PyPI en su linea 1.x: en PyPI solo hay 0.3.4,
-# que va con mmcv-full 1.x y mmdet <3. Hay que instalarlo desde la rama dev-1.x.
+# `mmrotate` is NOT published on PyPI in its 1.x line: PyPI only has 0.3.4,
+# which goes with mmcv-full 1.x and mmdet <3. It has to be installed from the
+# dev-1.x branch.
 #
-# Receta verificada de punta a punta (ver README, "Entorno para RTMDet-R").
+# Recipe verified end to end (see README, "RTMDet-R environment").
 rtmdet = [
     "torch==2.0.0",
     "torchvision==0.15.1",
@@ -57,9 +59,9 @@ rtmdet = [
 [project.scripts]
 testbank = "testbank.cli:main"
 
-# `mmrotate` se instala desde una rama de git, y hatchling exige permiso
-# explicito para referencias directas. Es deliberado: la linea 1.x de mmrotate
-# no esta publicada en PyPI (ver el comentario del grupo `rtmdet`).
+# `mmrotate` is installed from a git branch, and hatchling requires explicit
+# permission for direct references. It is deliberate: the 1.x line of mmrotate
+# is not published on PyPI (see the comment of the `rtmdet` group).
 [tool.hatch.metadata]
 allow-direct-references = true
 

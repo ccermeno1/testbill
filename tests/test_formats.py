@@ -1,4 +1,4 @@
-"""Conversores de formato: registro, ida y vuelta, y perdida donde toca."""
+"""Format converters: registry, round trip, and loss where it belongs."""
 
 from __future__ import annotations
 
@@ -28,13 +28,14 @@ LOSSY = ("bbox_coco",)
 
 
 def quad(cx=0.5, cy=0.5, half_long=0.2, ratio=2.0, theta=0.0) -> Quad:
-    """Rectangulo girado en PIXELES, devuelto en normalizado.
+    """Rotated rectangle in PIXELS, returned normalized.
 
-    Construirlo en normalizado seria un error sutil: normalizar divide x por el
-    ancho e y por el alto, que es un escalado ANISOTROPO, asi que un rectangulo
-    girado en normalizado es un PARALELOGRAMO en pixeles y viceversa. Los
-    billetes son rectangulos en la imagen, que es el espacio de pixeles, y ahi
-    los medimos: las 762 anotaciones del export dan 90.0000 grados en pixeles.
+    Building it in normalized coordinates would be a subtle mistake:
+    normalizing divides x by the width and y by the height, which is an
+    ANISOTROPIC scaling, so a rectangle rotated in normalized coordinates is
+    a PARALLELOGRAM in pixels and vice versa. Banknotes are rectangles in the
+    image, which is pixel space, and that is where we measure them: the 762
+    annotations of the export give 90.0000 degrees in pixels.
     """
     half_long_px = half_long * SIZE.width
     points_px = rotated_rect_points(
@@ -58,15 +59,15 @@ def max_pixel_error(a: Quad, b: Quad) -> float:
     )
 
 
-# --- el registro ----------------------------------------------------------
+# --- the registry ---------------------------------------------------------
 
 
-def test_estan_todos_los_formatos():
+def test_all_formats_are_there():
     assert formats.formats() == ["bbox_coco", "dota", "obb_yolo"]
 
 
 @pytest.mark.parametrize("name", LOSSLESS + LOSSY)
-def test_todos_cumplen_el_protocolo(name):
+def test_all_satisfy_the_protocol(name):
     assert isinstance(get(name), Converter)
 
 
@@ -78,33 +79,33 @@ def test_todos_cumplen_el_protocolo(name):
         ("bbox_coco", True, True),
     ],
 )
-def test_metadatos_declarados(name, lossy, needs_size):
+def test_declared_metadata(name, lossy, needs_size):
     converter = get(name)
     assert converter.lossy is lossy
     assert converter.requires_image_size is needs_size
 
 
-def test_formato_desconocido_dice_cuales_hay():
-    with pytest.raises(FormatError, match="formato desconocido"):
-        get("no_existe")
+def test_unknown_format_says_which_exist():
+    with pytest.raises(FormatError, match="unknown format"):
+        get("does_not_exist")
 
 
-def test_registrar_un_nombre_repetido_es_error():
-    with pytest.raises(FormatError, match="duplicado"):
+def test_registering_a_repeated_name_is_an_error():
+    with pytest.raises(FormatError, match="duplicate"):
 
         @register
-        class Otro:
+        class Other:
             name = "obb_yolo"
             lossy = False
             requires_image_size = False
 
 
-def test_anadir_un_formato_no_toca_convert():
-    """El registro es lo unico que decide: `convert` no conoce ningun nombre."""
+def test_adding_a_format_does_not_touch_convert():
+    """The registry is the only thing that decides: `convert` knows no name."""
 
     @register
-    class Doble:
-        name = "_doble_de_prueba"
+    class Double:
+        name = "_test_double"
         lossy = False
         requires_image_size = False
 
@@ -117,19 +118,19 @@ def test_anadir_un_formato_no_toca_convert():
 
     try:
         source = get("obb_yolo").from_quad(quad())
-        out = convert(source, source="obb_yolo", target="_doble_de_prueba")
-        back = convert(out, source="_doble_de_prueba", target="obb_yolo")
+        out = convert(source, source="obb_yolo", target="_test_double")
+        back = convert(out, source="_test_double", target="obb_yolo")
         assert get("obb_yolo").to_quad(back).points == quad().points
     finally:
-        del formats.REGISTRY["_doble_de_prueba"]
+        del formats.REGISTRY["_test_double"]
 
 
-# --- ida y vuelta ---------------------------------------------------------
+# --- round trip -----------------------------------------------------------
 
 
 @pytest.mark.parametrize("name", LOSSLESS)
 @pytest.mark.parametrize("theta", [0.0, 0.3, 1.2, 2.4, 3.0])
-def test_los_formatos_sin_perdida_van_y_vuelven(name, theta):
+def test_lossless_formats_round_trip(name, theta):
     original = quad(theta=theta)
     record = get("obb_yolo").from_quad(original)
     other = convert(record, source="obb_yolo", target=name, size=SIZE)
@@ -137,26 +138,26 @@ def test_los_formatos_sin_perdida_van_y_vuelven(name, theta):
     assert max_pixel_error(original, get("obb_yolo").to_quad(back)) < 1e-3
 
 
-def test_obb_yolo_va_y_vuelve_exacto():
-    """Sin cambio de unidades no hay redondeo: la igualdad es exacta."""
+def test_obb_yolo_round_trips_exactly():
+    """Without a change of units there is no rounding: equality is exact."""
     original = quad(theta=0.7)
     record = get("obb_yolo").from_quad(original)
     assert get("obb_yolo").to_quad(record).points == original.points
 
 
-def test_la_clase_sobrevive_a_la_conversion():
+def test_the_class_survives_the_conversion():
     record = Record(class_id=0, payload=get("obb_yolo").from_quad(quad()).payload)
     for name in LOSSLESS + LOSSY:
         out = convert(record, source="obb_yolo", target=name, size=SIZE)
         assert out.class_id == 0
 
 
-# --- perdida donde toca ---------------------------------------------------
+# --- loss where it belongs ------------------------------------------------
 
 
 @pytest.mark.parametrize("name", LOSSY)
-def test_los_formatos_con_perdida_pierden_la_orientacion(name):
-    """Un quad girado no vuelve igual: es el punto de que sean lossy."""
+def test_lossy_formats_lose_the_orientation(name):
+    """A rotated quad does not come back the same: that is the point of them being lossy."""
     original = quad(theta=0.6)
     record = get("obb_yolo").from_quad(original)
     other = convert(record, source="obb_yolo", target=name, size=SIZE)
@@ -164,14 +165,14 @@ def test_los_formatos_con_perdida_pierden_la_orientacion(name):
     assert max_pixel_error(original, get("obb_yolo").to_quad(back)) > 1.0
 
 
-def test_a_45_grados_la_envolvente_alineada_es_un_cuadrado():
-    """El peor caso de bbox_coco, y avisa por si solo.
+def test_at_45_degrees_the_aligned_envelope_is_a_square():
+    """The worst case of bbox_coco, and it warns on its own.
 
-    La envolvente alineada de un rectangulo 2:1 girado 45 grados tiene los dos
-    lados iguales, asi que su ancla canonica es inestable y salta
-    `QuadShapeWarning`. No es un fallo del conversor: es exactamente el
-    diagnostico para el que existen los formatos alineados. Que el aviso llegue
-    hasta aqui confirma que no se traga por el camino.
+    The aligned envelope of a 2:1 rectangle rotated 45 degrees has both sides
+    equal, so its canonical anchor is unstable and `QuadShapeWarning` fires.
+    It is not a converter failure: it is exactly the diagnostic aligned
+    formats exist for. That the warning reaches here confirms it is not
+    swallowed along the way.
     """
     original = quad(theta=math.pi / 4)
     record = convert(
@@ -180,13 +181,13 @@ def test_a_45_grados_la_envolvente_alineada_es_un_cuadrado():
         target="bbox_coco",
         size=SIZE,
     )
-    with pytest.warns(QuadShapeWarning, match="ancla del lado mas largo"):
+    with pytest.warns(QuadShapeWarning, match="longest-side anchor"):
         convert(record, source="bbox_coco", target="obb_yolo", size=SIZE)
 
 
 @pytest.mark.parametrize("name", LOSSY)
-def test_una_caja_ya_alineada_sobrevive_a_los_lossy(name):
-    """Sin orientacion que perder, no se pierde nada."""
+def test_an_already_aligned_box_survives_the_lossy_ones(name):
+    """With no orientation to lose, nothing is lost."""
     original = quad(theta=0.0)
     record = get("obb_yolo").from_quad(original)
     other = convert(record, source="obb_yolo", target=name, size=SIZE)
@@ -194,35 +195,35 @@ def test_una_caja_ya_alineada_sobrevive_a_los_lossy(name):
     assert max_pixel_error(original, get("obb_yolo").to_quad(back)) < 1e-3
 
 
-# --- el tamano de la imagen -----------------------------------------------
+# --- the image size -------------------------------------------------------
 
 
 @pytest.mark.parametrize("name", ["dota", "bbox_coco"])
-def test_sin_tamano_los_formatos_en_pixeles_fallan_claro(name):
+def test_without_size_the_pixel_formats_fail_clearly(name):
     record = get("obb_yolo").from_quad(quad())
-    with pytest.raises(FormatError, match="tamano de la imagen"):
+    with pytest.raises(FormatError, match="image size"):
         convert(record, source="obb_yolo", target=name)
 
 
 @pytest.mark.parametrize("name", ["obb_yolo"])
-def test_los_formatos_normalizados_no_piden_tamano(name):
+def test_normalized_formats_do_not_ask_for_size(name):
     record = get("obb_yolo").from_quad(quad())
     assert convert(record, source="obb_yolo", target=name) is not None
 
 
-def test_el_tamano_correcto_cambia_el_resultado():
-    """Si el tamano se ignorase, dos aspectos distintos darian lo mismo."""
+def test_the_right_size_changes_the_result():
+    """If the size were ignored, two different aspects would give the same thing."""
     q = quad(theta=0.5)
-    ancha = get("dota").from_quad(q, size=ImageSize(1000, 200))
-    alta = get("dota").from_quad(q, size=ImageSize(200, 1000))
-    assert ancha.payload != alta.payload
+    wide = get("dota").from_quad(q, size=ImageSize(1000, 200))
+    tall = get("dota").from_quad(q, size=ImageSize(200, 1000))
+    assert wide.payload != tall.payload
 
 
-# --- las anotaciones de origen son de solo lectura ------------------------
+# --- the source annotations are read-only ---------------------------------
 
 
-def test_las_anotaciones_originales_no_cambian(tmp_path):
-    """Inmutabilidad por hash tras ejecutar TODAS las conversiones."""
+def test_the_original_annotations_do_not_change(tmp_path):
+    """Immutability by hash after running ALL the conversions."""
     paths = []
     for i, theta in enumerate((0.0, 0.6, 1.9)):
         q = quad(theta=theta)

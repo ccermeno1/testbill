@@ -1,4 +1,4 @@
-"""Cabeza OBB propia sobre YOLOX: arquitectura y representacion del angulo."""
+"""Own OBB head on YOLOX: architecture and angle representation."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-torch = pytest.importorskip("torch", reason="el candidato propio necesita torch")
+torch = pytest.importorskip("torch", reason="the own candidate needs torch")
 
 from testbank.models.yolox_obb import (
     STRIDES,
@@ -19,15 +19,15 @@ from testbank.models.yolox_obb import (
 IMAGE = 416
 
 
-# --- el angulo ------------------------------------------------------------
+# --- the angle ------------------------------------------------------------
 
 
-def test_theta_y_theta_mas_180_dan_la_misma_codificacion():
-    """La propiedad que motiva toda la representacion.
+def test_theta_and_theta_plus_180_give_the_same_encoding():
+    """The property that motivates the whole representation.
 
-    Un rectangulo girado t y otro girado t+180 son el MISMO rectangulo. Con
-    `(sin 2t, cos 2t)` caen en el mismo punto del circulo, asi que la
-    ambiguedad desaparece por construccion en vez de corregirse despues.
+    A rectangle rotated t and another rotated t+180 are the SAME rectangle.
+    With `(sin 2t, cos 2t)` they fall on the same point of the circle, so the
+    ambiguity disappears by construction instead of being corrected later.
     """
     theta = torch.tensor([0.1, 1.0, 2.5, 3.0])
     a = encode_angle(theta)
@@ -35,65 +35,66 @@ def test_theta_y_theta_mas_180_dan_la_misma_codificacion():
     assert torch.allclose(a, b, atol=1e-6)
 
 
-def test_codificar_y_decodificar_devuelve_el_angulo():
+def test_encoding_and_decoding_returns_the_angle():
     theta = torch.tensor([0.0, 0.3, 1.2, 2.0, 3.0])
     assert torch.allclose(decode_angle(encode_angle(theta)), theta, atol=1e-6)
 
 
-def test_el_angulo_decodificado_siempre_cae_en_medio_giro():
-    """Mas alla de pi se repite: no hay nada que distinguir ahi."""
+def test_the_decoded_angle_always_falls_within_half_a_turn():
+    """Beyond pi it repeats: there is nothing to distinguish there."""
     theta = torch.linspace(-10.0, 10.0, 200)
     out = decode_angle(encode_angle(theta))
     assert torch.all(out >= 0.0)
     assert torch.all(out < math.pi + 1e-6)
 
 
-def test_la_codificacion_es_continua_al_pasar_por_cero():
-    """Al cruzar 0/180 la distancia codificada sigue siendo pequena.
+def test_the_encoding_is_continuous_when_crossing_zero():
+    """When crossing 0/180 the encoded distance is still small.
 
-    Es el motivo de no regresar theta directamente. Un billete a 179.4 grados y
-    otro a 0.6 estan a 1.2 grados de distancia real, pero en theta crudo
-    distan 178.8: el modelo recibiria un gradiente enorme por acertar casi
-    exactamente. Aqui la distancia codificada es proporcional a la real.
+    It is the reason for not regressing theta directly. A banknote at 179.4
+    degrees and another at 0.6 are 1.2 degrees apart for real, but in raw
+    theta they are 178.8 apart: the model would receive a huge gradient for
+    being almost exactly right. Here the encoded distance is proportional to
+    the real one.
     """
     a, b = math.pi - 0.01, 0.01
-    distancia_codificada = float(
+    encoded_distance = float(
         torch.norm(encode_angle(torch.tensor([a])) - encode_angle(torch.tensor([b])))
     )
-    distancia_cruda = abs(a - b)
+    raw_distance = abs(a - b)
 
-    # 0.02 rad de diferencia real -> 0.04 en el circulo doblado (~2 * 0.02).
-    assert distancia_codificada == pytest.approx(0.04, abs=0.005)
-    # Y frente a los 3.12 rad que veria una regresion directa sobre theta.
-    assert distancia_cruda > 3.0
-    assert distancia_codificada < distancia_cruda / 50
+    # 0.02 rad of real difference -> 0.04 on the doubled circle (~2 * 0.02).
+    assert encoded_distance == pytest.approx(0.04, abs=0.005)
+    # And against the 3.12 rad a direct regression on theta would see.
+    assert raw_distance > 3.0
+    assert encoded_distance < raw_distance / 50
 
 
-def test_angulos_de_verdad_distintos_no_colisionan():
-    """El doblado une t con t+180, y NADA mas: si uniera de mas, el modelo no
-    podria distinguir un billete tumbado de uno de pie."""
+def test_truly_different_angles_do_not_collide():
+    """The doubling joins t with t+180, and NOTHING else: if it joined more,
+    the model could not tell a lying banknote from a standing one."""
     a = encode_angle(torch.tensor([0.0]))
     b = encode_angle(torch.tensor([math.pi / 2]))
     assert not torch.allclose(a, b, atol=0.1)
 
 
-# --- la arquitectura ------------------------------------------------------
+# --- the architecture -----------------------------------------------------
 
 
 @pytest.mark.parametrize("variant", sorted(VARIANTS))
-def test_cada_variante_construye_y_corre(variant):
+def test_each_variant_builds_and_runs(variant):
     model = YoloxObb(variant, num_classes=1).eval()
     with torch.no_grad():
         outputs = model(torch.zeros(1, 3, IMAGE, IMAGE))
     assert len(outputs) == 3
 
 
-def test_variante_desconocida_dice_cuales_hay():
-    with pytest.raises(ValueError, match="variante desconocida"):
-        YoloxObb("gigante")
+def test_unknown_variant_says_which_exist():
+    with pytest.raises(ValueError, match="unknown variant"):
+        YoloxObb("giant")
 
 
-def test_las_formas_siguen_los_strides():
+def test_the_shapes_follow_the_strides():
     model = YoloxObb("nano", num_classes=1).eval()
     with torch.no_grad():
         outputs = model(torch.zeros(2, 3, IMAGE, IMAGE))
@@ -106,21 +107,21 @@ def test_las_formas_siguen_los_strides():
         assert output.classes.shape == (2, 1, side, side)
 
 
-def test_nano_cabe_en_un_movil():
-    """Menos de un millon de parametros. Es la razon de elegir esta variante."""
+def test_nano_fits_on_a_phone():
+    """Under a million parameters. It is the reason for choosing this variant."""
     assert YoloxObb("nano", 1).parameter_count() < 1_000_000
 
 
-def test_las_variantes_crecen_en_orden():
+def test_the_variants_grow_in_order():
     counts = [YoloxObb(v, 1).parameter_count() for v in ("nano", "tiny", "small")]
     assert counts == sorted(counts)
-    # nano tiene que ser MUCHO menor, no un poco: es convolucion separable, no
-    # solo menos canales.
+    # nano has to be MUCH smaller, not a bit: it is separable convolution, not
+    # only fewer channels.
     assert counts[1] > 4 * counts[0]
 
 
-def test_las_distancias_son_positivas():
-    """Son distancias al centro de la celda: negativas no significan nada."""
+def test_distances_are_positive():
+    """They are distances to the cell center: negative ones mean nothing."""
     model = YoloxObb("nano", 1).eval()
     with torch.no_grad():
         outputs = model(torch.randn(1, 3, IMAGE, IMAGE))
@@ -128,9 +129,9 @@ def test_las_distancias_son_positivas():
         assert torch.all(output.distances >= 0)
 
 
-def test_al_arrancar_predice_casi_nada():
-    """Sin el sesgo inicial, la red predice objeto en todas las celdas y el
-    gradiente de miles de falsos positivos domina las primeras iteraciones."""
+def test_at_start_it_predicts_almost_nothing():
+    """Without the initial bias, the network predicts object in every cell and
+    the gradient of thousands of false positives dominates the first iterations."""
     model = YoloxObb("nano", 1).eval()
     with torch.no_grad():
         outputs = model(torch.zeros(1, 3, IMAGE, IMAGE))
@@ -138,20 +139,20 @@ def test_al_arrancar_predice_casi_nada():
     assert probability < 0.05
 
 
-def test_la_cabeza_comparte_pesos_entre_niveles():
-    """Con ~450 imagenes, tres cabezas independientes triplican los parametros
-    de la parte que mas facilmente se sobreajusta."""
+def test_the_head_shares_weights_across_levels():
+    """With ~450 images, three independent heads triple the parameters of the
+    part that overfits most easily."""
     model = YoloxObb("nano", 1)
-    # Un solo juego de ramas, no uno por nivel: los stems si son por nivel
-    # porque cada uno recibe un numero de canales distinto.
+    # A single set of branches, not one per level: the stems ARE per level
+    # because each receives a different number of channels.
     assert len(model.head.stems) == len(STRIDES)
     assert isinstance(model.head.cls_pred, torch.nn.Conv2d)
     assert model.head.cls_pred.out_channels == 1
     assert model.head.angle_pred.out_channels == 2
 
 
-def test_el_gradiente_llega_a_todas_las_ramas():
-    """Si una rama quedara desconectada, entrenaria en silencio sin aprender."""
+def test_the_gradient_reaches_every_branch():
+    """If a branch were disconnected, it would train silently without learning."""
     model = YoloxObb("nano", 1)
     outputs = model(torch.randn(1, 3, 128, 128))
     loss = sum(

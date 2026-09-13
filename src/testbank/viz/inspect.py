@@ -1,13 +1,13 @@
-"""Visualizacion de inspeccion: quads dibujados con el orden canonico visible.
+"""Inspection visualization: quads drawn with the canonical order visible.
 
-Lo que hay que poder comprobar de un vistazo:
-  - que el vertice 0 es el que abre el lado mas largo
-  - que el recorrido 0->1->2->3 es horario
-  - que billetes solapados llevan cajas distintas y no una sola caja gigante
-  - que los billetes que cruzan el borde tienen vertices fuera de la imagen
+What must be checkable at a glance:
+  - that vertex 0 is the one opening the longest side
+  - that the path 0->1->2->3 is clockwise
+  - that overlapping banknotes carry separate boxes and not a single giant box
+  - that banknotes crossing the border have vertices outside the image
 
-La muestra es fija y viene de la particion de validacion, siempre la misma, para
-poder comparar a ojo entre ejecuciones.
+The sample is fixed and comes from the validation split, always the same, so
+runs can be compared by eye.
 """
 
 from __future__ import annotations
@@ -37,13 +37,13 @@ COLOR_VERTEX_TEXT = (255, 255, 255)
 COLOR_PANEL = (34, 32, 30)
 COLOR_PANEL_TEXT = (225, 225, 225)
 COLOR_FRAME = (120, 170, 250)
-#: Gris apagado: lo descartado por el filtro de area se dibuja para poder
-#: revisarlo, pero no debe competir visualmente con lo que sigue vivo.
+#: Dim grey: what the area filter discarded is drawn so it can be reviewed,
+#: but it must not compete visually with what is still alive.
 COLOR_DROPPED = (130, 130, 130)
-#: Ambar para lo PREDICHO. OpenCV usa BGR, no RGB: (255, 200, 40) daba un cian
-#: casi identico al azul del marco de la imagen, y en la hoja de contacto las
-#: predicciones se confundian con el borde. Verdad y prediccion tienen que
-#: distinguirse de un vistazo.
+#: Amber for what is PREDICTED. OpenCV uses BGR, not RGB: (255, 200, 40) gave
+#: a cyan nearly identical to the blue of the image frame, and in the contact
+#: sheet predictions were confused with the border. Truth and prediction have
+#: to be told apart at a glance.
 COLOR_PREDICTION = (40, 190, 255)
 
 
@@ -59,7 +59,7 @@ class InspectionResult:
 def fixed_validation_sample(
     samples, *, count: int, seed: int
 ) -> list[Sample]:
-    """Muestra fija y determinista. Ordenar antes de barajar es lo que la fija."""
+    """Fixed, deterministic sample. Sorting before shuffling is what fixes it."""
     ordered = sorted(samples, key=lambda s: s.sample_id)
     rng = random.Random(seed)
     picked = ordered[:]
@@ -96,7 +96,7 @@ def _draw_quad(
 
     centroid = pts.mean(axis=0)
     for i, point in enumerate(pts):
-        # Empujar la etiqueta hacia fuera para que no tape la esquina.
+        # Push the label outwards so it does not cover the corner.
         direction = point - centroid
         norm = np.linalg.norm(direction) or 1.0
         label_pos = point + direction / norm * 15.0
@@ -117,8 +117,8 @@ def _draw_quad(
 
     aspect = width / height
     tag = f"#{index}  {quad.angle_deg(aspect):.0f}deg  r={quad.side_ratio(aspect):.2f}"
-    # En el punto medio del lado ancla, empujado hacia fuera: asi las etiquetas
-    # de quads solapados no se amontonan todas en el centro.
+    # At the midpoint of the anchor side, pushed outwards: that way the labels
+    # of overlapping quads do not all pile up in the center.
     midpoint = (pts[0] + pts[1]) / 2.0
     away = midpoint - centroid
     away = away / (np.linalg.norm(away) or 1.0)
@@ -151,11 +151,11 @@ def _draw_dropped(
     width: int,
     height: int,
 ) -> None:
-    """Traza discontinua y gris, sin vertices numerados ni flecha de ancla.
+    """Dashed grey outline, without numbered vertices or anchor arrow.
 
-    Lo descartado ya no forma parte del conjunto canonico, asi que dibujarlo con
-    la misma codificacion confundiria. Se dibuja solo para poder localizarlo y
-    decidir si hay que corregirlo en Roboflow.
+    What was discarded is no longer part of the canonical set, so drawing it
+    with the same encoding would confuse. It is drawn only to be able to
+    locate it and decide whether it has to be fixed in Roboflow.
     """
     pts = np.array(
         [
@@ -172,7 +172,7 @@ def _draw_dropped(
             b = tuple(np.round(p0 + (p1 - p0) * ((s + 1) / segments)).astype(int))
             cv2.line(canvas, a, b, COLOR_DROPPED, 1, cv2.LINE_AA)
 
-    tag = f"#{dropped.index} filtrada {dropped.relative_area:.0%}"
+    tag = f"#{dropped.index} filtered {dropped.relative_area:.0%}"
     anchor = np.round(pts.mean(axis=0)).astype(int)
     (tw, th), _ = cv2.getTextSize(tag, FONT, 0.4, 1)
     cv2.rectangle(
@@ -202,11 +202,12 @@ def _draw_prediction(
     width: int,
     height: int,
 ) -> None:
-    """Contorno cian con la confianza. Sin vertices numerados: el orden canonico
-    de una prediccion no es lo que se esta mirando aqui."""
+    """Amber outline with the confidence. No numbered vertices: the canonical
+    order of a prediction is not what is being looked at here."""
     if prediction.quad is None:
-        # Falso positivo sin geometria (caja mas de medio marco fuera): no hay
-        # nada que dibujar dentro de la imagen. Cuenta en la metrica, no aqui.
+        # False positive without geometry (box more than half a frame
+        # outside): nothing to draw inside the image. It counts in the
+        # metric, not here.
         return
     pts = np.array(
         [
@@ -241,10 +242,10 @@ def render_sample(
     pad: int = 90,
     header: int = 34,
 ) -> tuple[np.ndarray, InspectionResult]:
-    """Dibuja una imagen con sus quads, con margen para lo que cae fuera del borde."""
+    """Draws an image with its quads, with a margin for what falls outside the border."""
     image = cv2.imread(str(sample.image_path), cv2.IMREAD_COLOR)
     if image is None:
-        raise RuntimeError(f"no se pudo leer la imagen {sample.image_path}")
+        raise RuntimeError(f"could not read the image {sample.image_path}")
     height, width = image.shape[:2]
 
     loaded = load_sample(
@@ -274,7 +275,7 @@ def render_sample(
         cv2.LINE_AA,
     )
 
-    # Lo filtrado va primero para que quede por debajo de lo vigente.
+    # The filtered ones go first so they stay under what is in force.
     for dropped in loaded.dropped:
         _draw_dropped(
             canvas,
@@ -302,10 +303,10 @@ def render_sample(
         )
 
     title = (
-        f"{sample.sample_id}   {width}x{height}   {len(quads)} anotaciones"
-        + (f"   {len(flagged_indices)} marcadas" if flagged_indices else "")
-        + (f"   {len(loaded.dropped)} filtradas" if loaded.dropped else "")
-        + (f"   {len(predictions)} predichas" if predictions else "")
+        f"{sample.sample_id}   {width}x{height}   {len(quads)} annotations"
+        + (f"   {len(flagged_indices)} flagged" if flagged_indices else "")
+        + (f"   {len(loaded.dropped)} filtered" if loaded.dropped else "")
+        + (f"   {len(predictions)} predicted" if predictions else "")
     )
     cv2.rectangle(canvas, (0, 0), (canvas.shape[1], header), COLOR_PANEL, -1)
     cv2.putText(canvas, title, (12, 23), FONT, 0.55, COLOR_PANEL_TEXT, 1, cv2.LINE_AA)
@@ -321,12 +322,12 @@ def render_sample(
 
 def _legend(width: int) -> np.ndarray:
     lines = [
-        "flecha magenta = lado largo p0->p1, el que ancla el orden canonico",
-        "numeros = orden canonico horario; el 0 abre el lado mas largo",
-        "verde = quad conforme  |  rojo = candidato a incumplir la politica de visibilidad",
-        "gris discontinuo = filtrada por area relativa; sigue en el fichero de origen",
-        "ambar = prediccion del detector, con su confianza",
-        "marco azul = borde de la imagen; los vertices de fuera son billetes que la cruzan",
+        "magenta arrow = long side p0->p1, the one anchoring the canonical order",
+        "numbers = clockwise canonical order; 0 opens the longest side",
+        "green = conforming quad  |  red = candidate to violate the visibility policy",
+        "dashed grey = filtered by relative area; still in the source file",
+        "amber = detector prediction, with its confidence",
+        "blue frame = image border; vertices outside are banknotes crossing it",
     ]
     panel = np.full((26 * len(lines) + 16, width, 3), COLOR_PANEL, dtype=np.uint8)
     for i, text in enumerate(lines):

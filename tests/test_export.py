@@ -1,4 +1,4 @@
-"""Exportadores: arbol de ficheros, contenido y compatibilidad de formatos."""
+"""Exporters: file tree, contents and format compatibility."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ SIZE = (200, 160)
 
 
 def _quad(cx=0.5, cy=0.5, half_long=0.15, ratio=2.0, theta=0.0) -> Quad:
-    """Rectangulo girado construido en PIXELES, como los billetes reales."""
+    """Rotated rectangle built in PIXELS, like the real banknotes."""
     points = rotated_rect_points(
         cx * SIZE[0], cy * SIZE[1], half_long * SIZE[0], ratio, theta
     )
@@ -72,28 +72,28 @@ def samples(tmp_path):
     }
 
 
-# --- el registro ----------------------------------------------------------
+# --- the registry ---------------------------------------------------------
 
 
-def test_estan_todos_los_exportadores():
+def test_all_exporters_are_there():
     assert exporters() == ["coco", "dota"]
 
 
 @pytest.mark.parametrize("name", ["coco", "dota"])
-def test_cumplen_el_protocolo(name):
+def test_they_satisfy_the_protocol(name):
     assert isinstance(get(name), Exporter)
 
 
-def test_exportador_desconocido_dice_cuales_hay():
-    with pytest.raises(ExportError, match="desconocido"):
-        get("no_existe")
+def test_unknown_exporter_says_which_exist():
+    with pytest.raises(ExportError, match="unknown"):
+        get("does_not_exist")
 
 
-def test_registrar_un_nombre_repetido_es_error():
-    with pytest.raises(ExportError, match="duplicado"):
+def test_registering_a_repeated_name_is_an_error():
+    with pytest.raises(ExportError, match="duplicate"):
 
         @register
-        class Otro:
+        class Other:
             name = "dota"
             annotation_format = "dota"
 
@@ -101,35 +101,35 @@ def test_registrar_un_nombre_repetido_es_error():
 # --- DOTA -----------------------------------------------------------------
 
 
-def test_dota_escribe_el_arbol_que_espera(tmp_path, config, samples):
+def test_dota_writes_the_expected_tree(tmp_path, config, samples):
     result = export("dota", samples, config, out_dir=tmp_path / "out")
     for split, count in (("train", 3), ("valid", 2)):
         assert len(list((result.root / split / "images").glob("*.jpg"))) == count
         assert len(list((result.root / split / "labelTxt").glob("*.txt"))) == count
 
 
-def test_dota_escribe_pixeles_y_categoria(tmp_path, config, samples):
+def test_dota_writes_pixels_and_category(tmp_path, config, samples):
     result = export("dota", samples, config, out_dir=tmp_path / "out")
     line = (result.root / "train" / "labelTxt" / "t0.txt").read_text().splitlines()[0]
     fields = line.split()
     assert len(fields) == 10
     assert fields[8] == "euro_banknote"
     assert fields[9] == "0"
-    # Pixeles, no normalizado: con 200x160 los valores pasan de 1 holgadamente.
+    # Pixels, not normalized: with 200x160 the values go well past 1.
     assert max(float(v) for v in fields[:8]) > 2.0
 
 
-def test_dota_va_y_vuelve(tmp_path, config, samples):
-    """Sin perdida: lo escrito tiene que reconstruir el quad original."""
+def test_dota_round_trips(tmp_path, config, samples):
+    """Lossless: what is written has to rebuild the original quad."""
     original = _quad(0.3, 0.5, theta=0.4)
     result = export("dota", samples, config, out_dir=tmp_path / "out")
     line = (result.root / "train" / "labelTxt" / "t0.txt").read_text().splitlines()[0]
 
     size = ImageSize(*SIZE)
-    vuelta = get_format("dota").to_quad(Record(0, line), size=size)
+    back = get_format("dota").to_quad(Record(0, line), size=size)
     error = max(
         math.dist((a[0] * SIZE[0], a[1] * SIZE[1]), (b[0] * SIZE[0], b[1] * SIZE[1]))
-        for a, b in zip(original.points, vuelta.points)
+        for a, b in zip(original.points, back.points)
     )
     assert error < 1e-3
 
@@ -137,7 +137,7 @@ def test_dota_va_y_vuelve(tmp_path, config, samples):
 # --- COCO -----------------------------------------------------------------
 
 
-def test_coco_escribe_un_json_por_particion(tmp_path, config, samples):
+def test_coco_writes_one_json_per_split(tmp_path, config, samples):
     result = export("coco", samples, config, out_dir=tmp_path / "out")
     for split, count in (("train", 3), ("valid", 2)):
         data = json.loads((result.root / split / "annotations.json").read_text())
@@ -147,7 +147,7 @@ def test_coco_escribe_un_json_por_particion(tmp_path, config, samples):
     assert result.entry_point.name == "annotations.json"
 
 
-def test_coco_numera_sin_repetir(tmp_path, config, samples):
+def test_coco_numbers_without_repeating(tmp_path, config, samples):
     data = json.loads(
         (
             export("coco", samples, config, out_dir=tmp_path / "out").root
@@ -160,7 +160,7 @@ def test_coco_numera_sin_repetir(tmp_path, config, samples):
     assert {a["image_id"] for a in data["annotations"]} == {1, 2, 3}
 
 
-def test_coco_avisa_de_que_pierde_la_orientacion(tmp_path, config, samples):
+def test_coco_warns_that_it_loses_the_orientation(tmp_path, config, samples):
     data = json.loads(
         (
             export("coco", samples, config, out_dir=tmp_path / "out").root
@@ -168,20 +168,20 @@ def test_coco_avisa_de_que_pierde_la_orientacion(tmp_path, config, samples):
             / "annotations.json"
         ).read_text()
     )
-    assert "pierde la orientacion" in data["info"]["note"]
+    assert "loses the orientation" in data["info"]["note"]
     assert get_format("bbox_coco").lossy is True
 
 
-# --- lo comun -------------------------------------------------------------
+# --- what is shared -------------------------------------------------------
 
 
 @pytest.mark.parametrize("name", ["dota", "coco"])
-def test_todos_respetan_el_filtro_de_area(tmp_path, name):
-    """Si un exportador se saltara el filtro, ese candidato entrenaria con una
-    verdad distinta de la de los demas y la tabla los compararia como iguales."""
-    grande = _quad(0.5, 0.5, half_long=0.30)
-    franja = _quad(0.5, 0.5, half_long=0.30, ratio=30.0)
-    sample = _write(tmp_path / "src", "a", [grande, franja])
+def test_all_respect_the_area_filter(tmp_path, name):
+    """If an exporter skipped the filter, that candidate would train on a
+    different truth than the others and the table would compare them as equals."""
+    large = _quad(0.5, 0.5, half_long=0.30)
+    strip = _quad(0.5, 0.5, half_long=0.30, ratio=30.0)
+    sample = _write(tmp_path / "src", "a", [large, strip])
 
     base = Config()
     config = base.model_copy(
@@ -198,29 +198,29 @@ def test_todos_respetan_el_filtro_de_area(tmp_path, name):
         assert len(data["annotations"]) == 1
 
 
-def test_el_informe_dice_que_politica_de_borde_se_uso(tmp_path, config, samples):
+def test_the_report_says_which_border_policy_was_used(tmp_path, config, samples):
     result = export("dota", samples, config, out_dir=tmp_path / "out")
-    assert "borde=clip" in result.report.describe()
+    assert "border=clip" in result.report.describe()
     assert result.report.counts == {"train": 3, "valid": 2}
 
 
-def test_exportar_dos_veces_no_acumula(tmp_path, config, samples):
+def test_exporting_twice_does_not_accumulate(tmp_path, config, samples):
     export("dota", samples, config, out_dir=tmp_path / "out")
     result = export("dota", samples, config, out_dir=tmp_path / "out")
     assert len(list((result.root / "train" / "labelTxt").glob("*.txt"))) == 3
 
 
-def test_anadir_un_exportador_no_toca_export(tmp_path, config, samples):
-    """El registro es lo unico que decide: `export` no conoce ningun nombre."""
+def test_adding_an_exporter_does_not_touch_export(tmp_path, config, samples):
+    """The registry is the only thing that decides: `export` knows no name."""
 
     @register
-    class Contador:
-        name = "_contador_de_prueba"
+    class Counter:
+        name = "_test_counter"
         annotation_format = "obb_yolo"
         requires_rectangles = False
 
         def write(self, prepared, root, *, class_names):
-            target = root / "cuenta.txt"
+            target = root / "count.txt"
             target.write_text(
                 str(sum(len(v) for v in prepared.values())), encoding="utf-8"
             )
@@ -228,8 +228,8 @@ def test_anadir_un_exportador_no_toca_export(tmp_path, config, samples):
 
     try:
         result = export(
-            "_contador_de_prueba", samples, config, out_dir=tmp_path / "out"
+            "_test_counter", samples, config, out_dir=tmp_path / "out"
         )
         assert result.entry_point.read_text() == "5"
     finally:
-        del export_mod.REGISTRY["_contador_de_prueba"]
+        del export_mod.REGISTRY["_test_counter"]

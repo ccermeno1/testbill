@@ -1,92 +1,96 @@
-"""Las cuatro recetas de perdida, cada una entera, y lo que comparten.
+"""The four loss recipes, each one WHOLE, and what they share.
 
-Las tres recetas de perdida de la cabeza propia, cada una ENTERA.
+A recipe is not a box loss: it is the combination of assigner, targets, terms,
+normalization and gains that one concrete network uses. Mixing the box of one
+with the assigner of another would give something that is neither of the two,
+and the table would call it by a name that does not belong to it. So here each
+recipe is a closed function, and `losses_for_image` only picks which one.
 
-Una receta no es una perdida de caja: es la combinacion de asignador, objetivos,
-terminos, normalizacion y ganancias que una red concreta usa. Mezclar la caja de
-una con el asignador de otra daria algo que no es ninguna de las dos, y la tabla
-lo llamaria por un nombre que no le corresponde. Asi que aqui cada receta es una
-funcion cerrada, y `losses_for_image` solo elige cual.
+    own              aligned IoU + attenuated angle + obj + cls; SimOTA
+    yolox_obb_fork   KLD x5 + obj + cls by overlap + late L1; SimOTA with KLD
+    ultralytics_obb  ProbIoU x7.5 + DFL x1.5 + cls x0.5 with soft target; TAL
+    ddgrcf           exact PolyIoU x5 + obj + cls by IoU + late L1; SimOTA -log IoU
 
-    own              `losses.py`: IoU alineada + angulo atenuado + obj + cls; SimOTA
-    yolox_obb_fork   KLD x5 + obj + cls por solape + L1 tardia; SimOTA con KLD
-    ultralytics_obb  ProbIoU x7.5 + DFL x1.5 + cls x0.5 con objetivo suave; TAL
+What is faithful and what is not, said up front
+-----------------------------------------------
+**Fork.** Its code is Apache-2.0 and has been read in full. Its `get_losses` is
+reproduced: same terms, same gains, same normalization by number of positives,
+same class target (one-hot by overlap), same SimOTA with the KLD as cost. Two
+deviations, both of head and not of loss: they regress the angle in degrees
+directly and here `(sin 2t, cos 2t)` is used; and their late L1 goes over
+`(dx, dy, log w, log h)` while here it goes over the four distances, which is
+the raw regression of THIS head. Normalization is per image and then batch
+mean, instead of over the whole batch: with one or two banknotes per photo the
+difference is one of weighting between images, not of form.
 
-Que es fiel y que no, dicho por adelantado
-------------------------------------------
-**Fork.** Su codigo es Apache-2.0 y se ha leido entero. Se reproduce su
-`get_losses`: mismos terminos, mismas ganancias, misma normalizacion por numero
-de positivos, mismo objetivo de clase (one-hot por solape), mismo SimOTA con la
-KLD como coste. Dos desviaciones, las dos de cabeza y no de perdida: ellos
-regresan el angulo en grados directamente y aqui se usa `(sin 2t, cos 2t)`; y su
-L1 tardia va sobre `(dx, dy, log w, log h)` mientras aqui va sobre las cuatro
-distancias, que es la regresion cruda de ESTA cabeza. La normalizacion es por
-imagen y luego media del lote, en vez de por lote entero: con uno o dos
-billetes por foto la diferencia es de ponderacion entre imagenes, no de forma.
+**Ultralytics.** Its code is AGPL and has NOT been read. The composition --
+which terms, which gains, which assigner -- comes from its public
+documentation; the formulas come from the papers (ProbIoU: Llerena 2021; DFL:
+Li 2020; TAL: Feng 2021). It is a reproduction of the DESCRIBED recipe, not a
+copy. If their code had an undocumented detail, it is not here.
 
-**Ultralytics.** Su codigo es AGPL y NO se ha leido. La composicion -- que
-terminos, que ganancias, que asignador -- sale de su documentacion publica; las
-formulas salen de los papers (ProbIoU: Llerena 2021; DFL: Li 2020; TAL: Feng
-2021). Es una reproduccion de la RECETA descrita, no una copia. Si en su codigo
-hubiera un detalle no documentado, aqui no esta.
+**DDGRCF.** Apache-2.0, read in full; see `_ddgrcf` for the one stated deviation.
 
-=== La receta propia, en detalle ===
-Perdidas del candidato propio.
+=== The own recipe, in detail ===
+Losses of the own candidate.
 
-Se descompone en tres, en vez de optimizar el IoU rotado directamente:
+It is decomposed into three, instead of optimizing the rotated IoU directly:
 
-    caja      IoU alineada sobre la envolvente
-    angulo    coseno sobre (sin 2t, cos 2t), ATENUADO por el ratio
-    presencia BCE para objectness y clase
+    box       aligned IoU over the envelope
+    angle     cosine over (sin 2t, cos 2t), ATTENUATED by the ratio
+    presence  BCE for objectness and class
 
-Por que descomponer
--------------------
-Optimizar el IoU rotado de verdad exigiria construir e intersectar poligonos en
-cada iteracion, y eso no cabe en el bucle (ver `assign.py`). La descomposicion
-es una aproximacion: no optimiza exactamente lo que luego se mide.
+Why decompose
+-------------
+Optimizing the true rotated IoU would require building and intersecting
+polygons on every iteration, and that does not fit in the loop (see
+`assign.py`). The decomposition is an approximation: it does not optimize
+exactly what is measured afterwards.
 
-Se asume a conciencia, y es medible. La metrica de evaluacion SIGUE siendo el
-IoU rotado por shapely, asi que si la descomposicion asigna mal el compromiso
-entre forma y giro, el numero final lo dice. Entrenar con una aproximacion y
-medir con lo bueno es el orden correcto; al reves seria enganarse.
+It is assumed knowingly, and it is measurable. The evaluation metric IS STILL
+the rotated IoU by shapely, so if the decomposition allocates the trade-off
+between shape and rotation badly, the final number says so. Training with an
+approximation and measuring with the good thing is the correct order; the
+reverse would be fooling oneself.
 
-El atenuador de angulo
-----------------------
-Es lo unico no estandar. Cuando la caja verdadera es casi cuadrada su angulo no
-esta definido -- `(w, h, t)` y `(h, w, t+90)` son el mismo rectangulo -- asi que
-la perdida de angulo se rebaja. Parametrizable y apagable para poder medir
-cuanto aporta. Ver `losses.py` y el README.
+The angle attenuator
+--------------------
+It is the only non-standard thing. When the true box is nearly square its
+angle is undefined -- `(w, h, t)` and `(h, w, t+90)` are the same rectangle --
+so the angle loss is reduced. Parametrizable and switchable off so its
+contribution can be measured. See the README.
 
-=== El atenuador de angulo de la receta propia ===
-Peso de la perdida de angulo segun lo cuadrada que sea la caja.
+=== The angle attenuator of the own recipe ===
+Weight of the angle loss according to how square the box is.
 
-Por que hace falta
-------------------
-La representacion `(cx, cy, w, h, theta)` es ambigua cuando `w ~ h`: la caja
-`(w, h, t)` y la caja `(h, w, t+90)` son el MISMO rectangulo. La codificacion
-`(sin 2t, cos 2t)` resuelve que `t` y `t+180` sean el mismo, pero NO esto: manda
-las dos versiones a puntos opuestos del circulo, asi que el modelo recibiria dos
-objetivos contradictorios para la misma caja.
+Why it is needed
+----------------
+The `(cx, cy, w, h, theta)` representation is ambiguous when `w ~ h`: the box
+`(w, h, t)` and the box `(h, w, t+90)` are the SAME rectangle. The
+`(sin 2t, cos 2t)` encoding solves `t` and `t+180` being the same, but NOT
+this: it sends the two versions to opposite points of the circle, so the model
+would receive two contradictory targets for the same box.
 
-Medido sobre el export: 145 de 762 anotaciones (19%) tienen ratio < 1.1.
+Measured on the export: 145 of 762 annotations (19%) have ratio < 1.1.
 
-Por que atenuar y no arreglarlo
--------------------------------
-Porque en el caso ambiguo el angulo DA IGUAL para lo que nos importa. Un
-rectangulo casi cuadrado recortado con 5 grados de error tapa practicamente lo
-mismo, y la politica de anotacion ya dice que un rectangulo aproximado basta.
-Castigar al modelo por no acertar algo que ni esta bien definido ni cambia el
-resultado es gastar capacidad en ruido.
+Why attenuate and not fix it
+----------------------------
+Because in the ambiguous case the angle DOES NOT MATTER for what we care about.
+A nearly square rectangle cropped with 5 degrees of error covers practically
+the same, and the annotation policy already says an approximate rectangle is
+enough. Punishing the model for missing something that is neither well defined
+nor changes the result is spending capacity on noise.
 
-La alternativa seria la representacion gaussiana, que absorbe la ambiguedad de
-forma natural. Descartada a proposito: se aleja del IoU rotado por shapely con
-el que medimos, y esa trazabilidad pesa mas que la elegancia de la formulacion.
+The alternative would be the Gaussian representation, which absorbs the
+ambiguity naturally. Discarded on purpose: it moves away from the shapely
+rotated IoU we measure with, and that traceability weighs more than the
+elegance of the formulation.
 
-Todo parametrizable
--------------------
-Umbral, forma y suelo van en `detector.loss.angle_weight`, con `enabled` para
-apagarlo. La pregunta "cuanto aporta esto" se responde entrenando con y sin, no
-razonando. Ver `AngleWeightConfig`.
+Everything parametrizable
+-------------------------
+Threshold, shape and floor go in `detector.loss.angle_weight`, with `enabled`
+to switch it off. The question "how much does this contribute" is answered by
+training with and without, not by reasoning. See `AngleWeightConfig`.
 """
 
 from __future__ import annotations
@@ -120,22 +124,22 @@ from testbank.models.overlap import (
 from testbank.models.yolox_obb import STRIDES, HeadSpec, YoloxObb
 
 # --------------------------------------------------------------------------
-# Atenuador de angulo (receta propia)
+# Angle attenuator (own recipe)
 # --------------------------------------------------------------------------
 
-#: Formas de subida entre el cuadrado perfecto y el umbral. La clave es lo que
-#: acepta `decay` en la config; anadir una es anadir una entrada aqui.
+#: Rise shapes between the perfect square and the threshold. The key is what
+#: `decay` accepts in the config; adding one is adding an entry here.
 DECAYS: dict[str, Callable[[torch.Tensor], torch.Tensor]] = {
-    # Sube recto. La mas simple de interpretar: el peso es la fraccion del
-    # camino recorrido hacia el umbral.
+    # Rises straight. The simplest to interpret: the weight is the fraction of
+    # the way travelled towards the threshold.
     "linear": lambda t: t,
-    # Arranca despacio y frena al final. Deja casi sin peso la franja mas
-    # ambigua en vez de subir desde el primer momento.
+    # Starts slowly and brakes at the end. Leaves the most ambiguous band
+    # almost without weight instead of rising from the first moment.
     "smoothstep": lambda t: t * t * (3.0 - 2.0 * t),
-    # Intermedia: arranca despacio pero no frena.
+    # Intermediate: starts slowly but does not brake.
     "quadratic": lambda t: t * t,
-    # Escalon. Sirve de referencia para medir si la transicion suave aporta
-    # algo frente a cortar por lo sano.
+    # Step. Serves as a reference to measure whether the smooth transition
+    # contributes anything over a hard cut.
     "step": lambda t: (t >= 1.0).to(t.dtype),
 }
 
@@ -148,41 +152,42 @@ def angle_weight(
     min_weight: float = 0.0,
     decay: str = "smoothstep",
 ) -> torch.Tensor:
-    """Peso en `[min_weight, 1]` para la perdida de angulo de cada caja.
+    """Weight in `[min_weight, 1]` for the angle loss of each box.
 
-    `ratio` es lado largo / lado corto de la caja VERDADERA, en pixeles. En
-    pixeles y no normalizado: normalizar escala x e y por factores distintos, y
-    el ratio dejaria de ser el geometrico -- el mismo error que ya mordio dos
-    veces en este proyecto.
+    `ratio` is long side / short side of the TRUE box, in pixels. In pixels and
+    not normalized: normalizing scales x and y by different factors, and the
+    ratio would stop being the geometric one -- the same mistake that already
+    bit twice in this project.
 
-    Con `enabled=False` devuelve unos: es la rama de control del experimento, y
-    tiene que costar exactamente lo mismo escribirla que la otra.
+    With `enabled=False` it returns ones: it is the control branch of the
+    experiment, and it has to cost exactly the same to write as the other.
     """
     if not enabled:
         return torch.ones_like(ratio)
     if ratio_threshold <= 1.0:
         raise ValueError(
-            f"ratio_threshold tiene que ser > 1, se recibio {ratio_threshold}"
+            f"ratio_threshold must be > 1, got {ratio_threshold}"
         )
     try:
         shape = DECAYS[decay]
     except KeyError:
         raise ValueError(
-            f"forma de decaimiento desconocida {decay!r}; hay {sorted(DECAYS)}"
+            f"unknown decay shape {decay!r}; available: {sorted(DECAYS)}"
         ) from None
 
-    # Un ratio por debajo de 1 no existe: es el lado largo entre el corto. Si
-    # llega, es que alguien los ha intercambiado, y truncar en 1 evita pesos
-    # negativos sin ocultar el problema (el peso saldria minimo, no absurdo).
+    # A ratio below 1 does not exist: it is the long side over the short one.
+    # If it arrives, someone swapped them, and truncating at 1 avoids negative
+    # weights without hiding the problem (the weight would be minimal, not
+    # absurd).
     progress = ((ratio.clamp(min=1.0) - 1.0) / (ratio_threshold - 1.0)).clamp(0.0, 1.0)
     return min_weight + (1.0 - min_weight) * shape(progress)
 
 
 def side_ratio_px(width: torch.Tensor, height: torch.Tensor) -> torch.Tensor:
-    """Lado largo / lado corto, sin asumir cual de los dos es cual.
+    """Long side / short side, without assuming which of the two is which.
 
-    El orden de `w` y `h` es justo lo que la ambiguedad vuelve arbitrario, asi
-    que el ratio no puede depender de el.
+    The order of `w` and `h` is precisely what the ambiguity makes arbitrary,
+    so the ratio cannot depend on it.
     """
     long_side = torch.maximum(width, height)
     short_side = torch.minimum(width, height)
@@ -190,12 +195,12 @@ def side_ratio_px(width: torch.Tensor, height: torch.Tensor) -> torch.Tensor:
 
 
 # --------------------------------------------------------------------------
-# Receta propia: terminos
+# Own recipe: terms
 # --------------------------------------------------------------------------
 
 @dataclass(frozen=True, slots=True)
 class LossTerms:
-    """Cada termino por separado. Juntarlos en un escalar oculta cual falla."""
+    """Each term separately. Merging them into a scalar hides which one fails."""
 
     box: torch.Tensor
     angle: torch.Tensor
@@ -203,16 +208,16 @@ class LossTerms:
     classes: torch.Tensor
     total: torch.Tensor
     num_positives: int
-    #: Solo la receta de Ultralytics. Cero en las demas, para que el registro
-    #: de cada ejecucion tenga siempre las mismas columnas.
+    #: Only the Ultralytics recipe. Zero in the others, so the log of every
+    #: run always has the same columns.
     dfl: torch.Tensor | None = None
-    #: Solo la receta del fork, y solo en sus ultimas epocas.
+    #: Only the fork recipe, and only in its last epochs.
     l1: torch.Tensor | None = None
 
     def to_dict(self) -> dict:
-        """Solo para registrar. `detach` a proposito: convertir a float un
-        tensor todavia enganchado al grafo avisa, y arrastrar el grafo a un
-        diccionario de informes es como se filtran las fugas de memoria."""
+        """Only for logging. `detach` on purpose: converting to float a tensor
+        still attached to the graph warns, and dragging the graph into a
+        report dictionary is how memory leaks get in."""
         def value(t):
             return 0.0 if t is None else t.detach().item()
 
@@ -229,11 +234,11 @@ class LossTerms:
 
 
 def iou_loss(predicted: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """`1 - IoU` sobre las envolventes alineadas.
+    """`1 - IoU` over the axis-aligned envelopes.
 
-    IoU y no L1 sobre las coordenadas: L1 trata igual un error de 5 pixeles en
-    un billete pequeno y en uno grande, cuando en el primero es fatal y en el
-    segundo irrelevante. El IoU es relativo al tamano por construccion.
+    IoU and not L1 over the coordinates: L1 treats a 5-pixel error the same on
+    a small banknote and on a large one, when in the first it is fatal and in
+    the second irrelevant. IoU is relative to size by construction.
     """
     if predicted.numel() == 0:
         return predicted.new_zeros(())
@@ -253,12 +258,13 @@ def angle_loss(
     min_weight: float = 0.0,
     decay: str = "smoothstep",
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Devuelve `(perdida, pesos)`. Los pesos salen para poder registrarlos.
+    """Returns `(loss, weights)`. The weights come out so they can be logged.
 
-    `predicted_angle` es (P, 2) con `(sin 2t, cos 2t)` SIN normalizar: la red
-    saca dos numeros libres. Se normalizan aqui para que la perdida mida solo
-    direccion; la magnitud no significa nada y dejarla suelta le daria al
-    modelo una via de bajar la perdida sin acertar el angulo.
+    `predicted_angle` is (P, 2) with `(sin 2t, cos 2t)` NOT normalized: the
+    network outputs two free numbers. They are normalized here so the loss
+    measures only direction; the magnitude means nothing and leaving it loose
+    would give the model a way to lower the loss without getting the angle
+    right.
     """
     if predicted_angle.numel() == 0:
         zero = predicted_angle.new_zeros(())
@@ -268,8 +274,9 @@ def angle_loss(
     target = torch.stack(
         (torch.sin(2 * target_theta), torch.cos(2 * target_theta)), dim=-1
     )
-    # 1 - coseno: cero cuando apuntan igual, 2 en el peor caso. Continuo en todo
-    # el circulo, que es el motivo de haber doblado el angulo.
+    # 1 - cosine: zero when they point the same way, 2 in the worst case.
+    # Continuous around the whole circle, which is the reason for doubling
+    # the angle.
     per_box = 1.0 - (predicted * target).sum(dim=-1)
 
     weights = angle_weight(
@@ -279,17 +286,17 @@ def angle_loss(
         min_weight=min_weight,
         decay=decay,
     )
-    # Se divide por el NUMERO de cajas, no por la suma de pesos.
+    # Divided by the NUMBER of boxes, not by the sum of weights.
     #
-    # Dividir por la suma deshace la atenuacion: con una sola caja de peso 0.1,
-    # `(1 * 0.1) / 0.1` vuelve a dar 1.0, y con un lote entero de cajas ambiguas
-    # el gradiente sale a plena potencia -- justo lo que el atenuador existe
-    # para evitar. Normalizando por N, atenuar reduce de verdad la magnitud.
+    # Dividing by the sum undoes the attenuation: with a single box of weight
+    # 0.1, `(1 * 0.1) / 0.1` gives 1.0 again, and with a whole batch of
+    # ambiguous boxes the gradient comes out at full power -- exactly what the
+    # attenuator exists to avoid. Normalizing by N, attenuating really reduces
+    # the magnitude.
     #
-    # Que eso baje la perdida total no falsea nada: los candidatos se comparan
-    # por las METRICAS de evaluacion, no por el valor de una perdida, y comparar
-    # perdidas entre funciones de perdida distintas no significa nada de todos
-    # modos.
+    # That this lowers the total loss distorts nothing: candidates are compared
+    # by the evaluation METRICS, not by the value of a loss, and comparing
+    # losses across different loss functions means nothing anyway.
     return (per_box * weights).sum() / per_box.numel(), weights
 
 
@@ -308,13 +315,14 @@ def compute_losses(
     obj_gain: float = 1.0,
     cls_gain: float = 1.0,
 ) -> LossTerms:
-    """Junta los tres terminos. Todo en pixeles."""
+    """Puts the three terms together. Everything in pixels."""
     positive = assignment.positive
     matched = assignment.matched[positive]
     device = predicted_objectness.device
 
-    # Objectness: TODAS las celdas participan. Es la unica senal que ensena que
-    # el fondo es fondo, y con ~3500 celdas y 2 billetes es casi toda la senal.
+    # Objectness: ALL cells take part. It is the only signal that teaches that
+    # background is background, and with ~3500 cells and 2 banknotes it is
+    # almost all the signal.
     obj_target = positive.to(predicted_objectness.dtype)
     objectness = F.binary_cross_entropy_with_logits(
         predicted_objectness, obj_target, reduction="mean"
@@ -361,14 +369,14 @@ def compute_losses(
 
 
 # --------------------------------------------------------------------------
-# Las cuatro recetas y el despacho
+# The four recipes and the dispatch
 # --------------------------------------------------------------------------
 
 RECIPES = ("own", "yolox_obb_fork", "ultralytics_obb", "ddgrcf")
 
 
 def head_spec_for(config: Config) -> HeadSpec:
-    """La cabeza que exige cada receta. No es elegible por separado."""
+    """The head each recipe demands. It is not selectable separately."""
     recipe = config.detector.loss.recipe
     if recipe == "ultralytics_obb":
         return HeadSpec(
@@ -385,8 +393,8 @@ def head_spec_for(config: Config) -> HeadSpec:
 
 
 def build_model(config: Config):
-    """El modelo que exige la receta. `ddgrcf` es una RED distinta, no solo una
-    cabeza: el port de su yaml, para que sus pesos de DOTA carguen."""
+    """The model the recipe demands. `ddgrcf` is a different NETWORK, not just
+    a head: the port of its yaml, so that its DOTA weights load."""
     if config.detector.loss.recipe == "ddgrcf":
         from testbank.models.ddgrcf import DdgrcfYoloxObb
 
@@ -395,15 +403,15 @@ def build_model(config: Config):
 
 
 def architecture_of(model) -> str:
-    """Lo que va al checkpoint para reconstruir la red al cargar."""
+    """What goes into the checkpoint to rebuild the network on load."""
     return "ddgrcf" if model.__class__.__name__ == "DdgrcfYoloxObb" else "yolox_obb"
 
 
-# --- utilidades comunes ----------------------------------------------------
+# --- shared utilities ------------------------------------------------------
 
 
 def _flatten(outputs):
-    """Los tres niveles en una lista de celdas. Todo (N, ·)."""
+    """The three levels in one list of cells. Everything (N, ·)."""
     angle = torch.cat([o.angle[0].permute(1, 2, 0).reshape(-1, o.angle.shape[1]) for o in outputs])
     classes = torch.cat(
         [o.classes[0].permute(1, 2, 0).reshape(-1, o.classes.shape[1]) for o in outputs]
@@ -436,16 +444,16 @@ def _grid(outputs, device) -> AnchorGrid:
 def target_distances(
     centers: torch.Tensor, strides: torch.Tensor, boxes: torch.Tensor
 ) -> torch.Tensor:
-    """`(l, t, r, b)` en unidades de stride desde cada celda a SU caja girada.
+    """`(l, t, r, b)` in stride units from each cell to ITS rotated box.
 
-    Es la inversa exacta de `decode_level`: el desplazamiento del centro de la
-    caja respecto a la celda se lleva al marco de la caja, y ahi
+    It is the exact inverse of `decode_level`: the offset of the box center
+    with respect to the cell is taken into the box frame, and there
 
         l = w/2 - u    r = w/2 + u    t = h/2 - v    b = h/2 + v
 
-    Sirve de objetivo tanto para la L1 tardia del fork como para la DFL de
-    Ultralytics. Puede salir negativo si la celda esta fuera de la caja; los
-    asignadores no eligen esas celdas, pero se clampa igual por si acaso.
+    It serves as target both for the fork's late L1 and for Ultralytics' DFL.
+    It can come out negative if the cell is outside the box; the assigners do
+    not pick those cells, but it is clamped anyway just in case.
     """
     cx, cy, w, h, theta = boxes.unbind(dim=-1)
     dx, dy = cx - centers[:, 0], cy - centers[:, 1]
@@ -456,7 +464,7 @@ def target_distances(
     return (ltrb / strides[:, None]).clamp(min=0.0)
 
 
-# --- receta propia ---------------------------------------------------------
+# --- own recipe ------------------------------------------------------------
 
 
 def _own(outputs, boxes, classes, config: Config, device) -> LossTerms:
@@ -476,15 +484,15 @@ def _own(outputs, boxes, classes, config: Config, device) -> LossTerms:
     )
 
 
-# --- receta del fork -------------------------------------------------------
+# --- fork recipe -----------------------------------------------------------
 
 
 def _fork(outputs, boxes, classes, config: Config, device, *, epoch, total_epochs) -> LossTerms:
-    """`get_losses` de buzhidaoshenme/YOLOX-OBB (Apache-2.0), sobre nuestra cabeza.
+    """`get_losses` of buzhidaoshenme/YOLOX-OBB (Apache-2.0), on our head.
 
-    Del fork, literal: la KLD como coste del SimOTA (x3.0) y como perdida de
-    caja (x5.0); `cls_target = one_hot * solape`, con solape `= 1 - kld_loss`;
-    todo `sum / num_fg`; y la L1 en las ultimas epocas.
+    From the fork, literally: the KLD as SimOTA cost (x3.0) and as box loss
+    (x5.0); `cls_target = one_hot * overlap`, with overlap `= 1 - kld_loss`;
+    everything `sum / num_fg`; and the L1 in the last epochs.
     """
     options = config.detector.loss.fork
     predicted_boxes, scores = decode_outputs(outputs, _image_size(config))
@@ -543,7 +551,7 @@ def _fork(outputs, boxes, classes, config: Config, device, *, epoch, total_epoch
     )
 
 
-# --- receta de Ultralytics -------------------------------------------------
+# --- Ultralytics recipe ----------------------------------------------------
 
 
 def distribution_focal_loss(
@@ -551,13 +559,13 @@ def distribution_focal_loss(
 ) -> torch.Tensor:
     """DFL (Li et al., 2020). `logits` (P, 4*reg_max), `target` (P, 4). -> (P,).
 
-    Cada distancia objetivo `y` cae entre dos bins enteros `yl <= y < yr`; la
-    perdida es la entropia cruzada contra los dos, ponderada por cercania:
+    Each target distance `y` falls between two integer bins `yl <= y < yr`; the
+    loss is the cross-entropy against both, weighted by closeness:
 
         DFL = -(yr - y) log p(yl) - (y - yl) log p(yr)
 
-    Asi la distribucion aprende a concentrar masa alrededor del valor real en
-    vez de solo acertar su esperanza. Media sobre las cuatro distancias.
+    So the distribution learns to concentrate mass around the real value
+    instead of only getting its expectation right. Mean over the four distances.
     """
     positives = logits.shape[0]
     logits = logits.view(positives, 4, reg_max)
@@ -575,21 +583,21 @@ def distribution_focal_loss(
 
 
 def _ultralytics(outputs, boxes, classes, config: Config, device) -> LossTerms:
-    """La receta v8-OBB, reconstruida desde su documentacion y los papers.
+    """The v8-OBB recipe, rebuilt from its documentation and the papers.
 
-    Sin objectness: la BCE de clase se calcula sobre TODAS las celdas contra el
-    objetivo suave del TAL, que vale cero en el fondo y la calidad de
-    localizacion normalizada en los positivos. Caja y DFL se ponderan por ese
-    mismo objetivo. Todo se divide por su suma, que es la normalizacion que
-    Ultralytics documenta (`target_scores_sum`).
+    No objectness: the class BCE is computed over ALL cells against the soft
+    target of the TAL, which is zero in the background and the normalized
+    localization quality in the positives. Box and DFL are weighted by that
+    same target. Everything is divided by its sum, which is the normalization
+    Ultralytics documents (`target_scores_sum`).
     """
     options = config.detector.loss.ultralytics
     predicted_boxes, _ = decode_outputs(outputs, _image_size(config))
     _, cls, _, _, distribution = _flatten(outputs)
     if distribution is None:
         raise ValueError(
-            "la receta ultralytics_obb exige la cabeza DFL; construye el modelo "
-            "con head_spec_for(config)"
+            "the ultralytics_obb recipe requires the DFL head; build the model "
+            "with head_spec_for(config)"
         )
     grid = _grid(outputs, device)
     assignment = tal_assign(
@@ -640,16 +648,16 @@ def _ultralytics(outputs, boxes, classes, config: Config, device) -> LossTerms:
     )
 
 
-# --- receta de DDGRCF ------------------------------------------------------
+# --- DDGRCF recipe ---------------------------------------------------------
 
 
 def regularize_angle_ddgrcf(boxes: torch.Tensor) -> torch.Tensor:
-    """Su `mintheta_obb`: el angulo en `(-pi/4, pi/4]`, intercambiando w y h.
+    """Their `mintheta_obb`: the angle in `(-pi/4, pi/4]`, swapping w and h.
 
-    `(w, h, t)` y `(h, w, t + pi/2)` son el mismo rectangulo; su convenio elige
-    la representacion de |angulo| menor. Su red predice el angulo crudo, asi que
-    el objetivo tiene que estar en ese rango o no seria alcanzable con gradiente
-    pequeno.
+    `(w, h, t)` and `(h, w, t + pi/2)` are the same rectangle; their convention
+    picks the representation with the smaller |angle|. Their network predicts
+    the raw angle, so the target has to be in that range or it would not be
+    reachable with a small gradient.
     """
 
     cx, cy, w, h, theta = boxes.unbind(dim=-1)
@@ -669,18 +677,18 @@ def regularize_angle_ddgrcf(boxes: torch.Tensor) -> torch.Tensor:
 
 
 def _ddgrcf(outputs, boxes, classes, config: Config, device, *, epoch, total_epochs) -> LossTerms:
-    """`get_losses` de DDGRCF/YOLOX_OBB (Apache-2.0), sobre el port de su red.
+    """`get_losses` of DDGRCF/YOLOX_OBB (Apache-2.0), on the port of their network.
 
-    Literal de su `detectx.py` + `obbdetectx.py` + yaml de perdidas: SimOTA con
-    coste `-log(IoU)` x3 e IoU EXACTO; caja `1 - IoU` x5; obj y cls BCE con
-    objetivo `one_hot * IoU`; todo `sum / num_fg`; L1 extra sobre la regresion
-    cruda en las ultimas epocas.
+    Literal from their `detectx.py` + `obbdetectx.py` + loss yaml: SimOTA with
+    cost `-log(IoU)` x3 and EXACT IoU; box `1 - IoU` x5; obj and cls BCE with
+    target `one_hot * IoU`; everything `sum / num_fg`; extra L1 over the raw
+    regression in the last epochs.
 
-    Una desviacion, dicha: su L1 extra deja el objetivo del ANGULO a cero (su
-    `get_reg_l1_target` rellena 4 de 5 componentes), lo que empuja el angulo
-    crudo hacia 0 en las ultimas epocas. Aqui el objetivo es el angulo real. Es
-    casi seguro un descuido suyo, no una decision, y replicarlo seria copiar el
-    fallo con el nombre de fidelidad.
+    One deviation, stated: their extra L1 leaves the ANGLE target at zero
+    (their `get_reg_l1_target` fills 4 of 5 components), which pushes the raw
+    angle towards 0 in the last epochs. Here the target is the real angle. It
+    is almost certainly an oversight of theirs, not a decision, and replicating
+    it would be copying the bug under the name of fidelity.
     """
     options = config.detector.loss.ddgrcf
     boxes = regularize_angle_ddgrcf(boxes)
@@ -721,9 +729,9 @@ def _ddgrcf(outputs, boxes, classes, config: Config, device, *, epoch, total_epo
 
     l1 = zero
     if options.l1_last_epochs > 0 and epoch >= total_epochs - options.l1_last_epochs:
-        # Su `get_reg_l1_target`: (cx/stride - i, cy/stride - j, log w/stride,
-        # log h/stride), con (i, j) la esquina de la celda. Nuestra rejilla
-        # guarda el CENTRO de la celda, de ahi el medio stride.
+        # Their `get_reg_l1_target`: (cx/stride - i, cy/stride - j, log w/stride,
+        # log h/stride), with (i, j) the cell corner. Our grid stores the cell
+        # CENTER, hence the half stride.
         stride = grid.strides[positive]
         corner = (grid.centers[positive] - stride[:, None] / 2) / stride[:, None]
         target = torch.stack(
@@ -752,7 +760,7 @@ def _ddgrcf(outputs, boxes, classes, config: Config, device, *, epoch, total_epo
     )
 
 
-# --- despacho --------------------------------------------------------------
+# --- dispatch --------------------------------------------------------------
 
 
 def losses_for_image(
@@ -771,7 +779,7 @@ def losses_for_image(
         return _ddgrcf(
             outputs, boxes, classes, config, device, epoch=epoch, total_epochs=total_epochs
         )
-    raise ValueError(f"receta desconocida: {recipe!r}; hay {RECIPES}")
+    raise ValueError(f"unknown recipe: {recipe!r}; available: {RECIPES}")
 
 
 def _image_size(config: Config):
@@ -781,4 +789,20 @@ def _image_size(config: Config):
     return ImageSize(side, side)
 
 
-__all__ = ['DECAYS', 'RECIPES', 'LossTerms', 'angle_loss', 'angle_weight', 'architecture_of', 'build_model', 'compute_losses', 'distribution_focal_loss', 'head_spec_for', 'iou_loss', 'losses_for_image', 'regularize_angle_ddgrcf', 'side_ratio_px', 'target_distances']
+__all__ = [
+    "DECAYS",
+    "RECIPES",
+    "LossTerms",
+    "angle_loss",
+    "angle_weight",
+    "architecture_of",
+    "build_model",
+    "compute_losses",
+    "distribution_focal_loss",
+    "head_spec_for",
+    "iou_loss",
+    "losses_for_image",
+    "regularize_angle_ddgrcf",
+    "side_ratio_px",
+    "target_distances",
+]

@@ -1,37 +1,38 @@
-"""Emparejamiento greedy por confianza descendente, con IoU rotado.
+"""Greedy matching by descending confidence, with rotated IoU.
 
-El punto delicado no es el greedy, es que hay TRES destinos posibles para una
-deteccion, no dos.
+The delicate point is not the greedy part, it is that a detection has THREE
+possible outcomes, not two.
 
-Las anotaciones que no hay que detectar ni penalizar
-----------------------------------------------------
-Dos mecanismos de este proyecto dejan billetes REALES fuera de la verdad:
+Annotations that must neither be detected nor penalized
+--------------------------------------------------------
+Two mechanisms of this project leave REAL banknotes out of the truth:
 
-1. La politica de visibilidad al 25%. Un billete que asoma una franja no se
-   anota. Tu propia especificacion ya avisaba: *"en imagenes con abanico el
-   modelo puede detectar correctamente billetes que no estan anotados y
-   contaran como falsos positivos"*.
+1. The 25% visibility policy. A banknote showing only a strip is not
+   annotated. The specification itself warned: *"in fan images the model may
+   correctly detect banknotes that are not annotated and they will count as
+   false positives"*.
 
-2. El filtro de area relativa. Descarta anotaciones que SI existen en el
-   fichero de origen.
+2. The relative area filter. It drops annotations that DO exist in the source
+   file.
 
-En los dos casos, si el detector encuentra ese billete, acierta. Contarlo como
-falso positivo castiga al detector por hacer bien su trabajo y hunde la
-precision justo en las imagenes con abanico, que son las que importan.
+In both cases, if the detector finds that banknote, it is right. Counting it
+as a false positive punishes the detector for doing its job and sinks
+precision precisely on fan images, which are the ones that matter.
 
-Del caso 1 no se puede hacer nada: si nadie lo anoto, no hay nada contra lo que
-comparar. Del caso 2 si, porque el quad descartado lo tenemos. Entra como
-`ignored`: una deteccion que cae mayoritariamente sobre uno de esos quads no
-suma acierto ni fallo, simplemente sale del recuento.
+Nothing can be done about case 1: if nobody annotated it, there is nothing to
+compare against. Case 2 can be handled, because we have the dropped quad. It
+enters as `ignored`: a detection that falls mostly on one of those quads adds
+neither a hit nor a miss; it simply leaves the count.
 
-El criterio es IoA, no IoU: `area(pred ∩ ignorado) / area(pred)`. Con IoU, una
-deteccion del billete ENTERO contra una franja anotada de ese mismo billete
-daria IoU baja y se colaria como falso positivo. Lo que se quiere preguntar es
-"¿esta deteccion esta explicada por un billete real que decidimos no usar?", y
-eso es una fraccion de la deteccion, no una interseccion simetrica.
+The criterion is IoA, not IoU: `area(pred ∩ ignored) / area(pred)`. With IoU,
+a detection of the WHOLE banknote against an annotated strip of that same
+banknote would give a low IoU and slip through as a false positive. The
+question we want to ask is "is this detection explained by a real banknote we
+decided not to use?", and that is a fraction of the detection, not a
+symmetric intersection.
 
-`evaluate` reporta las cifras CON y SIN este descarte, porque el tamano del
-efecto es en si mismo un dato sobre la calidad de la anotacion.
+`evaluate` reports the figures WITH and WITHOUT this exclusion, because the
+size of the effect is itself a datum about annotation quality.
 """
 
 from __future__ import annotations
@@ -62,9 +63,9 @@ class MatchedPair:
 class ImageMatching:
     sample_id: str
     pairs: tuple[MatchedPair, ...]
-    #: (indice de prediccion, resultado, score) para TODAS las predicciones.
+    #: (prediction index, outcome, score) for ALL predictions.
     outcomes: tuple[tuple[int, Outcome, float], ...]
-    #: Indices de verdades que nadie detecto. Cuentan como fallo, no se excluyen.
+    #: Indices of truths nobody detected. They count as misses, never excluded.
     missed: tuple[int, ...]
 
     @property
@@ -86,11 +87,11 @@ def match_image(
     match_iou: float = DEFAULT_MATCH_IOU,
     use_ignored: bool = True,
 ) -> ImageMatching:
-    """Greedy por confianza descendente. Una verdad se empareja como mucho una vez.
+    """Greedy by descending confidence. A truth is matched at most once.
 
-    Greedy y no asignacion optima a proposito: es lo que hacen las metricas de
-    deteccion al uso (COCO incluido), y cambiarlo haria que nuestros numeros no
-    se pudieran comparar con los publicados.
+    Greedy and not optimal assignment on purpose: it is what the usual
+    detection metrics do (COCO included), and changing it would make our
+    numbers incomparable with published ones.
     """
     cache = cache or PolygonCache.build(item)
     order = sorted(
@@ -141,11 +142,11 @@ def match_image(
 
 
 def _falls_on_ignored(prediction, cache: PolygonCache, *, threshold: float) -> bool:
-    """IoA sobre la union de los quads ignorados.
+    """IoA over the union of the ignored quads.
 
-    Sobre la UNION y no por pares: una deteccion repartida entre dos franjas
-    contiguas, cada una al 30%, esta explicada al 60% por anotaciones reales y
-    no deberia contar como falso positivo por no llegar al umbral con ninguna.
+    Over the UNION and not pairwise: a detection shared between two adjacent
+    strips, 30% each, is 60% explained by real annotations and should not
+    count as a false positive for failing to reach the threshold with either.
     """
     if not cache.ignored or prediction.area <= 0:
         return False

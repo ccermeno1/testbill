@@ -1,21 +1,22 @@
-"""Registro de datasets, con licencia y procedencia.
+"""Dataset registry, with license and provenance.
 
-Por que se declara aqui y no se lee del README del export
----------------------------------------------------------
-`README.dataset.txt` trae la licencia, pero parsearlo convertiria una afirmacion
-legal en una heuristica sobre texto libre. Se declara en codigo, se revisa en el
-diff y se versiona. Equivocarse aqui es un problema legal, no un bug.
+Why it is declared here and not read from the export's README
+-------------------------------------------------------------
+`README.dataset.txt` carries the license, but parsing it would turn a legal
+statement into a heuristic over free text. It is declared in code, reviewed in
+the diff and versioned. Getting this wrong is a legal problem, not a bug.
 
-Por que la version del export tambien esta aqui
------------------------------------------------
-Las imagenes NO estan en el repositorio -- son 16 MB cuya fuente de verdad es
-Roboflow -- asi que el hash de git fija el codigo pero no los datos. Registrar
-proyecto, version y fecha de export en cada ejecucion es lo que cierra ese hueco:
-sin ello, dos ejecuciones con el mismo commit podrian haber corrido sobre
-anotaciones distintas y nada lo delataria.
+Why the export version is here too
+----------------------------------
+The images are NOT in the repository -- they are 16 MB whose source of truth
+is Roboflow -- so the git hash pins the code but not the data. Recording
+project, version and export date in every run is what closes that gap:
+without it, two runs on the same commit could have run on different
+annotations and nothing would give it away.
 
-`sources` lleva la licencia de CADA fuente, porque la licencia de un agregado no
-anula la de sus fuentes. `compare` recorre la cadena entera.
+`sources` carries the license of EACH source, because the license of an
+aggregate does not override those of its sources. `compare` walks the whole
+chain.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from testbank.experiment.run import COPYLEFT, ComponentInfo
 
 
 class DatasetError(ValueError):
-    """El dataset no esta registrado o su declaracion es incoherente."""
+    """The dataset is not registered or its declaration is inconsistent."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,10 +37,10 @@ class DatasetInfo:
     root: Path
     license: str
     production_ready: bool
-    #: Licencia de cada fuente del agregado. Un dataset de una sola fuente lleva
-    #: la suya repetida, para que el campo nunca este vacio por descuido.
+    #: License of each source of the aggregate. A single-source dataset carries
+    #: its own repeated, so the field is never empty by oversight.
     sources: tuple[str, ...]
-    #: Identidad del export. Fija los DATOS, que el commit de git no fija.
+    #: Identity of the export. Pins the DATA, which the git commit does not.
     origin: str = ""
     version: str = ""
     exported: str = ""
@@ -48,15 +49,15 @@ class DatasetInfo:
     def __post_init__(self) -> None:
         if not self.sources:
             raise DatasetError(
-                f"{self.name}: `sources` no puede estar vacio; si el dataset "
-                "tiene una sola fuente, repite su licencia"
+                f"{self.name}: `sources` cannot be empty; if the dataset has a "
+                "single source, repeat its license"
             )
         contaminated = [s for s in self.sources if s in COPYLEFT]
         if self.production_ready and contaminated:
             raise DatasetError(
-                f"{self.name}: declarado production_ready=True pero agrega "
-                f"fuentes con licencia {contaminated}; la licencia del agregado "
-                "no anula la de sus fuentes"
+                f"{self.name}: declared production_ready=True but aggregates "
+                f"sources with license {contaminated}; the aggregate's license "
+                "does not override that of its sources"
             )
 
     def component(self) -> ComponentInfo:
@@ -83,7 +84,7 @@ REGISTRY: dict[str, DatasetInfo] = {}
 
 def register(info: DatasetInfo) -> DatasetInfo:
     if info.name in REGISTRY:
-        raise DatasetError(f"dataset duplicado en el registro: {info.name!r}")
+        raise DatasetError(f"duplicate dataset in the registry: {info.name!r}")
     REGISTRY[info.name] = info
     return info
 
@@ -93,7 +94,7 @@ def get(name: str) -> DatasetInfo:
         return REGISTRY[name]
     except KeyError:
         raise DatasetError(
-            f"dataset desconocido: {name!r}; registrados: {sorted(REGISTRY)}"
+            f"unknown dataset: {name!r}; registered: {sorted(REGISTRY)}"
         ) from None
 
 
@@ -101,15 +102,15 @@ def datasets() -> list[str]:
     return sorted(REGISTRY)
 
 
-# --- lo que hay hoy --------------------------------------------------------
+# --- what exists today -----------------------------------------------------
 
 _ATTRIBUTION = (
-    "CC BY 4.0 permite uso comercial, pero EXIGE atribucion: hay que citar la "
-    "fuente alli donde se distribuya el modelo o los datos."
+    "CC BY 4.0 allows commercial use but REQUIRES attribution: the source must "
+    "be cited wherever the model or the data are distributed."
 )
 _RESIZED = (
-    "489 de 502 imagenes son 416x416, ya redimensionadas en origen: el aspecto "
-    "real de los billetes esta distorsionado y no se recupera."
+    "489 of 502 images are 416x416, already resized at the source: the real "
+    "aspect of the banknotes is distorted and cannot be recovered."
 )
 
 ANNOTATED_BANKNOTES_2 = register(

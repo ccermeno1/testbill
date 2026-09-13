@@ -1,11 +1,11 @@
-"""Deteccion de la estructura del directorio de datos.
+"""Detection of the data directory structure.
 
-Modo 1 (adoptar): ya existe train/valid/test con images/ y labels/. Es lo que
-exporta Roboflow y la particion se adopta tal cual.
-Modo 2 (crear): no existe esa estructura, hay que generar la particion.
+Mode 1 (adopt): train/valid/test with images/ and labels/ already exist. It is
+what Roboflow exports, and the split is adopted as is.
+Mode 2 (create): that structure does not exist; the split must be generated.
 
-Este modulo solo DESCUBRE. La asignacion a particiones es competencia exclusiva
-de splits.py.
+This module only DISCOVERS. Assigning samples to splits is the exclusive job of
+splits.py.
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ IMAGE_SUFFIXES = frozenset(
 
 CANONICAL_SPLITS = ("train", "valid", "test")
 
-# Roboflow usa "valid". "val" es el nombre de Ultralytics y aparece en exports
-# retocados a mano: se acepta como alias pero se deja constancia.
+# Roboflow uses "valid". "val" is the Ultralytics name and shows up in
+# hand-edited exports: it is accepted as an alias, but noted.
 _VALID_ALIASES = ("valid", "val")
 
 
@@ -31,12 +31,12 @@ class LayoutMode(str, Enum):
 
 
 class LayoutError(RuntimeError):
-    """La estructura del directorio de datos no es utilizable."""
+    """The data directory structure is unusable."""
 
 
 @dataclass(frozen=True, slots=True)
 class Sample:
-    """Una imagen y su fichero de etiquetas. `sample_id` es el nombre sin extension."""
+    """An image and its label file. `sample_id` is the name without extension."""
 
     sample_id: str
     image_path: Path
@@ -51,7 +51,7 @@ class Sample:
 class Layout:
     root: Path
     mode: LayoutMode
-    #: En modo adoptar: particion -> muestras. En modo crear: {"__all__": muestras}.
+    #: In adopt mode: split -> samples. In create mode: {"__all__": samples}.
     groups: dict[str, tuple[Sample, ...]]
     notes: tuple[str, ...] = ()
 
@@ -64,11 +64,11 @@ class Layout:
 
 
 def _pair_directory(images_dir: Path, labels_dir: Path) -> tuple[Sample, ...]:
-    """Empareja imagenes con etiquetas. Cualquier huerfano es fatal.
+    """Pair images with labels. Any orphan is fatal.
 
-    Una etiqueta que falta NO se trata como "imagen sin billetes": es asi como se
-    envenena un entrenamiento en silencio. Roboflow escribe un .txt vacio cuando
-    no hay objetos, asi que la ausencia del fichero es una anomalia real.
+    A missing label is NOT treated as "image with no banknotes": that is how a
+    training run gets poisoned silently. Roboflow writes an empty .txt when
+    there are no objects, so a missing file is a real anomaly.
     """
     images = {
         p.stem: p
@@ -82,14 +82,14 @@ def _pair_directory(images_dir: Path, labels_dir: Path) -> tuple[Sample, ...]:
     missing_labels = sorted(set(images) - set(labels))
     if missing_labels:
         raise LayoutError(
-            f"{len(missing_labels)} imagenes sin fichero de etiquetas en "
+            f"{len(missing_labels)} images without a label file in "
             f"{labels_dir}: {missing_labels[:10]}"
             + (" ..." if len(missing_labels) > 10 else "")
         )
     orphan_labels = sorted(set(labels) - set(images))
     if orphan_labels:
         raise LayoutError(
-            f"{len(orphan_labels)} etiquetas sin imagen en {images_dir}: "
+            f"{len(orphan_labels)} labels without an image in {images_dir}: "
             f"{orphan_labels[:10]}" + (" ..." if len(orphan_labels) > 10 else "")
         )
 
@@ -100,13 +100,13 @@ def _pair_directory(images_dir: Path, labels_dir: Path) -> tuple[Sample, ...]:
 
 
 def _resolve_split_dir(root: Path, split: str) -> tuple[Path | None, str | None]:
-    """Devuelve el directorio de la particion y una nota si se uso un alias."""
+    """Return the split directory and a note if an alias was used."""
     names = _VALID_ALIASES if split == "valid" else (split,)
     found = [name for name in names if (root / name).is_dir()]
     if len(found) > 1:
         raise LayoutError(
-            f"existen a la vez {found} en {root}; ambiguo. Roboflow usa 'valid'; "
-            "elimina o renombra el otro antes de continuar"
+            f"{found} exist at the same time in {root}; ambiguous. Roboflow uses "
+            "'valid'; remove or rename the other one before continuing"
         )
     if not found:
         return None, None
@@ -114,17 +114,17 @@ def _resolve_split_dir(root: Path, split: str) -> tuple[Path | None, str | None]
     note = None
     if name != split:
         note = (
-            f"se encontro '{name}/' y se adopta como particion '{split}'. "
-            "Roboflow exporta 'valid'; revisa que el directorio sea el esperado"
+            f"found '{name}/' and adopting it as split '{split}'. Roboflow "
+            "exports 'valid'; check that the directory is the expected one"
         )
     return root / name, note
 
 
 def detect_layout(root: str | Path) -> Layout:
-    """Decide entre modo adoptar y modo crear inspeccionando el directorio."""
+    """Decide between adopt and create mode by inspecting the directory."""
     root = Path(root)
     if not root.is_dir():
-        raise LayoutError(f"el directorio de datos no existe: {root}")
+        raise LayoutError(f"data directory does not exist: {root}")
 
     notes: list[str] = []
     split_dirs: dict[str, Path] = {}
@@ -138,8 +138,8 @@ def detect_layout(root: str | Path) -> Layout:
     if "train" in split_dirs and "valid" in split_dirs:
         if "test" not in split_dirs:
             notes.append(
-                "no hay particion 'test' en el export; se adopta train/valid y test "
-                "queda vacia. El comando evaluate-test no tendra nada que evaluar"
+                "no 'test' split in the export; train/valid are adopted and test "
+                "stays empty. The evaluate-test command will have nothing to evaluate"
             )
         groups = {
             split: _pair_directory(path / "images", path / "labels")
@@ -151,10 +151,10 @@ def detect_layout(root: str | Path) -> Layout:
 
     if split_dirs:
         raise LayoutError(
-            f"estructura a medias en {root}: se encontro {sorted(split_dirs)} pero "
-            "el modo adoptar exige al menos 'train' y 'valid', cada una con "
-            "images/ y labels/. Corrige la estructura o retirala del todo para "
-            "que se genere la particion en modo crear"
+            f"half-built structure in {root}: found {sorted(split_dirs)} but adopt "
+            "mode requires at least 'train' and 'valid', each with images/ and "
+            "labels/. Fix the structure or remove it entirely so the split is "
+            "generated in create mode"
         )
 
     samples = _discover_flat(root)
@@ -167,7 +167,7 @@ def detect_layout(root: str | Path) -> Layout:
 
 
 def _discover_flat(root: Path) -> tuple[Sample, ...]:
-    """Modo crear: images/ + labels/ en la raiz, o imagenes y .txt conviviendo."""
+    """Create mode: images/ + labels/ at the root, or images and .txt side by side."""
     if (root / "images").is_dir() and (root / "labels").is_dir():
         return _pair_directory(root / "images", root / "labels")
 
@@ -178,18 +178,18 @@ def _discover_flat(root: Path) -> tuple[Sample, ...]:
     ]
     if not images:
         raise LayoutError(
-            f"no se encontro ninguna imagen bajo {root}. Se esperaba o bien "
-            "train/valid/test con images/ y labels/, o bien images/ y labels/, "
-            "o imagenes con su .txt al lado"
+            f"no image found under {root}. Expected either train/valid/test with "
+            "images/ and labels/, or images/ and labels/, or images with their "
+            ".txt next to them"
         )
 
     by_stem: dict[str, Path] = {}
     for path in images:
         if path.stem in by_stem:
             raise LayoutError(
-                f"nombre de imagen duplicado '{path.stem}': {by_stem[path.stem]} y "
-                f"{path}. El identificador de muestra es el nombre sin extension y "
-                "tiene que ser unico"
+                f"duplicate image name '{path.stem}': {by_stem[path.stem]} and "
+                f"{path}. The sample identifier is the name without extension and "
+                "must be unique"
             )
         by_stem[path.stem] = path
 
@@ -205,7 +205,7 @@ def _discover_flat(root: Path) -> tuple[Sample, ...]:
         )
     if missing:
         raise LayoutError(
-            f"{len(missing)} imagenes sin .txt al lado: {missing[:10]}"
+            f"{len(missing)} images without a .txt next to them: {missing[:10]}"
             + (" ..." if len(missing) > 10 else "")
         )
     return tuple(samples)

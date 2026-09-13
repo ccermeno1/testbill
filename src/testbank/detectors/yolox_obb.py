@@ -1,15 +1,15 @@
-"""Adaptador del candidato propio: YOLOX-Nano con cabeza OBB.
+"""Adapter of the own candidate: YOLOX-Nano with an OBB head.
 
-Apache-2.0 y APTO PARA PRODUCCION, al contrario que Ultralytics. Es el unico
-candidato cuyo codigo controlamos entero: sin repositorio ajeno que vendorizar,
-sin operadores compilados, sin adivinar el esquema de datos de un dataloader que
-no hemos leido.
+Apache-2.0 and FIT FOR PRODUCTION, unlike Ultralytics. It is the only
+candidate whose code we control entirely: no foreign repository to vendor, no
+compiled operators, no guessing the data schema of a dataloader we have not
+read.
 
-Y es con diferencia el mas pequeno -- 857k parametros frente a los 2.65M de
-YOLO26n -- que es lo que pedia el despliegue movil.
+And it is by far the smallest -- 857k parameters against the 2.65M of YOLO26n
+-- which is what the mobile deployment asked for.
 
-`torch` se importa de forma perezosa igual que `ultralytics` en el otro
-adaptador: va en un grupo opcional y `import testbank` no debe exigirlo.
+`torch` is imported lazily just like `ultralytics` in the other adapter: it is
+in an optional group and `import testbank` must not require it.
 """
 
 from __future__ import annotations
@@ -32,41 +32,41 @@ def _import_torch():
         import torch
     except ImportError as exc:
         raise DetectorError(
-            "torch no esta instalado. Va en el grupo opcional `torch`: "
+            "torch is not installed. It is in the optional group `torch`: "
             "`uv pip install -e \".[torch]\"`"
         ) from exc
     return torch
 
 
 class YoloxObbDetector(BaseDetector):
-    """Base de los candidatos propios. Una subclase registrada por variante.
+    """Base of the own candidates. One registered subclass per variant.
 
-    La variante NO se lee de la config: la lleva la clase. Antes venia de
-    `config.detector.variant` mientras el nombre registrado decia "nano" fijo,
-    asi que entrenar con `variant: tiny` producia un modelo de 4.37M etiquetado
-    como el de 857k. La tabla comparativa habria mostrado un nombre que no
-    corresponde al modelo -- exactamente la mentira silenciosa que el resto del
-    proyecto se dedica a evitar.
+    The variant is NOT read from the config: the class carries it. Before it
+    came from `config.detector.variant` while the registered name said "nano"
+    fixed, so training with `variant: tiny` produced a 4.37M model labelled as
+    the 857k one. The comparison table would have shown a name that does not
+    correspond to the model -- exactly the silent lie the rest of the project
+    is devoted to avoiding.
 
-    Ahora el nombre y la variante salen del mismo sitio y no pueden separarse, y
-    `train` reescribe la config con su variante para que el `config.yaml`
-    congelado diga la verdad.
+    Now the name and the variant come from the same place and cannot be
+    separated, and `train` rewrites the config with its variant so the frozen
+    `config.yaml` tells the truth.
     """
 
     variant: str = "nano"
     license = "Apache-2.0"
     production_ready = True
     _NOTE = (
-        "Candidato propio: sin dependencias compiladas y con la arquitectura "
-        "entera bajo nuestro control."
+        "Own candidate: no compiled dependencies and the whole architecture "
+        "under our control."
     )
     notes = (_NOTE,)
 
     def _with_variant(self, config: Config) -> Config:
-        """La variante de la clase manda sobre la de la config, y se escribe.
+        """The class variant overrides the config's, and it is written back.
 
-        Sin reescribirla, el `config.yaml` de la ejecucion guardaria la variante
-        por defecto mientras se entreno otra.
+        Without rewriting it, the run's `config.yaml` would store the default
+        variant while another one was trained.
         """
         if config.detector.variant == self.variant:
             return config
@@ -76,7 +76,7 @@ class YoloxObbDetector(BaseDetector):
             )}
         )
 
-    # --- entrenamiento ----------------------------------------------------
+    # --- training ---------------------------------------------------------
 
     def train(self, samples_by_split, config: Config, *, output_dir: Path) -> TrainResult:
         _import_torch()
@@ -86,7 +86,7 @@ class YoloxObbDetector(BaseDetector):
         config = self._with_variant(config)
         datasets = build_datasets(samples_by_split, config)
         if "train" not in datasets:
-            raise DetectorError("hace falta la particion 'train' para entrenar")
+            raise DetectorError("the 'train' split is required to train")
 
         weights, history = fit(datasets["train"], config, output_dir=output_dir)
         last = history.epochs[-1] if history.epochs else {}
@@ -94,10 +94,10 @@ class YoloxObbDetector(BaseDetector):
             weights=weights,
             epochs=config.detector.epochs,
             notes=(
-                f"{len(datasets['train'])} imagenes de entrenamiento",
-                f"receta de perdida: {config.detector.loss.recipe}",
+                f"{len(datasets['train'])} training images",
+                f"loss recipe: {config.detector.loss.recipe}",
                 *history.notes,
-                "perdidas finales: "
+                "final losses: "
                 + ", ".join(
                     f"{k}={v:.4f}"
                     for k, v in last.items()
@@ -106,15 +106,15 @@ class YoloxObbDetector(BaseDetector):
             ),
         )
 
-    # --- inferencia -------------------------------------------------------
+    # --- inference --------------------------------------------------------
 
     def predict(self, samples, *, weights: Path, config: Config) -> dict:
-        """`sample_id -> [Prediction]` en coordenadas NORMALIZADAS.
+        """`sample_id -> [Prediction]` in NORMALIZED coordinates.
 
-        Las predicciones se decodifican en el espacio de ENTRADA de la red
-        (`image_size`), y como los quads son normalizados no hace falta
-        reescalar: la normalizacion ya absorbe el cambio de tamano. Se pasa el
-        tamano real solo para el aspecto del orden canonico.
+        Predictions are decoded in the network's INPUT space (`image_size`),
+        and since quads are normalized no rescaling is needed: normalization
+        already absorbs the size change. The real size is passed only for the
+        aspect of the canonical order.
         """
         torch = _import_torch()
         import cv2
@@ -136,9 +136,9 @@ class YoloxObbDetector(BaseDetector):
             for sample in samples:
                 image = cv2.imread(str(sample.image_path), cv2.IMREAD_COLOR)
                 if image is None:
-                    raise DetectorError(f"no se pudo leer {sample.image_path}")
+                    raise DetectorError(f"could not read {sample.image_path}")
                 resized = cv2.resize(image, (side, side), interpolation=cv2.INTER_LINEAR)
-                # La MISMA conversion que en entrenamiento, o los pesos no valen.
+                # The SAME conversion as in training, or the weights are useless.
                 tensor = image_to_input(resized).unsqueeze(0).to(device)
                 outputs = [o.to_cpu() for o in model(tensor)]
                 width, height = sizes.size(sample.sample_id)
@@ -148,10 +148,10 @@ class YoloxObbDetector(BaseDetector):
                     confidence=config.detector.confidence_threshold,
                     iou_threshold=config.detector.nms_iou,
                 )
-                # El aspecto real solo importa para el orden canonico, y los
-                # quads ya salen normalizados sobre un cuadrado. Se recanonicaliza
-                # con el aspecto verdadero para que el ancla del lado mas largo
-                # sea la geometrica y no la del cuadrado de entrada.
+                # The real aspect only matters for the canonical order, and the
+                # quads already come out normalized over a square. They are
+                # re-canonicalized with the true aspect so the longest-side
+                # anchor is the geometric one and not the input square's.
                 out[sample.sample_id] = _recanonicalize(
                     out[sample.sample_id], width / height
                 )
@@ -159,11 +159,11 @@ class YoloxObbDetector(BaseDetector):
 
 
 def _recanonicalize(predictions, aspect: float):
-    """Reordena los vertices con el aspecto REAL de la imagen.
+    """Reorders the vertices with the REAL aspect of the image.
 
-    La red trabaja sobre un cuadrado, asi que ahi el lado mas largo normalizado
-    coincide con el geometrico. En la imagen original no tiene por que: es la
-    anisotropia que ya ha mordido dos veces en este proyecto.
+    The network works on a square, so there the normalized longest side
+    matches the geometric one. In the original image it need not: it is the
+    anisotropy that has already bitten twice in this project.
     """
     import warnings
 
@@ -180,7 +180,7 @@ def _recanonicalize(predictions, aspect: float):
         warnings.simplefilter("ignore", CoordinateRangeWarning)
         for prediction in predictions:
             if prediction.quad is None:
-                out.append(prediction)  # sin geometria: nada que reordenar
+                out.append(prediction)  # no geometry: nothing to reorder
                 continue
             out.append(
                 Prediction(
@@ -194,16 +194,17 @@ def _recanonicalize(predictions, aspect: float):
 
 @register
 class YoloxObbDdgrcfPortDetector(YoloxObbDetector):
-    """El port en torch puro de DDGRCF/YOLOX_OBB, con su receta y sus pesos.
+    """The pure-torch port of DDGRCF/YOLOX_OBB, with its recipe and its weights.
 
-    Es la version de ese candidato que ENTRENA en CPU y en MPS: la misma red
-    (`models/ddgrcf.py`, verificada tensor a tensor contra la suya), la misma
-    receta (`recipes.py: ddgrcf`, con el IoU exacto en torch) y sus pesos de
-    DOTA con `--pretrained weights/yolox_s_dota1_0.pth`.
+    It is the version of that candidate that TRAINS on CPU and on MPS: the same
+    network (`models/ddgrcf.py`, verified tensor by tensor against theirs), the
+    same recipe (`losses.py: ddgrcf`, with the exact IoU in torch) and their
+    DOTA weights with `--pretrained weights/yolox_s_dota1_0.pth`.
 
-    Apto para produccion: no depende de nada compilado ni de un clon. Lo que
-    NO reproduce del clon es su bucle de datos (mosaico, mixup, resampling) ni
-    su optimizador: entrena con el bucle de este proyecto, como los demas.
+    Fit for production: it depends on nothing compiled nor on a clone. What it
+    does NOT reproduce from the clone is its data loop (mosaic, mixup,
+    resampling) nor its optimizer: it trains with this project's loop, like
+    the others.
     """
 
     name = "yolox-obb-ddgrcf-port"
@@ -212,18 +213,18 @@ class YoloxObbDdgrcfPortDetector(YoloxObbDetector):
     production_ready = True
     notes = (
         (
-            "Port en torch puro de la red de DDGRCF/YOLOX_OBB (yoloxs_obb.yaml): "
-            "mismas 426 claves y formas, salida identica con los mismos pesos."
+            "Pure-torch port of the DDGRCF/YOLOX_OBB network (yoloxs_obb.yaml): "
+            "same 426 keys and shapes, identical output with the same weights."
         ),
         (
-            "Receta ddgrcf: PolyIoU EXACTO x5 + obj + cls por IoU + L1 tardia, "
-            "SimOTA con -log(IoU). El IoU de poligonos va en torch, no compilado."
+            "ddgrcf recipe: EXACT PolyIoU x5 + obj + cls by IoU + late L1, "
+            "SimOTA with -log(IoU). The polygon IoU is in torch, not compiled."
         ),
         (
-            "Preentreno DOTA con --pretrained; la capa de clase (15 -> 1) se "
-            "reinicia y el resto se carga estricto."
+            "DOTA pretraining with --pretrained; the class layer (15 -> 1) is "
+            "re-initialized and the rest is loaded strictly."
         ),
-        "Entrena con el bucle de testbank, no con el suyo: sin mosaico ni mixup.",
+        "Trains with testbank's loop, not theirs: no mosaic or mixup.",
     )
 
     def _with_variant(self, config: Config) -> Config:
@@ -239,10 +240,10 @@ __all__ = ["YoloxObbDdgrcfPortDetector", "YoloxObbDetector"]
 
 
 def _register_variants() -> dict[str, type]:
-    """Un candidato registrado por variante, con el nombre derivado de ella.
+    """One registered candidate per variant, with the name derived from it.
 
-    Se generan en vez de escribirse a mano para que no puedan desincronizarse:
-    anadir una variante en `VARIANTS` la pone aqui sola.
+    Generated instead of written by hand so they cannot drift out of sync:
+    adding a variant to `VARIANTS` puts it here on its own.
     """
     from testbank.models.yolox_obb import VARIANTS, YoloxObb
 
@@ -257,11 +258,11 @@ def _register_variants() -> dict[str, type]:
                 "name": f"yolox-obb-{variant}",
                 "notes": (
                     YoloxObbDetector._NOTE,
-                    f"variante {variant}: {params:,} parametros.",
+                    f"variant {variant}: {params:,} parameters.",
                 ),
                 "__doc__": (
-                    f"Cabeza OBB propia sobre YOLOX, variante {variant} "
-                    f"({params:,} parametros)."
+                    f"Own OBB head on YOLOX, variant {variant} "
+                    f"({params:,} parameters)."
                 ),
             },
         )

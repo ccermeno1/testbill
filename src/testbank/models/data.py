@@ -1,22 +1,23 @@
-"""Dataset de entrenamiento del candidato propio.
+"""Training dataset of the own candidate.
 
-Lee por la misma puerta que todo lo demas: `dataio/prepare.prepare`, que aplica el
-filtro de area relativa y la politica de billetes que cruzan el borde. Si esto
-cargara los ficheros por su cuenta, el candidato propio entrenaria con una
-verdad distinta de la de Ultralytics y la tabla los compararia como iguales.
+It reads through the same door as everything else: `dataio/prepare.prepare`,
+which applies the relative area filter and the policy for banknotes crossing
+the border. If this loaded the files on its own, the own candidate would train
+on a different truth than Ultralytics and the table would compare them as
+equals.
 
-Sobre el redimensionado
------------------------
-Se reescala directo a `image_size x image_size`, sin letterbox. Podria parecer
-descuidado, pero es lo coherente con estos datos: 489 de las 502 imagenes YA
-llegan a 416x416 desde el origen, deformadas al cuadrado por el export. El
-aspecto real de los billetes se perdio antes de que nosotros toquemos nada, asi
-que anadir letterbox ahora no recupera nada -- solo mete franjas negras y una
-segunda geometria que explicar. Ver la nota del README sobre el 19% de cajas
-casi cuadradas.
+About the resizing
+------------------
+It rescales directly to `image_size x image_size`, without letterbox. It might
+look careless, but it is what is consistent with these data: 489 of the 502
+images ALREADY arrive at 416x416 from the source, deformed to a square by the
+export. The real aspect of the banknotes was lost before we touched anything,
+so adding letterbox now recovers nothing -- it only adds black bands and a
+second geometry to explain. See the README note about the 19% of nearly square
+boxes.
 
-Si en algun momento se resuben los originales sin redimensionar, esto hay que
-revisarlo: ahi el letterbox si valdria la pena.
+If at some point the originals are re-uploaded without resizing, this has to
+be revisited: there the letterbox would be worth it.
 """
 
 from __future__ import annotations
@@ -35,28 +36,29 @@ from testbank.geometry.quad import Quad
 
 
 def image_to_input(image_bgr: np.ndarray) -> torch.Tensor:
-    """Imagen de OpenCV (BGR, uint8) -> tensor `(3, H, W)` de entrada a la red.
+    """OpenCV image (BGR, uint8) -> `(3, H, W)` tensor fed to the network.
 
-    **BGR crudo en 0-255, sin normalizar.** Es la convencion de YOLOX (Megvii)
-    y de DDGRCF, y por tanto la que esperan los pesos preentrenados que se
-    cargan: el COCO de Megvii en la cabeza propia y el DOTA de DDGRCF en su
-    port. Antes se daba RGB en [0, 1] -- canales cambiados y escala 255 veces
-    menor -- y el preentreno llegaba destrozado a la primera capa: medido, el
-    port con DOTA daba mAP 0.000 y puntuaciones maximas de 0.004 tras una epoca.
+    **Raw BGR in 0-255, not normalized.** It is the convention of YOLOX (Megvii)
+    and of DDGRCF, and therefore the one the loaded pretrained weights expect:
+    Megvii's COCO in the own head and DDGRCF's DOTA in its port. Before, RGB in
+    [0, 1] was given -- swapped channels and a scale 255 times smaller -- and
+    the pretraining arrived wrecked at the first layer: measured, the port with
+    DOTA gave mAP 0.000 and maximum scores of 0.004 after one epoch.
 
-    Para entrenar de cero da igual (la BatchNorm absorbe la escala), asi que la
-    convencion se fija aqui, en un solo sitio, y la usan entrenamiento e
-    inferencia. Cambiarla en uno solo invalidaria todos los pesos guardados.
+    For training from scratch it does not matter (BatchNorm absorbs the scale),
+    so the convention is fixed here, in a single place, and used by training
+    and inference. Changing it in only one of them would invalidate every saved
+    weight.
     """
     return torch.from_numpy(np.ascontiguousarray(image_bgr.transpose(2, 0, 1))).float()
 
 
 def quad_to_box(quad: Quad, width: int, height: int) -> tuple[float, ...]:
-    """Quad normalizado -> `cx, cy, w, h, theta` en PIXELES.
+    """Normalized quad -> `cx, cy, w, h, theta` in PIXELS.
 
-    El quad canonico ancla `p0->p1` en el lado mas largo, asi que `w` sale
-    siempre siendo el lado largo y `theta` su orientacion. Eso no es casualidad
-    que aproveche: es la razon de que exista el orden canonico.
+    The canonical quad anchors `p0->p1` on the longest side, so `w` always
+    comes out as the long side and `theta` as its orientation. That is not a
+    coincidence being exploited: it is the reason the canonical order exists.
     """
     points = [(x * width, y * height) for x, y in quad.points]
     cx = sum(p[0] for p in points) / 4
@@ -71,9 +73,9 @@ def quad_to_box(quad: Quad, width: int, height: int) -> tuple[float, ...]:
 
 @dataclass(frozen=True, slots=True)
 class Batch:
-    """Un lote. Las cajas van en lista porque cada imagen tiene un numero
-    distinto y apilarlas exigiria rellenar con basura que luego hay que
-    acordarse de ignorar."""
+    """One batch. Boxes go in a list because every image has a different
+    number of them and stacking would require padding with garbage that one
+    must then remember to ignore."""
 
     images: torch.Tensor
     boxes: list[torch.Tensor]
@@ -85,7 +87,7 @@ class Batch:
 
 
 class BanknoteDataset(Dataset):
-    """Imagenes y cajas orientadas, ya filtradas y en el tamano de entrada."""
+    """Images and oriented boxes, already filtered and at the input size."""
 
     def __init__(self, prepared: list[PreparedSample], image_size: int) -> None:
         self.items = list(prepared)
@@ -98,14 +100,14 @@ class BanknoteDataset(Dataset):
         item = self.items[index]
         image = cv2.imread(str(item.sample.image_path), cv2.IMREAD_COLOR)
         if image is None:
-            raise OSError(f"no se pudo leer {item.sample.image_path}")
+            raise OSError(f"could not read {item.sample.image_path}")
         image = cv2.resize(
             image, (self.image_size, self.image_size), interpolation=cv2.INTER_LINEAR
         )
         tensor = image_to_input(image)
 
-        # Los quads son normalizados, asi que las cajas se calculan ya en la
-        # escala de entrada: no hay que reescalarlas despues.
+        # Quads are normalized, so the boxes are computed directly at the input
+        # scale: no rescaling afterwards.
         boxes = [
             quad_to_box(quad, self.image_size, self.image_size)
             for quad in item.quads
@@ -131,7 +133,7 @@ def collate(entries) -> Batch:
 def build_datasets(
     samples_by_split: dict[str, list], config: Config
 ) -> dict[str, BanknoteDataset]:
-    """Un dataset por particion, compartiendo filtro y politica de borde."""
+    """One dataset per split, sharing filter and border policy."""
     prepared, _ = prepare(samples_by_split, config)
     return {
         split: BanknoteDataset(items, config.detector.image_size)

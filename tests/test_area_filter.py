@@ -1,4 +1,4 @@
-"""Filtro de area relativa: conserva el billete de delante de cada imagen."""
+"""Relative area filter: keeps the front banknote of each image."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def ann(*args, **kwargs) -> Annotation:
 
 
 def write_sample(tmp_path, quads, sample_id="img") -> Sample:
-    """Escribe un .txt obb_yolo y una imagen ficticia emparejada."""
+    """Writes an obb_yolo .txt and a paired dummy image."""
     label = tmp_path / f"{sample_id}.txt"
     lines = [
         "0 " + " ".join(f"{v:.17g}" for v in q.flat()) for q in quads
@@ -39,92 +39,92 @@ def write_sample(tmp_path, quads, sample_id="img") -> Sample:
     return Sample(sample_id=sample_id, image_path=image, label_path=label)
 
 
-# --- el criterio ----------------------------------------------------------
+# --- the criterion --------------------------------------------------------
 
 
-def test_una_sola_anotacion_siempre_se_conserva():
+def test_a_single_annotation_is_always_kept():
     kept, dropped = filter_by_relative_area([ann(0.5, 0.5)])
     assert len(kept) == 1 and dropped == ()
 
 
-def test_sin_anotaciones_no_falla():
+def test_no_annotations_does_not_fail():
     assert filter_by_relative_area([]) == ((), ())
 
 
-def test_billetes_de_tamano_similar_se_conservan_todos():
-    """Foto de dos o tres billetes juntos: ninguno es una franja tapada."""
+def test_banknotes_of_similar_size_are_all_kept():
+    """Photo of two or three banknotes together: none is a covered strip."""
     anns = [ann(0.25, 0.5, half_long=0.20), ann(0.75, 0.5, half_long=0.19)]
     kept, dropped = filter_by_relative_area(anns)
     assert len(kept) == 2 and dropped == ()
 
 
-def test_franja_de_billete_tapado_cae():
-    """Abanico: la franja visible del de detras es mucho menor que el de delante."""
-    frente = ann(0.5, 0.5, half_long=0.30, ratio=2.0)
-    franja = ann(0.5, 0.5, half_long=0.30, ratio=20.0)  # misma longitud, muy fina
-    kept, dropped = filter_by_relative_area([frente, franja])
+def test_strip_of_covered_banknote_drops():
+    """Fan: the visible strip of the one behind is much smaller than the front one."""
+    front = ann(0.5, 0.5, half_long=0.30, ratio=2.0)
+    strip = ann(0.5, 0.5, half_long=0.30, ratio=20.0)  # same length, very thin
+    kept, dropped = filter_by_relative_area([front, strip])
     assert len(kept) == 1
     assert [index for index, _ in dropped] == [1]
     assert dropped[0][1] == pytest.approx(0.1, abs=0.01)
 
 
-def test_la_mayor_nunca_se_descarta_ni_con_umbral_uno():
+def test_the_largest_is_never_discarded_even_with_threshold_one():
     anns = [ann(0.3, 0.3, half_long=0.10), ann(0.7, 0.7, half_long=0.30)]
     kept, dropped = filter_by_relative_area(anns, min_relative_area=1.0)
     assert len(kept) == 1
-    assert kept[0][0] == 1  # la mayor, con su indice original
+    assert kept[0][0] == 1  # the largest, with its original index
     assert [index for index, _ in dropped] == [0]
 
 
-def test_umbral_cero_no_descarta_nada():
+def test_threshold_zero_discards_nothing():
     anns = [ann(0.5, 0.5, half_long=0.30), ann(0.5, 0.5, half_long=0.30, ratio=40.0)]
     kept, dropped = filter_by_relative_area(anns, min_relative_area=0.0)
     assert len(kept) == 2 and dropped == ()
 
 
-def test_umbral_fuera_de_rango_es_error():
+def test_threshold_out_of_range_is_an_error():
     with pytest.raises(ValueError, match="min_relative_area"):
         filter_by_relative_area([ann(0.5, 0.5)], min_relative_area=1.5)
 
 
-def test_el_umbral_por_defecto_es_el_de_la_politica():
+def test_the_default_threshold_is_the_policy_one():
     assert DEFAULT_MIN_RELATIVE_AREA == 0.25
 
 
-def test_el_umbral_separa_por_encima_y_por_debajo():
-    """A cada lado del umbral la decision es la esperada.
+def test_the_threshold_separates_above_and_below():
+    """On each side of the threshold the decision is the expected one.
 
-    No se comprueba la igualdad EXACTA con el umbral, y no por comodidad: los
-    vertices se ajustan a la rejilla diadica de `quad.py`, asi que un area
-    construida para dar 0.25 clavado da 0.2499999998. Igual que con la
-    involucion del volteo, el borde exacto no es representable. Tampoco
-    importa: un cociente de areas a 1e-9 del umbral es arbitrario en cualquier
-    caso, porque la anotacion de origen es un "rectangulo aproximado".
+    EXACT equality with the threshold is not checked, and not for
+    convenience: vertices snap to the dyadic grid of `quad.py`, so an area
+    built to give exactly 0.25 gives 0.2499999998. As with the flip
+    involution, the exact edge is not representable. Nor does it matter: an
+    area ratio within 1e-9 of the threshold is arbitrary in any case, because
+    the source annotation is an "approximate rectangle".
     """
-    grande = ann(0.5, 0.5, half_long=0.20, ratio=2.0)
-    # El area es proporcional a half_long^2 / ratio.
-    encima = ann(0.5, 0.5, half_long=0.11, ratio=2.0)  # ~0.30 relativo
-    kept, dropped = filter_by_relative_area([grande, encima], min_relative_area=0.25)
+    large = ann(0.5, 0.5, half_long=0.20, ratio=2.0)
+    # The area is proportional to half_long^2 / ratio.
+    above = ann(0.5, 0.5, half_long=0.11, ratio=2.0)  # ~0.30 relative
+    kept, dropped = filter_by_relative_area([large, above], min_relative_area=0.25)
     assert len(kept) == 2 and dropped == ()
 
-    debajo = ann(0.5, 0.5, half_long=0.09, ratio=2.0)  # ~0.20 relativo
-    kept, dropped = filter_by_relative_area([grande, debajo], min_relative_area=0.25)
+    below = ann(0.5, 0.5, half_long=0.09, ratio=2.0)  # ~0.20 relative
+    kept, dropped = filter_by_relative_area([large, below], min_relative_area=0.25)
     assert [index for index, _ in dropped] == [1]
 
 
-# --- los indices apuntan al fichero, no a la lista filtrada ----------------
+# --- indices point to the file, not to the filtered list ------------------
 
 
-def test_los_indices_conservados_son_los_del_fichero(tmp_path):
-    """Si cae la anotacion 0, la siguiente sigue siendo la #1, no la #0.
+def test_kept_indices_are_the_file_ones(tmp_path):
+    """If annotation 0 drops, the next one is still #1, not #0.
 
-    Un informe que renumerase mandaria a abrir la anotacion equivocada en
-    Roboflow, que es justo para lo que sirve el informe.
+    A report that renumbered would send you to open the wrong annotation in
+    Roboflow, which is exactly what the report is for.
     """
     sample = write_sample(
         tmp_path,
         [
-            quad(0.5, 0.5, half_long=0.30, ratio=30.0),  # franja, cae
+            quad(0.5, 0.5, half_long=0.30, ratio=30.0),  # strip, drops
             quad(0.25, 0.5, half_long=0.20),
             quad(0.75, 0.5, half_long=0.20),
         ],
@@ -134,28 +134,28 @@ def test_los_indices_conservados_son_los_del_fichero(tmp_path):
     assert [d.index for d in loaded.dropped] == [0]
 
 
-def test_el_informe_lleva_imagen_indice_y_area_relativa(tmp_path):
+def test_the_report_carries_image_index_and_relative_area(tmp_path):
     sample = write_sample(
         tmp_path,
         [
             quad(0.5, 0.5, half_long=0.30, ratio=2.0),
             quad(0.5, 0.5, half_long=0.30, ratio=20.0),
         ],
-        sample_id="abanico",
+        sample_id="fan",
     )
     loaded = load_sample(sample)
     assert len(loaded.dropped) == 1
     dropped = loaded.dropped[0]
-    assert dropped.sample_id == "abanico"
+    assert dropped.sample_id == "fan"
     assert dropped.index == 1
     assert 0.0 < dropped.relative_area < 0.25
-    assert "abanico" in dropped.describe() and "#1" in dropped.describe()
+    assert "fan" in dropped.describe() and "#1" in dropped.describe()
 
 
-# --- filtro, no borrado ---------------------------------------------------
+# --- filter, not deletion -------------------------------------------------
 
 
-def test_el_fichero_de_origen_no_se_toca(tmp_path):
+def test_the_source_file_is_not_touched(tmp_path):
     sample = write_sample(
         tmp_path,
         [
@@ -169,8 +169,8 @@ def test_el_fichero_de_origen_no_se_toca(tmp_path):
     assert before == after
 
 
-def test_subir_el_umbral_no_requiere_reexportar(tmp_path):
-    """El mismo fichero da conjuntos distintos segun el parametro."""
+def test_raising_the_threshold_does_not_require_re_exporting(tmp_path):
+    """The same file gives different sets depending on the parameter."""
     sample = write_sample(
         tmp_path,
         [
@@ -182,10 +182,10 @@ def test_subir_el_umbral_no_requiere_reexportar(tmp_path):
     assert len(load_sample(sample, min_relative_area=0.9).annotations) == 1
 
 
-# --- agregado -------------------------------------------------------------
+# --- aggregate ------------------------------------------------------------
 
 
-def test_el_informe_agregado_cuadra(tmp_path):
+def test_the_aggregate_report_adds_up(tmp_path):
     a = write_sample(
         tmp_path,
         [quad(0.5, 0.5, half_long=0.30), quad(0.5, 0.5, half_long=0.30, ratio=25.0)],
@@ -205,13 +205,13 @@ def test_el_informe_agregado_cuadra(tmp_path):
     assert payload["annotations_dropped"] == 1
     assert payload["dropped"][0]["sample_id"] == "a"
     assert payload["dropped"][0]["index"] == 1
-    assert "no se ha borrado nada" in payload["note"]
+    assert "nothing was deleted" in payload["note"]
 
 
-# --- integracion con el chequeo de visibilidad ----------------------------
+# --- integration with the visibility check --------------------------------
 
 
-def test_check_samples_devuelve_los_dos_informes(tmp_path):
+def test_check_samples_returns_both_reports(tmp_path):
     sample = write_sample(
         tmp_path,
         [quad(0.5, 0.5, half_long=0.30), quad(0.5, 0.5, half_long=0.30, ratio=25.0)],
@@ -219,23 +219,23 @@ def test_check_samples_devuelve_los_dos_informes(tmp_path):
     report, filter_report = check_samples([sample])
     assert filter_report.annotations_read == 2
     assert filter_report.annotations_kept == 1
-    # Con una sola anotacion viva no queda nada que pueda taparse.
+    # With a single live annotation there is nothing left that can be covered.
     assert report.annotations_checked == 1
     assert report.findings == []
 
 
-def test_los_hallazgos_de_visibilidad_numeran_sobre_el_fichero(tmp_path):
-    """La #0 la filtra el area; las dos que quedan siguen siendo #1 y #2.
+def test_visibility_findings_number_over_the_file(tmp_path):
+    """#0 is filtered by area; the two remaining are still #1 and #2.
 
-    Sin traducir indices, el hallazgo diria #0 y mandaria a revisar justo la
-    anotacion que el filtro ya habia descartado.
+    Without translating indices, the finding would say #0 and send you to
+    review precisely the annotation the filter had already discarded.
     """
     sample = write_sample(
         tmp_path,
         [
-            quad(0.5, 0.1, half_long=0.30, ratio=25.0),  # franja suelta, cae
-            # Area relativa 0.44: sobrevive al filtro, pero queda dentro de la
-            # siguiente, asi que el chequeo de visibilidad si la marca.
+            quad(0.5, 0.1, half_long=0.30, ratio=25.0),  # loose strip, drops
+            # Relative area 0.44: survives the filter, but lies inside the
+            # next one, so the visibility check does flag it.
             quad(0.5, 0.6, half_long=0.20, ratio=2.0),
             quad(0.5, 0.6, half_long=0.30, ratio=2.0),
         ],

@@ -1,26 +1,25 @@
-"""mAP50 y mAP50-95 con IoU rotado, acumulando sobre TODAS las imagenes.
+"""mAP50 and mAP50-95 with rotated IoU, accumulated over ALL images.
 
-Interpolacion de 101 puntos, como COCO. Es una eleccion, no un detalle: la
-alternativa (todos los puntos, VOC 2010+) da numeros ligeramente distintos, y si
-vamos a comparar contra el mAP publicado de RTMDet-R o de Ultralytics, tenemos
-que calcularlo como ellos.
+101-point interpolation, like COCO. It is a choice, not a detail: the
+alternative (all points, VOC 2010+) gives slightly different numbers, and if
+we are going to compare against the published mAP of RTMDet-R or Ultralytics,
+we have to compute it like they do.
 
-El ranking es GLOBAL por confianza, no por imagen. Promediar el AP de cada
-imagen es una metrica distinta y da otro numero: una imagen con un solo billete
-facil pesaria lo mismo que un abanico de seis.
+The ranking is GLOBAL by confidence, not per image. Averaging the AP of each
+image is a different metric and gives a different number: an image with a
+single easy banknote would weigh the same as a fan of six.
 
-Por que hay una fase de precomputo
-----------------------------------
-El bootstrap remuestrea IMAGENES 2000 veces, y el mAP50-95 recorre 10 umbrales.
-Emparejar dentro del bucle serian 2000 x 10 x 101 emparejamientos con shapely:
-medido, no termina en un tiempo util.
+Why there is a precompute phase
+-------------------------------
+The bootstrap resamples IMAGES 2000 times, and mAP50-95 walks 10 thresholds.
+Matching inside the loop would be 2000 x 10 x 101 matchings with shapely:
+measured, it does not finish in useful time.
 
-Pero el emparejamiento de una imagen NO depende de que otras imagenes hayan
-salido en el remuestreo -- es local a la imagen. Solo el ranking global y el
-recuento de verdades dependen del conjunto. Asi que se empareja una vez por
-imagen y umbral, se guarda `(score, acierto)` por deteccion, y cada replica del
-bootstrap se reduce a concatenar y ordenar. Mismo numero, tres ordenes de
-magnitud mas rapido.
+But the matching of one image does NOT depend on which other images came out
+in the resample -- it is local to the image. Only the global ranking and the
+truth count depend on the set. So each image is matched once per threshold,
+`(score, hit)` is stored per detection, and every bootstrap replicate reduces
+to concatenating and sorting. Same number, three orders of magnitude faster.
 """
 
 from __future__ import annotations
@@ -32,19 +31,19 @@ import numpy as np
 from testbank.metrics.core import PolygonCache
 from testbank.metrics.matching import DEFAULT_MATCH_IOU, Outcome, match_all
 
-#: Los diez umbrales de COCO: 0.50, 0.55, ..., 0.95.
+#: The ten COCO thresholds: 0.50, 0.55, ..., 0.95.
 COCO_THRESHOLDS = tuple(round(0.50 + 0.05 * i, 2) for i in range(10))
 
-#: Puntos de recall donde se interpola la precision.
+#: Recall points at which precision is interpolated.
 _RECALL_POINTS = np.linspace(0.0, 1.0, 101)
 
 
 @dataclass(frozen=True, slots=True)
 class ImageDetectionStats:
-    """Emparejamiento de UNA imagen a UN umbral, ya reducido a lo que usa el AP.
+    """Matching of ONE image at ONE threshold, reduced to what AP uses.
 
-    `scored` lleva `(score, acierto)` por deteccion, sin las ignoradas: ni suman
-    acierto ni fallo, asi que salen del recuento por completo.
+    `scored` carries `(score, hit)` per detection, without the ignored ones:
+    they add neither hit nor miss, so they leave the count entirely.
     """
 
     sample_id: str
@@ -74,7 +73,7 @@ def image_stats(
     iou_threshold: float = DEFAULT_MATCH_IOU,
     use_ignored: bool = True,
 ) -> list[ImageDetectionStats]:
-    """Empareja una vez y guarda lo justo. Es lo que el bootstrap remuestrea."""
+    """Match once and keep just enough. It is what the bootstrap resamples."""
     items = list(items)
     caches = caches or [PolygonCache.build(i) for i in items]
     matchings = match_all(
@@ -105,7 +104,7 @@ def image_stats(
 
 
 def ap_from_stats(stats) -> float:
-    """AP sobre un conjunto ya emparejado. Solo concatena, ordena y acumula."""
+    """AP over an already matched set. Only concatenates, sorts and accumulates."""
     stats = list(stats)
     n_truths = sum(s.n_truths for s in stats)
     if n_truths == 0:
@@ -122,16 +121,16 @@ def ap_from_stats(stats) -> float:
     recall = tp / n_truths
     precision = tp / np.maximum(tp + fp, 1e-12)
 
-    # Envolvente monotona decreciente: la precision en un recall dado es la
-    # mejor alcanzable a ese recall o mas alla.
+    # Monotone decreasing envelope: the precision at a given recall is the best
+    # achievable at that recall or beyond.
     precision = np.maximum.accumulate(precision[::-1])[::-1]
 
-    # `searchsorted`, no `np.interp`. Con falsos positivos DESPUES del ultimo
-    # acierto -- que es lo normal con la confianza de inferencia baja -- el
-    # recall se queda clavado y el vector tiene valores repetidos. `np.interp`
-    # con x duplicadas devuelve la ULTIMA, que es la precision mas baja del
-    # tramo, y hunde el AP. Aqui se toma la PRIMERA posicion con recall >= r,
-    # que junto con la envolvente da el maximo de la cola, que es la definicion.
+    # `searchsorted`, not `np.interp`. With false positives AFTER the last hit
+    # -- the normal case with the low inference confidence -- recall stays put
+    # and the vector has repeated values. `np.interp` with duplicate x returns
+    # the LAST one, which is the lowest precision of the run, and sinks the AP.
+    # Here the FIRST position with recall >= r is taken, which together with
+    # the envelope gives the maximum of the tail, which is the definition.
     positions = np.searchsorted(recall, _RECALL_POINTS, side="left")
     interpolated = np.where(
         positions < precision.size, precision[np.minimum(positions, precision.size - 1)], 0.0
@@ -149,7 +148,7 @@ def counts_from_stats(stats) -> DetectionCounts:
     )
 
 
-# --- fachadas de conveniencia ---------------------------------------------
+# --- convenience facades ---------------------------------------------------
 
 
 def average_precision(
@@ -196,21 +195,21 @@ def counts(
 
 
 # --------------------------------------------------------------------------
-# Bootstrap por imagen
+# Bootstrap by image
 # --------------------------------------------------------------------------
 #
-# Intervalos por bootstrap. Toda fila de la tabla comparativa lleva uno.
-# 
-# Con ~500 imagenes, validacion queda en ~100 y las diferencias entre candidatos
-# caen dentro del ruido. Un mAP de 0.81 frente a otro de 0.78 no dice nada si los
-# intervalos se solapan de par en par, y una tabla de medias pelada invita a leer
-# como mejora lo que es dispersion.
-# 
-# La unidad de remuestreo es la IMAGEN, nunca la deteccion. Varios billetes de una
-# misma imagen comparten fondo, iluminacion, camara y anotador: estan
-# correlacionados. Remuestrear detecciones los trata como independientes y
-# estrecha los intervalos artificialmente, que es la unica cosa peor que no
-# tenerlos, porque da confianza falsa.
+# Bootstrap intervals. Every row of the comparison table carries one.
+#
+# With ~500 images, validation is ~100 and the differences between candidates
+# fall within the noise. An mAP of 0.81 against one of 0.78 says nothing if the
+# intervals overlap widely, and a bare table of means invites reading as
+# improvement what is dispersion.
+#
+# The resampling unit is the IMAGE, never the detection. Several banknotes in
+# the same image share background, lighting, camera and annotator: they are
+# correlated. Resampling detections treats them as independent and narrows the
+# intervals artificially, which is the only thing worse than not having them,
+# because it gives false confidence.
 
 DEFAULT_SAMPLES = 2000
 DEFAULT_SEED = 20260910
@@ -245,21 +244,21 @@ def bootstrap_images(
     seed: int = DEFAULT_SEED,
     confidence: float = 0.95,
 ) -> Interval:
-    """Percentil bootstrap sobre `units`, que son IMAGENES.
+    """Percentile bootstrap over `units`, which are IMAGES.
 
-    `statistic` recibe una lista de imagenes remuestreadas y devuelve un numero.
-    Recibe la lista entera y no un agregado precalculado a proposito: metricas
-    como el mAP tienen un ranking global y no se pueden promediar por imagen.
+    `statistic` receives a list of resampled images and returns a number. It
+    receives the whole list and not a precomputed aggregate on purpose:
+    metrics like mAP have a global ranking and cannot be averaged per image.
 
-    Determinista: mismo `seed`, mismo intervalo.
+    Deterministic: same `seed`, same interval.
     """
     units = list(units)
     n = len(units)
     point = float(statistic(units))
     if n < 2:
-        # Con una imagen no hay dispersion que estimar. Devolver un intervalo de
-        # anchura cero seria mentir; se devuelve el punto y n para que
-        # `compare` lo muestre como lo que es.
+        # With one image there is no dispersion to estimate. Returning a
+        # zero-width interval would be lying; the point and n are returned so
+        # that `compare` shows it for what it is.
         return Interval(point, float("nan"), float("nan"), n, 0)
 
     rng = np.random.default_rng(seed)
@@ -280,6 +279,7 @@ def bootstrap_images(
         n=n,
         samples=samples,
     )
+
 
 __all__ = [
     "DetectionCounts",

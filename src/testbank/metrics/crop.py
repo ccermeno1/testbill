@@ -1,31 +1,31 @@
-"""Las dos metricas que deciden: cobertura y contaminacion.
+"""The two metrics that decide: coverage and contamination.
 
-Miden si el RECORTE sirve, que es lo unico que le importa al clasificador de
-manchas aguas abajo. El mAP puede ser excelente y el recorte inservible.
+They measure whether the CROP works, which is all the downstream stain
+classifier cares about. mAP can be excellent and the crop useless.
 
-Cobertura
-    Fraccion del billete real que queda dentro del recorte predicho con margen.
-    Un recorte que corta media mancha arruina el clasificador. Objetivo: >= 0.98
-    en el percentil 5.
+Coverage
+    Fraction of the real banknote that lands inside the predicted crop with
+    margin. A crop that cuts half a stain ruins the classifier. Target: >= 0.98
+    at the 5th percentile.
 
-Contaminacion
-    Fraccion del recorte que pertenece a OTRO billete. El fondo es ruido inocuo;
-    un trozo del billete vecino puede meter una mancha ajena y provocar un falso
-    positivo.
+Contamination
+    Fraction of the crop that belongs to ANOTHER banknote. Background is
+    harmless noise; a piece of the neighbouring banknote can bring in a foreign
+    stain and cause a false positive.
 
-Un billete no detectado cuenta como cobertura 0, no se excluye. Excluirlo haria
-que un detector que solo encuentra los casos faciles saliera mejor, que es la
-conclusion invertida. Aun asi se reportan las tres cifras por separado -- tasa
-de deteccion, condicionada a deteccion y agregada -- porque mezclarlas oculta
-cual de los dos problemas tiene un candidato.
+An undetected banknote counts as coverage 0; it is not excluded. Excluding it
+would make a detector that only finds the easy cases look better, which is the
+inverted conclusion. The three figures are still reported separately --
+detection rate, conditioned on detection, and aggregate -- because mixing them
+hides which of the two problems a candidate has.
 
-Que cuenta como "otro billete"
-------------------------------
-Tambien los quads que el filtro de area dejo fuera. Para puntuar la DETECCION se
-ignoran, porque penalizar al detector por encontrarlos seria injusto. Para la
-contaminacion no: son billetes fisicos de verdad, y si un trozo de uno entra en
-el recorte, la mancha ajena entra con el. Como llevemos la contabilidad de las
-anotaciones no cambia lo que hay en los pixeles.
+What counts as "another banknote"
+---------------------------------
+Also the quads the area filter left out. For scoring DETECTION they are
+ignored, because penalizing the detector for finding them would be unfair.
+For contamination they are not: they are real physical banknotes, and if a
+piece of one enters the crop, the foreign stain enters with it. However we
+keep the books on annotations does not change what is in the pixels.
 """
 
 from __future__ import annotations
@@ -42,10 +42,10 @@ DEFAULT_MARGIN = 0.05
 
 
 class SceneType(str, Enum):
-    """Una imagen con un solo billete o con varios.
+    """An image with a single banknote or with several.
 
-    La contaminacion se comporta de forma completamente distinta en cada caso, y
-    resumirlas juntas oculta las dos. Ver `ContaminationConfig`.
+    Contamination behaves completely differently in each case, and summarizing
+    them together hides both. See `ContaminationConfig`.
     """
 
     SINGLE = "single"
@@ -53,12 +53,12 @@ class SceneType(str, Enum):
 
 
 def scene_type(item: ImageEval) -> SceneType:
-    """Cuenta tambien los filtrados por area.
+    """Counts the area-filtered ones too.
 
-    Una imagen con una anotacion viva y un vecino descartado ES un abanico a
-    efectos de contaminacion: el vecino sigue estando en los pixeles y sigue
-    ensuciando el recorte. Clasificarla como "un billete" la mediria contra el
-    umbral estricto por un billete que decidimos no usar.
+    An image with one live annotation and one dropped neighbour IS a fan for
+    contamination purposes: the neighbour is still in the pixels and still
+    dirties the crop. Classifying it as "single banknote" would measure it
+    against the strict threshold because of a banknote we decided not to use.
     """
     return (
         SceneType.FAN
@@ -69,7 +69,7 @@ def scene_type(item: ImageEval) -> SceneType:
 
 @dataclass(frozen=True, slots=True)
 class CropSample:
-    """Una verdad y lo que le paso. `detected=False` implica cobertura 0."""
+    """One truth and what happened to it. `detected=False` implies coverage 0."""
 
     sample_id: str
     truth_index: int
@@ -133,9 +133,9 @@ class CropReport:
     margin: float
     n_truths: int
     detected: int
-    #: Percentil bajo de cobertura sobre TODAS las verdades (no detectada = 0).
+    #: Low percentile of coverage over ALL truths (undetected = 0).
     coverage_p5_all: float
-    #: El mismo percentil solo sobre las detectadas. Separado a proposito.
+    #: The same percentile only over the detected ones. Kept apart on purpose.
     coverage_p5_detected: float
     coverage_median: float
     contamination_p95: float
@@ -191,7 +191,7 @@ def summarize(
 
 @dataclass(frozen=True, slots=True)
 class SceneContamination:
-    """Contaminacion de un tipo de escena, contra su propio umbral."""
+    """Contamination of one scene type, against its own threshold."""
 
     scene: SceneType
     n: int
@@ -201,7 +201,7 @@ class SceneContamination:
 
     @property
     def passes(self) -> bool:
-        """Sin muestras no se puede suspender: no hay evidencia, no hay veredicto."""
+        """Without samples there is no failing: no evidence, no verdict."""
         return self.n == 0 or self.p95 <= self.threshold
 
     def to_dict(self) -> dict:
@@ -222,11 +222,11 @@ def contamination_by_scene(
     fan_max: float,
     percentile: float = 95.0,
 ) -> dict[str, SceneContamination]:
-    """Un billete y abanicos por separado, cada uno contra su umbral.
+    """Single banknote and fans separately, each against its threshold.
 
-    Se mide solo sobre recortes que EXISTEN: una verdad sin detectar no produce
-    recorte, asi que no tiene contaminacion que medir. Su coste ya lo paga la
-    cobertura, que la cuenta como 0.
+    Measured only over crops that EXIST: an undetected truth produces no crop,
+    so it has no contamination to measure. Its cost is already paid by
+    coverage, which counts it as 0.
     """
     out: dict[str, SceneContamination] = {}
     for scene, threshold in (
@@ -256,15 +256,15 @@ def contamination_floor(
     margin: float = DEFAULT_MARGIN,
     percentile: float = 95.0,
 ) -> dict[str, float]:
-    """Suelo alcanzable: contaminacion de un detector PERFECTO.
+    """Reachable floor: contamination of a PERFECT detector.
 
-    Predice exactamente la verdad, asi que lo que quede es lo que impone la
-    geometria de la anotacion y ningun candidato puede bajar de ahi. De aqui
-    salen los valores por defecto de `ContaminationConfig`; vuelve a ejecutarlo
-    cuando cambie el export, porque el suelo cambia con los datos.
+    It predicts exactly the truth, so what remains is what the annotation
+    geometry imposes, and no candidate can go below it. The defaults of
+    `ContaminationConfig` come from here; run it again when the export
+    changes, because the floor changes with the data.
 
-    `items` se usa solo por su verdad y sus ignorados: las predicciones que
-    traiga se descartan.
+    `items` is used only for its truths and its ignored ones: any predictions
+    it carries are discarded.
     """
     from testbank.metrics.core import ImageEval, Prediction
 

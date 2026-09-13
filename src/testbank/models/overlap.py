@@ -1,70 +1,70 @@
-"""Como medir cuanto se parecen dos cajas giradas, de tres maneras.
+"""How to measure how much two rotated boxes resemble each other, three ways.
 
-Las recetas de perdida no comparten forma de medir el solape, y esa diferencia
-ES la diferencia entre ellas: la propia usa la envolvente alineada (en
-`assign.py`), el fork de YOLOX-OBB y Ultralytics usan gaussianas, y DDGRCF usa
-el IoU exacto de poligonos. Este modulo tiene las dos que no son la envolvente.
+The loss recipes do not share a way of measuring overlap, and that difference
+IS the difference between them: the own one uses the axis-aligned envelope (in
+`assign.py`), the YOLOX-OBB fork and Ultralytics use Gaussians, and DDGRCF uses
+the exact polygon IoU. This module holds the two that are not the envelope.
 
-Todo en torch puro y diferenciable. Nada compilado: era la restriccion, y las
-tres formas caben en el bucle de entrenamiento (medido: el IoU exacto por pares
-de un asignador entero, 3549 x 2, tarda ~19 ms).
+All in pure, differentiable torch. Nothing compiled: that was the constraint,
+and the three ways fit in the training loop (measured: the exact pairwise IoU
+of a whole assigner, 3549 x 2, takes ~19 ms).
 
-=== Gaussianas: KLD y ProbIoU ===
-Cajas giradas como gaussianas: KLD y ProbIoU. Torch puro, sin nada compilado.
+=== Gaussians: KLD and ProbIoU ===
+Rotated boxes as Gaussians: KLD and ProbIoU. Pure torch, nothing compiled.
 
-Las dos recetas ajenas que este proyecto reproduce miden la distancia entre
-cajas convirtiendo cada una en una distribucion normal bidimensional: el centro
-es la media y el rectangulo, girado, da la covarianza. Comparar dos cajas pasa a
-ser comparar dos campanas, y eso tiene formula cerrada. Es lo que evita
-intersecar poligonos en el bucle de entrenamiento.
+The two foreign recipes this project reproduces measure the distance between
+boxes by turning each one into a bivariate normal distribution: the center is
+the mean and the rotated rectangle gives the covariance. Comparing two boxes
+becomes comparing two bells, and that has a closed form. It is what avoids
+intersecting polygons in the training loop.
 
-Licencias, y por que esto se escribio desde los papers
-------------------------------------------------------
-- **KLD**: Yang et al., "Learning High-Precision Bounding Box for Rotated Object
-  Detection via Kullback-Leibler Divergence", NeurIPS 2021. La usa el fork
-  `buzhidaoshenme/YOLOX-OBB` (Apache-2.0), cuya implementacion se uso solo para
-  VERIFICAR numericamente la de aqui (`tests/test_gaussian.py`).
-- **ProbIoU**: Llerena et al., "Gaussian Bounding Boxes and Probabilistic
-  Intersection-over-Union for Object Detection", 2021. La usa Ultralytics, que
-  es **AGPL**: de su codigo no se ha leido ni copiado nada. Todo lo de abajo sale
-  de las ecuaciones del paper.
-
-Dos convenciones de covarianza, y no es un detalle
+Licenses, and why this was written from the papers
 --------------------------------------------------
-Los dos papers convierten `(w, h)` en varianzas de forma distinta:
+- **KLD**: Yang et al., "Learning High-Precision Bounding Box for Rotated Object
+  Detection via Kullback-Leibler Divergence", NeurIPS 2021. Used by the fork
+  `buzhidaoshenme/YOLOX-OBB` (Apache-2.0), whose implementation was used only
+  to numerically VERIFY the one here (`tests/test_overlap.py`).
+- **ProbIoU**: Llerena et al., "Gaussian Bounding Boxes and Probabilistic
+  Intersection-over-Union for Object Detection", 2021. Used by Ultralytics,
+  which is **AGPL**: nothing of its code has been read or copied. Everything
+  below comes from the equations of the paper.
 
-    KLD      sigma_x^2 = w^2 / 4      (la caja como 2-sigma de la gaussiana)
-    ProbIoU  sigma_x^2 = w^2 / 12     (la caja como soporte de una uniforme)
+Two covariance conventions, and it is not a detail
+--------------------------------------------------
+The two papers turn `(w, h)` into variances differently:
 
-Mezclarlas cambia los numeros sin cambiar el nombre. Cada funcion usa la de su
-paper, y `box_to_gaussian` recibe el divisor explicito para que no se pueda
-llamar "a secas".
+    KLD      sigma_x^2 = w^2 / 4      (the box as 2-sigma of the Gaussian)
+    ProbIoU  sigma_x^2 = w^2 / 12     (the box as the support of a uniform)
 
-=== IoU exacto de poligonos ===
-IoU EXACTO entre rectangulos girados, en torch puro y diferenciable.
+Mixing them changes the numbers without changing the name. Each function uses
+the one of its paper, and `box_to_gaussian` takes the divisor explicitly so it
+cannot be called "plainly".
 
-Es lo que sustituye al operador compilado (`box_iou_rotated` / `convex`) de
-DDGRCF/YOLOX_OBB, que lo usa en dos sitios: el coste del SimOTA y la perdida de
-caja (PolyIoU). Sin esto el port no reproduce su receta; con las gaussianas la
-cambiaria.
+=== Exact polygon IoU ===
+EXACT IoU between rotated rectangles, in pure, differentiable torch.
 
-Como se calcula
----------------
-Para dos cuadrilateros convexos, la interseccion es un poligono convexo cuyos
-vertices son de tres tipos: esquinas del primero dentro del segundo, esquinas
-del segundo dentro del primero, y cruces de aristas. Se recogen los 24
-candidatos (4 + 4 + 16) con una mascara de validez, se ordenan por angulo
-alrededor de su centro y se aplica la formula del cordon (shoelace) enmascarada.
-Como mucho 8 son validos.
+It is what replaces the compiled operator (`box_iou_rotated` / `convex`) of
+DDGRCF/YOLOX_OBB, which uses it in two places: the SimOTA cost and the box loss
+(PolyIoU). Without this the port does not reproduce their recipe; with the
+Gaussians it would change it.
 
-Es diferenciable respecto a las coordenadas: las esquinas y los cruces son
-funciones lisas de las cajas; solo el ORDEN se calcula sin gradiente, y el orden
-es constante a trozos, asi que no lo necesita. Es el mismo planteamiento que la
-"Rotated IoU" de Lanxiao Li (MIT), reescrito aqui desde la geometria.
+How it is computed
+------------------
+For two convex quadrilaterals, the intersection is a convex polygon whose
+vertices are of three kinds: corners of the first inside the second, corners
+of the second inside the first, and edge crossings. The 24 candidates
+(4 + 4 + 16) are collected with a validity mask, sorted by angle around their
+center, and the masked shoelace formula is applied. At most 8 are valid.
 
-Coste: para el asignador son `celdas x billetes` pares por imagen (3549 x ~2),
-todo vectorizado. Medido, es del orden de milisegundos: no es el "no cabe en el
-bucle" de shapely, que va par a par en Python.
+It is differentiable with respect to the coordinates: corners and crossings
+are smooth functions of the boxes; only the ORDER is computed without
+gradient, and the order is piecewise constant, so it does not need one. It is
+the same approach as Lanxiao Li's "Rotated IoU" (MIT), rewritten here from the
+geometry.
+
+Cost: for the assigner it is `cells x banknotes` pairs per image (3549 x ~2),
+all vectorized. Measured, it is on the order of milliseconds: not the "does
+not fit in the loop" of shapely, which goes pair by pair in Python.
 """
 
 from __future__ import annotations
@@ -72,29 +72,29 @@ from __future__ import annotations
 import torch
 
 # --------------------------------------------------------------------------
-# Gaussianas
+# Gaussians
 # --------------------------------------------------------------------------
 
-#: `sigma^2 = lado^2 / divisor`. Ver el docstring del modulo.
+#: `sigma^2 = side^2 / divisor`. See the module docstring.
 KLD_VARIANCE_DIVISOR = 4.0
 PROBIOU_VARIANCE_DIVISOR = 12.0
 
-_EPS = 1e-7
+_EPS = 1e-8
 
 
 def box_to_gaussian(
     boxes: torch.Tensor, *, variance_divisor: float
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """`(N, 5)` con `cx, cy, w, h, theta` -> media y covarianza `(a, b, c)`.
+    """`(N, 5)` with `cx, cy, w, h, theta` -> mean and covariance `(a, b, c)`.
 
-    La covarianza es `R diag(w^2/d, h^2/d) R^T`, expandida:
+    The covariance is `R diag(w^2/d, h^2/d) R^T`, expanded:
 
-        a = (w^2 cos^2 + h^2 sin^2) / d      varianza en x
-        b = (w^2 sin^2 + h^2 cos^2) / d      varianza en y
-        c = (w^2 - h^2) cos sin / d          covarianza
+        a = (w^2 cos^2 + h^2 sin^2) / d      variance in x
+        b = (w^2 sin^2 + h^2 cos^2) / d      variance in y
+        c = (w^2 - h^2) cos sin / d          covariance
 
-    Se devuelven sueltas y no como matriz porque las formulas de abajo las usan
-    sueltas, y montar `(N, 2, 2)` para volver a desmontarlo es ruido.
+    They are returned loose and not as a matrix because the formulas below use
+    them loose, and building `(N, 2, 2)` to take it apart again is noise.
     """
     cx, cy, w, h, theta = boxes.unbind(dim=-1)
     cos, sin = torch.cos(theta), torch.sin(theta)
@@ -109,23 +109,23 @@ def box_to_gaussian(
 
 
 def kld_divergence(predicted: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """Divergencia KL `D(N_p || N_t)` entre las gaussianas de dos cajas. `(N,)`.
+    """KL divergence `D(N_p || N_t)` between the Gaussians of two boxes. `(N,)`.
 
-    Formula cerrada para dos normales bidimensionales:
+    Closed form for two bivariate normals:
 
         D = 1/2 (mu_p - mu_t)^T S_t^-1 (mu_p - mu_t)
           + 1/2 tr(S_t^-1 S_p)
           + 1/2 ln(|S_t| / |S_p|)
           - 1
 
-    Se calcula en el sistema de ejes de la caja OBJETIVO, que es donde su
-    covarianza es diagonal y todo se escribe con senos y cosenos del angulo
-    relativo. Es lo que hace el paper y lo que hace el fork; con matrices
-    saldria lo mismo mas lento.
+    Computed in the axis system of the TARGET box, which is where its
+    covariance is diagonal and everything is written with sines and cosines of
+    the relative angle. It is what the paper does and what the fork does; with
+    matrices the same would come out, slower.
 
-    NO es simetrica: `D(p||t) != D(t||p)`. Para una perdida es lo que se quiere
-    -- el objetivo es fijo y la prediccion se mueve hacia el -- pero conviene
-    saberlo antes de usarla como "distancia".
+    It is NOT symmetric: `D(p||t) != D(t||p)`. For a loss that is what is
+    wanted -- the target is fixed and the prediction moves towards it -- but
+    it is worth knowing before using it as a "distance".
     """
     cx_p, cy_p, w_p, h_p, t_p = predicted.unbind(dim=-1)
     cx_t, cy_t, w_t, h_t, t_t = target.unbind(dim=-1)
@@ -133,7 +133,7 @@ def kld_divergence(predicted: torch.Tensor, target: torch.Tensor) -> torch.Tenso
 
     dx, dy = cx_p - cx_t, cy_p - cy_t
     cos_t, sin_t = torch.cos(t_t), torch.sin(t_t)
-    # Desplazamiento del centro proyectado sobre los ejes del objetivo.
+    # Center offset projected onto the target's axes.
     along = dx * cos_t + dy * sin_t
     across = dy * cos_t - dx * sin_t
 
@@ -159,11 +159,11 @@ def kld_divergence(predicted: torch.Tensor, target: torch.Tensor) -> torch.Tenso
 def kld_loss(
     predicted: torch.Tensor, target: torch.Tensor, *, tau: float = 1.0
 ) -> torch.Tensor:
-    """La perdida del paper: `1 - 1 / (tau + ln(D + 1))`. `(N,)`, en `[0, 1)`.
+    """The loss of the paper: `1 - 1 / (tau + ln(D + 1))`. `(N,)`, in `[0, 1)`.
 
-    La divergencia cruda no esta acotada y crece sin freno con el error de
-    centro; el envoltorio logaritmico la aplana para que una caja muy lejos no
-    domine el lote. `tau = 1` es el valor del paper y del fork.
+    The raw divergence is unbounded and grows without brake with the center
+    error; the logarithmic wrapper flattens it so a box very far away does not
+    dominate the batch. `tau = 1` is the value of the paper and of the fork.
     """
     divergence = kld_divergence(predicted, target).clamp(min=0.0)
     return 1.0 - 1.0 / (tau + torch.log1p(divergence))
@@ -175,15 +175,15 @@ def kld_loss(
 def bhattacharyya_distance(
     predicted: torch.Tensor, target: torch.Tensor
 ) -> torch.Tensor:
-    """`B_D` entre las gaussianas de dos cajas, con las ecuaciones del paper.
+    """`B_D` between the Gaussians of two boxes, with the equations of the paper.
 
-    Con `(a, b, c)` las covarianzas y `(x, y)` los centros de cada una:
+    With `(a, b, c)` the covariances and `(x, y)` the centers of each one:
 
         B_D = 1/4 * [ (a1+a2)(y1-y2)^2 + (b1+b2)(x1-x2)^2 ] / [ (a1+a2)(b1+b2) - (c1+c2)^2 ]
             + 1/2 * [ (c1+c2)(x2-x1)(y1-y2) ]             / [ (a1+a2)(b1+b2) - (c1+c2)^2 ]
             + 1/2 * ln( [ (a1+a2)(b1+b2) - (c1+c2)^2 ] / (4 sqrt((a1 b1 - c1^2)(a2 b2 - c2^2))) )
 
-    SI es simetrica, al contrario que la KL.
+    It IS symmetric, unlike the KL.
     """
     mu1, a1, b1, c1 = box_to_gaussian(predicted, variance_divisor=PROBIOU_VARIANCE_DIVISOR)
     mu2, a2, b2, c2 = box_to_gaussian(target, variance_divisor=PROBIOU_VARIANCE_DIVISOR)
@@ -201,18 +201,18 @@ def bhattacharyya_distance(
 
 
 def probiou(predicted: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """`ProbIoU = 1 - H_D`, con `H_D = sqrt(1 - exp(-B_D))` la de Hellinger. `(N,)`.
+    """`ProbIoU = 1 - H_D`, with `H_D = sqrt(1 - exp(-B_D))` the Hellinger one. `(N,)`.
 
-    Vale 1 para dos cajas iguales y baja hacia 0 al alejarse. Es lo que la
-    receta de Ultralytics usa como "IoU" tanto en la perdida (`1 - probiou`)
-    como en la metrica de alineacion del asignador.
+    It is 1 for two equal boxes and drops towards 0 as they move apart. It is
+    what the Ultralytics recipe uses as "IoU" both in the loss (`1 - probiou`)
+    and in the alignment metric of the assigner.
     """
     hellinger = torch.sqrt(1.0 - torch.exp(-bhattacharyya_distance(predicted, target)) + _EPS)
     return 1.0 - hellinger
 
 
 def pairwise_probiou(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    """`(N, M)` de ProbIoU entre cada caja de `a` y cada una de `b`."""
+    """`(N, M)` of ProbIoU between every box of `a` and every one of `b`."""
     n, m = a.shape[0], b.shape[0]
     if n == 0 or m == 0:
         return a.new_zeros((n, m))
@@ -222,8 +222,8 @@ def pairwise_probiou(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 
 
 def pairwise_kld_loss(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    """`(N, M)` de `kld_loss(a_i, b_j)`: la prediccion en filas, el objetivo en
-    columnas. El orden importa porque la KL no es simetrica."""
+    """`(N, M)` of `kld_loss(a_i, b_j)`: the prediction in rows, the target in
+    columns. The order matters because the KL is not symmetric."""
     n, m = a.shape[0], b.shape[0]
     if n == 0 or m == 0:
         return a.new_zeros((n, m))
@@ -233,15 +233,13 @@ def pairwise_kld_loss(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 
 
 # --------------------------------------------------------------------------
-# Poligonos
+# Polygons
 # --------------------------------------------------------------------------
-
-_EPS = 1e-8
 
 
 def box_corners(boxes: torch.Tensor) -> torch.Tensor:
-    """`(N, 5)` cx, cy, w, h, theta -> `(N, 4, 2)` esquinas en sentido horario
-    (en coordenadas de imagen, con y hacia abajo)."""
+    """`(N, 5)` cx, cy, w, h, theta -> `(N, 4, 2)` corners in clockwise order
+    (in image coordinates, with y pointing down)."""
     cx, cy, w, h, theta = boxes.unbind(dim=-1)
     cos, sin = torch.cos(theta), torch.sin(theta)
     dx = torch.stack((-w, w, w, -w), dim=-1) / 2
@@ -252,24 +250,24 @@ def box_corners(boxes: torch.Tensor) -> torch.Tensor:
 
 
 def _cross(o, a, b):
-    """Producto vectorial 2D de (a - o) x (b - o). Signo = de que lado esta b."""
+    """2D cross product of (a - o) x (b - o). Sign = which side b is on."""
     return (a[..., 0] - o[..., 0]) * (b[..., 1] - o[..., 1]) - (a[..., 1] - o[..., 1]) * (
         b[..., 0] - o[..., 0]
     )
 
 
 def _edge_intersections(c1: torch.Tensor, c2: torch.Tensor):
-    """Cruces entre las 4 aristas de cada caja: `(N, 16, 2)` y mascara `(N, 16)`."""
+    """Crossings between the 4 edges of each box: `(N, 16, 2)` and mask `(N, 16)`."""
     a = c1  # (N, 4, 2)
     b = torch.roll(c1, -1, dims=1)
     c = c2
     d = torch.roll(c2, -1, dims=1)
-    # Todas las combinaciones arista_i de 1 x arista_j de 2.
+    # All combinations edge_i of 1 x edge_j of 2.
     a = a[:, :, None, :].expand(-1, 4, 4, -1)
     b = b[:, :, None, :].expand(-1, 4, 4, -1)
     c = c[:, None, :, :].expand(-1, 4, 4, -1)
     d = d[:, None, :, :].expand(-1, 4, 4, -1)
-    # Parametros t (sobre ab) y u (sobre cd) del cruce de las rectas.
+    # Parameters t (along ab) and u (along cd) of the line crossing.
     ab = b - a
     cd = d - c
     ac = c - a
@@ -284,10 +282,10 @@ def _edge_intersections(c1: torch.Tensor, c2: torch.Tensor):
 
 
 def _points_inside(points: torch.Tensor, corners: torch.Tensor) -> torch.Tensor:
-    """`(N, P)`: si cada punto cae dentro del cuadrilatero convexo `corners`.
+    """`(N, P)`: whether each point falls inside the convex quadrilateral `corners`.
 
-    Dentro = al mismo lado de las cuatro aristas. Vale para ambas orientaciones
-    porque se compara el signo entre aristas, no contra un sentido fijo.
+    Inside = on the same side of the four edges. Works for both orientations
+    because the sign is compared between edges, not against a fixed direction.
     """
     a = corners[:, None, :, :]  # (N, 1, 4, 2)
     b = torch.roll(corners, -1, dims=1)[:, None, :, :]
@@ -297,29 +295,30 @@ def _points_inside(points: torch.Tensor, corners: torch.Tensor) -> torch.Tensor:
 
 
 def intersection_area(boxes_a: torch.Tensor, boxes_b: torch.Tensor) -> torch.Tensor:
-    """Area de la interseccion de cada par `(N, 5)` x `(N, 5)`. Diferenciable."""
+    """Intersection area of each pair `(N, 5)` x `(N, 5)`. Differentiable."""
     c1, c2 = box_corners(boxes_a), box_corners(boxes_b)
     crossings, crossing_valid = _edge_intersections(c1, c2)
-    inside_1 = _points_inside(c1, c2)  # esquinas de A dentro de B
+    inside_1 = _points_inside(c1, c2)  # corners of A inside B
     inside_2 = _points_inside(c2, c1)
 
     vertices = torch.cat((c1, c2, crossings), dim=1)  # (N, 24, 2)
     valid = torch.cat((inside_1, inside_2, crossing_valid), dim=1)  # (N, 24)
     count = valid.sum(dim=1, keepdim=True).clamp(min=1)
 
-    # Orden angular alrededor del centro de los validos. Sin gradiente: el
-    # orden es constante a trozos, y lo que se deriva son las coordenadas.
+    # Angular order around the center of the valid ones. No gradient: the
+    # order is piecewise constant, and what is differentiated is the
+    # coordinates.
     with torch.no_grad():
         mask = valid[..., None].to(vertices.dtype)
         center = (vertices * mask).sum(dim=1, keepdim=True) / count[..., None]
         angles = torch.atan2(vertices[..., 1] - center[..., 1], vertices[..., 0] - center[..., 0])
-        angles = torch.where(valid, angles, torch.full_like(angles, 10.0))  # invalidos al final
+        angles = torch.where(valid, angles, torch.full_like(angles, 10.0))  # invalid ones last
         order = angles.argsort(dim=1)
     sorted_vertices = torch.gather(vertices, 1, order[..., None].expand(-1, -1, 2))
     sorted_valid = torch.gather(valid, 1, order)
 
-    # Shoelace enmascarado: cada valido con el siguiente valido, y el ultimo
-    # valido cierra contra el primero.
+    # Masked shoelace: each valid one with the next valid one, and the last
+    # valid one closes against the first.
     n = sorted_valid.sum(dim=1)  # (N,)
     index = torch.arange(24, device=vertices.device)[None, :]
     next_index = torch.where(index + 1 < n[:, None], index + 1, torch.zeros_like(index))
@@ -337,14 +336,14 @@ def box_area(boxes: torch.Tensor) -> torch.Tensor:
 
 
 def rotated_iou(boxes_a: torch.Tensor, boxes_b: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
-    """IoU exacto por pares `(N,)`, diferenciable. Es el `PolyIoU` de DDGRCF."""
+    """Exact pairwise IoU `(N,)`, differentiable. It is DDGRCF's `PolyIoU`."""
     inter = intersection_area(boxes_a, boxes_b)
     union = box_area(boxes_a) + box_area(boxes_b) - inter
     return (inter / (union + eps)).clamp(min=0.0, max=1.0)
 
 
 def pairwise_rotated_iou(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    """`(N, M)` de IoU exacto. Para el asignador; se llama sin gradiente."""
+    """`(N, M)` of exact IoU. For the assigner; called without gradient."""
     n, m = a.shape[0], b.shape[0]
     if n == 0 or m == 0:
         return a.new_zeros((n, m))
@@ -353,4 +352,18 @@ def pairwise_rotated_iou(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     return rotated_iou(left, right).view(n, m)
 
 
-__all__ = ['KLD_VARIANCE_DIVISOR', 'PROBIOU_VARIANCE_DIVISOR', 'bhattacharyya_distance', 'box_corners', 'box_to_gaussian', 'intersection_area', 'kld_divergence', 'kld_loss', 'pairwise_kld_loss', 'pairwise_probiou', 'pairwise_rotated_iou', 'probiou', 'rotated_iou']
+__all__ = [
+    "KLD_VARIANCE_DIVISOR",
+    "PROBIOU_VARIANCE_DIVISOR",
+    "bhattacharyya_distance",
+    "box_corners",
+    "box_to_gaussian",
+    "intersection_area",
+    "kld_divergence",
+    "kld_loss",
+    "pairwise_kld_loss",
+    "pairwise_probiou",
+    "pairwise_rotated_iou",
+    "probiou",
+    "rotated_iou",
+]

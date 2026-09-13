@@ -1,8 +1,8 @@
-"""De donde salio una ejecucion: codigo, semillas y entorno.
+"""Where a run came from: code, seeds and environment.
 
-Sin esto una fila de la tabla comparativa no es un resultado, es un rumor. La
-regla de todo el modulo es que **la ausencia de un dato se registra como
-ausencia**, nunca como un valor por defecto que parezca informacion.
+Without this a row of the comparison table is not a result, it is a rumour.
+The rule of the whole module is that **the absence of a datum is recorded as
+absence**, never as a default value that looks like information.
 """
 
 from __future__ import annotations
@@ -15,18 +15,18 @@ import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-#: Semilla unica de la que cuelga todo lo demas. Registrada en cada ejecucion.
+#: Single seed everything else hangs from. Recorded in every run.
 DEFAULT_SEED = 20260910
 
 
 @dataclass(frozen=True, slots=True)
 class GitInfo:
-    """Estado del arbol de codigo.
+    """State of the code tree.
 
-    `available = False` no es un detalle menor: significa que la ejecucion **no
-    es reproducible**, porque no hay forma de recuperar el codigo que la produjo.
-    `compare` lo lista aparte de la aptitud para produccion: no poder repetir un
-    numero y no poder desplegarlo son problemas distintos.
+    `available = False` is not a minor detail: it means the run **is not
+    reproducible**, because there is no way to recover the code that produced
+    it. `compare` lists it apart from production fitness: not being able to
+    repeat a number and not being able to deploy it are different problems.
     """
 
     available: bool
@@ -37,8 +37,8 @@ class GitInfo:
 
     def describe(self) -> str:
         if not self.available:
-            return f"sin git ({self.reason})"
-        state = "sucio" if self.dirty else "limpio"
+            return f"no git ({self.reason})"
+        state = "dirty" if self.dirty else "clean"
         return f"{self.commit[:12]} ({state})"
 
 
@@ -64,16 +64,16 @@ def collect_git(repo: Path | None = None) -> GitInfo:
         return GitInfo(
             available=False,
             reason=(
-                "el proyecto no esta en un repositorio git, asi que esta "
-                "ejecucion no se puede reproducir: no hay forma de recuperar el "
-                "codigo que la genero. Ejecuta `git init` y haz un commit."
+                "the project is not in a git repository, so this run cannot "
+                "be reproduced: there is no way to recover the code that "
+                "generated it. Run `git init` and make a commit."
             ),
         )
     commit = _git(["rev-parse", "HEAD"], repo)
     if commit is None:
         return GitInfo(
             available=False,
-            reason="repositorio git sin ningun commit todavia",
+            reason="git repository without any commit yet",
         )
     status = _git(["status", "--porcelain"], repo)
     return GitInfo(
@@ -86,23 +86,23 @@ def collect_git(repo: Path | None = None) -> GitInfo:
 
 @dataclass(frozen=True, slots=True)
 class Seeds:
-    """Semillas efectivamente aplicadas, no las que se pidieron."""
+    """Seeds actually applied, not the ones requested."""
 
     base: int
     python: int
     numpy: int
     torch: int | None = None
-    #: `PYTHONHASHSEED` solo tiene efecto si estaba puesta ANTES de arrancar el
-    #: proceso. Fijarla aqui no haria nada, asi que se registra lo que hay.
+    #: `PYTHONHASHSEED` only takes effect if it was set BEFORE the process
+    #: started. Setting it here would do nothing, so what is there is recorded.
     pythonhashseed: str | None = None
     cudnn_deterministic: bool | None = None
 
 
 def seed_everything(seed: int = DEFAULT_SEED) -> Seeds:
-    """Fija las semillas y devuelve lo que de verdad quedo fijado.
+    """Fixes the seeds and returns what was really fixed.
 
-    torch es opcional (grupo `torch` del pyproject). Si no esta instalado, su
-    semilla se registra como None en lugar de fingir que se fijo.
+    torch is optional (`torch` group of the pyproject). If it is not
+    installed, its seed is recorded as None instead of pretending it was set.
     """
     random.seed(seed)
 
@@ -111,7 +111,7 @@ def seed_everything(seed: int = DEFAULT_SEED) -> Seeds:
         import numpy as np
 
         np.random.seed(seed)
-    except ImportError:  # pragma: no cover - numpy es dependencia base
+    except ImportError:  # pragma: no cover - numpy is a base dependency
         numpy_seed = seed
 
     torch_seed: int | None = None
@@ -130,10 +130,10 @@ def seed_everything(seed: int = DEFAULT_SEED) -> Seeds:
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
             cudnn = True
-        except Exception:  # noqa: BLE001 - la build de torch decide que soporta
-            # Un torch sin algoritmos deterministas no debe tumbar la ejecucion:
-            # se registra `cudnn_deterministic=False` y se sigue, que es
-            # informacion util en vez de un fallo.
+        except Exception:  # noqa: BLE001 - the torch build decides what it supports
+            # A torch without deterministic algorithms must not bring the run
+            # down: `cudnn_deterministic=False` is recorded and it goes on,
+            # which is useful information instead of a failure.
             cudnn = False
 
     return Seeds(
@@ -153,13 +153,13 @@ class Environment:
     packages: dict[str, str] = field(default_factory=dict)
 
 
-#: Lo que puede mover un numero entre ejecuciones. No es un `pip freeze`: una
-#: lista larga se vuelve ruido y nadie la lee.
+#: What can move a number between runs. It is not a `pip freeze`: a long list
+#: becomes noise and nobody reads it.
 #:
-#: `opencv-python` esta aqui aunque el proyecto pida la variante `headless`:
-#: ultralytics arrastra la normal, las dos ocupan el mismo espacio de nombres
-#: `cv2` y gana la que se instalara ultima. Registrar las dos hace visible en
-#: cada ejecucion si esa colision estaba presente.
+#: `opencv-python` is here even though the project asks for the `headless`
+#: variant: ultralytics drags in the normal one, both occupy the same `cv2`
+#: namespace and whichever was installed last wins. Recording both makes it
+#: visible in every run whether that collision was present.
 _TRACKED = (
     "numpy",
     "shapely",
@@ -194,19 +194,19 @@ class Provenance:
 
     @property
     def reproducible(self) -> bool:
-        """Reproducible pide codigo recuperable Y arbol limpio."""
+        """Reproducible requires recoverable code AND a clean tree."""
         return self.git.available and self.git.dirty is False
 
     def blockers(self) -> list[str]:
-        """Motivos por los que esta ejecucion no vale como referencia estable."""
+        """Reasons why this run is not valid as a stable reference."""
         if not self.git.available:
-            return [f"sin procedencia de codigo: {self.git.reason}"]
+            return [f"no code provenance: {self.git.reason}"]
         if self.git.dirty:
-            sucio = (
-                "el arbol de trabajo tenia cambios sin commitear, asi que el "
-                f"commit {self.git.commit[:12]} no describe el codigo ejecutado"
+            dirty = (
+                "the working tree had uncommitted changes, so commit "
+                f"{self.git.commit[:12]} does not describe the code that ran"
             )
-            return [sucio]
+            return [dirty]
         return []
 
     def to_dict(self) -> dict:

@@ -1,1 +1,0 @@
-<annotation><folder>JPEGImages</folder><filename>100_Euro_345_jpg.rf.FLtwBfyt8mZCSm7iFGTj.png</filename><size><width>612</width><height>465</height><depth>3</depth></size><object><name>euro_banknote</name><difficult>0</difficult><bndbox><xmin>27</xmin><ymin>121</ymin><xmax>550</xmax><ymax>372</ymax><angle>-18.242243</angle></bndbox></object></annotation>

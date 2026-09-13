@@ -1,39 +1,40 @@
-"""Port en torch puro de la red de `DDGRCF/YOLOX_OBB` (`yoloxs_obb.yaml`).
+"""Pure-torch port of the `DDGRCF/YOLOX_OBB` network (`yoloxs_obb.yaml`).
 
-Por que un port y no el clon
+Why a port and not the clone
 ----------------------------
-El clon exige operadores C++/CUDA compilados y una GPU, y ninguna de las dos
-cosas hay aqui. Pero su red -- backbone YOLOv5 con bloques `C3` y ReLU, cuello
-PAFPN, cabezas desacopladas de YOLOX -- es torch puro. Lo unico compilado eran
-el IoU rotado del asignador y de la perdida, y el NMS. Asi que la red se porta
-y esas tres piezas se sustituyen por versiones en torch (`overlap.py`).
+The clone requires compiled C++/CUDA operators and a GPU, and neither is
+available here. But its network -- YOLOv5 backbone with `C3` blocks and ReLU,
+PAFPN neck, YOLOX decoupled heads -- is pure torch. The only compiled parts
+were the rotated IoU of the assigner and of the loss, and the NMS. So the
+network is ported and those three pieces are replaced by torch versions
+(`overlap.py`).
 
-Licencia: Apache-2.0, con atribucion. Los bloques de abajo son los suyos
-(`yolox/models/modules/common.py` y `block.py`), reducidos a lo que el yaml usa.
+License: Apache-2.0, with attribution. The blocks below are theirs
+(`yolox/models/modules/common.py` and `block.py`), reduced to what the yaml uses.
 
-Lo unico que importa de verdad: los NOMBRES
--------------------------------------------
-El motivo de portar en vez de reescribir es cargar **sus pesos de DOTA**. Su
-modelo se construye desde el yaml en un `nn.Sequential` llamado `model`, con las
-capas indexadas 0..33 en el orden del fichero; los parametros salen como
+The only thing that really matters: the NAMES
+---------------------------------------------
+The reason for porting instead of rewriting is to load **their DOTA weights**.
+Their model is built from the yaml into an `nn.Sequential` called `model`, with
+layers indexed 0..33 in file order; the parameters come out as
 `model.0.conv.weight`, `model.2.m.0.cv1.bn.bias`, `model.33.cls_preds.0.bias`...
-Aqui se replica ese arbol a mano, capa a capa, con los mismos atributos dentro
-de cada bloque, para que `load_state_dict(strict=True)` acepte su checkpoint
-sin ningun mapeo. `tests/test_ddgrcf_port.py` compara las claves y las formas
-contra su modelo construido de verdad.
+Here that tree is replicated by hand, layer by layer, with the same attributes
+inside each block, so that `load_state_dict(strict=True)` accepts their
+checkpoint without any mapping. `tests/test_ddgrcf_port.py` compares keys and
+shapes against their actually built model.
 
-Que cambia respecto a la cabeza propia
---------------------------------------
-- Regresion al estilo YOLOX: `(dx, dy, log w, log h)` respecto a la celda, no
-  distancias l/t/r/b. Se decodifica `cx = (dx + i) * stride`, `w = e^{log w} *
+What changes with respect to the own head
+-----------------------------------------
+- YOLOX-style regression: `(dx, dy, log w, log h)` relative to the cell, not
+  l/t/r/b distances. Decoded as `cx = (dx + i) * stride`, `w = e^{log w} *
   stride`.
-- Angulo: un escalar CRUDO en radianes, sin sigmoide ni doblado. Su convencion
-  (`mintheta_obb`): el lado largo es `w` y el angulo cae en `(-pi/4, pi/4]`,
-  intercambiando `w`/`h` si hace falta.
-- Con objectness, como YOLOX.
+- Angle: a RAW scalar in radians, no sigmoid and no folding. Their convention
+  (`mintheta_obb`): the long side is `w` and the angle falls in `(-pi/4, pi/4]`,
+  swapping `w`/`h` if needed.
+- With objectness, like YOLOX.
 
-Todo eso lo describe un `HeadSpec(regression="yolox", angle="radians")` y lo
-consume el mismo decodificador que el resto del proyecto.
+All of that is described by a `HeadSpec(regression="yolox", angle="radians")`
+and consumed by the same decoder as the rest of the project.
 """
 
 from __future__ import annotations
@@ -61,11 +62,11 @@ def _depth(n: int) -> int:
     return max(round(n * DEPTH_MULTIPLE), 1) if n > 1 else n
 
 
-# --- bloques, con SUS nombres de atributo (Apache-2.0, DDGRCF/YOLOX_OBB) -----
+# --- blocks, with THEIR attribute names (Apache-2.0, DDGRCF/YOLOX_OBB) -------
 
 
 class Conv(nn.Module):
-    """`conv` + `bn` + `act`. ReLU en todo el yaml de este modelo."""
+    """`conv` + `bn` + `act`. ReLU throughout this model's yaml."""
 
     def __init__(self, c1: int, c2: int, k: int = 1, s: int = 1, p: int | None = None) -> None:
         super().__init__()
@@ -126,11 +127,11 @@ class Concat(nn.Module):
 
 
 class OBBDetectX(nn.Module):
-    """Las 1x1 finales de su `OBBDetectX`: `cls_preds`, `reg_preds`, `obj_preds`.
+    """The final 1x1 convs of their `OBBDetectX`: `cls_preds`, `reg_preds`, `obj_preds`.
 
-    Solo las capas. Su asignador, su perdida y su postproceso -- lo que llevaba
-    los operadores compilados -- viven en `losses.py` y `overlap.py`.
-    Devuelve `HeadOutput` para que el decodificador comun no sepa de donde viene.
+    Only the layers. Their assigner, loss and post-processing -- what carried
+    the compiled operators -- live in `losses.py` and `overlap.py`.
+    Returns `HeadOutput` so the common decoder does not know where it comes from.
     """
 
     REG_DIM = 5  # dx, dy, log w, log h, theta
@@ -169,15 +170,15 @@ class OBBDetectX(nn.Module):
         return outputs
 
 
-# --- la red entera, capa a capa como en el yaml -----------------------------
+# --- the whole network, layer by layer as in the yaml ----------------------
 
 
 class DdgrcfYoloxObb(nn.Module):
-    """`yoloxs_obb.yaml` de DDGRCF, construido a mano con los mismos indices.
+    """DDGRCF's `yoloxs_obb.yaml`, built by hand with the same indices.
 
-    `self.model[i]` es la capa `i` del yaml, y `.f` dice de donde toma su
-    entrada, exactamente como su `parse_model`. El `forward` es su
-    `forward_once`. Cada linea de abajo lleva el numero de capa del yaml.
+    `self.model[i]` is layer `i` of the yaml, and `.f` says where it takes its
+    input from, exactly like their `parse_model`. The `forward` is their
+    `forward_once`. Every line below carries the yaml layer number.
     """
 
     HEAD_SPEC = HeadSpec(regression="yolox", angle="radians", objectness=True)
@@ -189,10 +190,11 @@ class DdgrcfYoloxObb(nn.Module):
         c64, c128, c256, c512, c1024 = (_width(c) for c in (64, 128, 256, 512, 1024))
 
         def seq(module_factory, n):
-            # Como su `parse_model`: `n` pasa por el multiplicador de profundidad
-            # y, si queda en 1, la capa va SIN envoltorio Sequential. El yaml pone
-            # `n=2` en los tallos de las cabezas y `round(2 * 0.33) = 1`: es una
-            # sola conv, y sus claves son `model.27.conv.*`, no `model.27.0.*`.
+            # Like their `parse_model`: `n` goes through the depth multiplier
+            # and, if it ends up as 1, the layer goes WITHOUT a Sequential
+            # wrapper. The yaml puts `n=2` in the head stems and
+            # `round(2 * 0.33) = 1`: it is a single conv, and its keys are
+            # `model.27.conv.*`, not `model.27.0.*`.
             n = _depth(n)
             return module_factory() if n == 1 else nn.Sequential(*(module_factory() for _ in range(n)))
 
@@ -208,7 +210,7 @@ class DdgrcfYoloxObb(nn.Module):
             (Conv(c512, c1024, 3, 2), -1),                        # 7  P5/32
             (SPP(c1024, c1024, (5, 9, 13)), -1),                  # 8
             (C3(c1024, c1024, _depth(3), shortcut=False), -1),    # 9
-            # ---- cuello ----
+            # ---- neck ----
             (Conv(c1024, c512, 1, 1), -1),                        # 10
             (nn.Upsample(None, 2, "nearest"), -1),                # 11
             (Concat(1), [-1, 6]),                                 # 12
@@ -223,7 +225,7 @@ class DdgrcfYoloxObb(nn.Module):
             (Conv(c512, c512, 3, 2), -1),                         # 21
             (Concat(1), [-1, 10]),                                # 22
             (C3(c512 * 2, c1024, _depth(3), shortcut=False), -1), # 23 P5
-            # ---- laterales y tallos de las cabezas ----
+            # ---- laterals and head stems ----
             (Conv(c256, c256, 1, 1), 17),                         # 24 lateral0
             (Conv(c512, c256, 1, 1), 20),                         # 25 lateral1
             (Conv(c1024, c256, 1, 1), 23),                        # 26 lateral2
@@ -233,7 +235,7 @@ class DdgrcfYoloxObb(nn.Module):
             (seq(lambda: Conv(c256, c256, 3, 1), 2), 25),         # 30 reg1
             (seq(lambda: Conv(c256, c256, 3, 1), 2), 26),         # 31 cls2
             (seq(lambda: Conv(c256, c256, 3, 1), 2), 26),         # 32 reg2
-            # ---- deteccion ----
+            # ---- detection ----
             (OBBDetectX((c256,) * 6, num_classes), [27, 28, 29, 30, 31, 32]),  # 33
         ]
         modules = []
@@ -269,11 +271,11 @@ class DdgrcfYoloxObb(nn.Module):
 
 
 def load_pretrained(model: DdgrcfYoloxObb, path) -> dict:
-    """Carga SU checkpoint de DOTA. Devuelve lo que no encajo, que debe ser solo
-    la capa de clase: sus pesos tienen 15 salidas y aqui hay una.
+    """Load THEIR DOTA checkpoint. Returns what did not fit, which must be only
+    the class layer: their weights have 15 outputs and here there is one.
 
-    Estricto en todo lo demas a proposito: si un nombre no coincide es que el
-    port se ha desviado del yaml, y eso hay que saberlo, no taparlo.
+    Strict in everything else on purpose: if a name does not match, the port
+    has drifted from the yaml, and that has to be known, not hidden.
     """
     payload = torch.load(str(path), map_location="cpu", weights_only=False)
     state = payload.get("model", payload) if isinstance(payload, dict) else payload
@@ -281,18 +283,18 @@ def load_pretrained(model: DdgrcfYoloxObb, path) -> dict:
     kept, skipped = {}, {}
     for key, value in state.items():
         if key not in own:
-            skipped[key] = "no existe en el port"
+            skipped[key] = "does not exist in the port"
         elif own[key].shape != value.shape:
-            skipped[key] = f"forma {tuple(value.shape)} != {tuple(own[key].shape)}"
+            skipped[key] = f"shape {tuple(value.shape)} != {tuple(own[key].shape)}"
         else:
             kept[key] = value
     missing = sorted(set(own) - set(kept))
     unexpected_missing = [k for k in missing if "cls_preds" not in k]
     if unexpected_missing:
         raise RuntimeError(
-            "el checkpoint no cubre el port: faltan "
-            f"{len(unexpected_missing)} tensores fuera de la capa de clase, "
-            f"el primero {unexpected_missing[0]!r}"
+            "the checkpoint does not cover the port: "
+            f"{len(unexpected_missing)} tensors outside the class layer are missing, "
+            f"the first one {unexpected_missing[0]!r}"
         )
     model.load_state_dict(kept, strict=False)
     return skipped

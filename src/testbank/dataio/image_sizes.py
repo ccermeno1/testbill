@@ -1,12 +1,12 @@
-"""Indice de dimensiones en pixeles, leyendo solo cabeceras con Pillow.
+"""Index of pixel dimensions, reading only headers with Pillow.
 
-Hacia falta antes de lo previsto. Estaba planificado para bbox_coco, que es el
-unico formato que declara requires_image_size, pero el ORDEN CANONICO tambien lo
-necesita: las coordenadas normalizadas escalan x e y por factores distintos, asi
-que sin el aspecto de la imagen el "lado mas largo" no es el lado mas largo.
+It was needed earlier than planned. It was scheduled for bbox_coco, the only
+format that declared requires_image_size, but the CANONICAL ORDER needs it too:
+normalized coordinates scale x and y by different factors, so without the image
+aspect the "longest side" is not the longest side.
 
-`Image.open` no decodifica el pixel data hasta que se pide, asi que leer `.size`
-cuesta lo que leer la cabecera.
+`Image.open` does not decode the pixel data until asked, so reading `.size`
+costs as much as reading the header.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ def load_index(path: str | Path) -> dict[str, tuple[int, int]]:
 
 
 class SizeIndex:
-    """Resuelve el aspecto de una muestra, construyendo el indice si hace falta."""
+    """Resolves the aspect of a sample, building the index if needed."""
 
     def __init__(self, index: dict[str, tuple[int, int]] | None = None):
         self._index: dict[str, tuple[int, int]] = dict(index or {})
@@ -66,7 +66,7 @@ class SizeIndex:
             return self._index[sample_id]
         except KeyError:
             raise KeyError(
-                f"'{sample_id}' no esta en el indice de tamanos; reconstruyelo"
+                f"'{sample_id}' is not in the size index; rebuild it"
             ) from None
 
     def aspect(self, sample_id: str) -> float:

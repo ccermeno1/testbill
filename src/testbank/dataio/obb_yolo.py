@@ -1,7 +1,7 @@
-"""Lector del formato canonico: `class x1 y1 x2 y2 x3 y3 x4 y4` normalizado.
+"""Reader for the canonical format: `class x1 y1 x2 y2 x3 y3 x4 y4`, normalized.
 
-Es el formato del export de Roboflow y el pivote del resto de conversores.
-Las anotaciones originales son de solo lectura: aqui no se escribe nunca.
+It is the format of the Roboflow export and the pivot of all other converters.
+The original annotations are read-only: nothing is ever written here.
 """
 
 from __future__ import annotations
@@ -22,9 +22,9 @@ from testbank.geometry.quad import (
 
 TOKENS_PER_LINE = 9
 
-# Un float64 no puede serializar mas de 17 cifras significativas. Un token con
-# mas no viene de un exportador honesto: el fichero paso por un extractor que lo
-# corrompio y no es una anotacion valida.
+# A float64 cannot serialize more than 17 significant digits. A token with more
+# does not come from an honest exporter: the file went through an extractor
+# that corrupted it and is not a valid annotation.
 MAX_SIGNIFICANT_DIGITS = 17
 
 _NUMBER = re.compile(
@@ -34,25 +34,25 @@ _NUMBER = re.compile(
 
 
 class LabelFormatError(ValueError):
-    """El fichero de etiquetas no cumple el formato. Siempre identifica linea.
+    """The label file does not follow the format. Always identifies the line.
 
-    Sigue siendo fatal, pero acumula: un fichero con tres lineas malas las
-    reporta las tres de una vez. Con 500 ficheros, fallar en la primera obliga a
-    un ciclo completo de correccion y reexport por cada error, y no deja ver de
-    entrada si el problema es un clic suelto o el export entero.
+    Still fatal, but it accumulates: a file with three bad lines reports all
+    three at once. With 500 files, failing on the first forces a full
+    fix-and-re-export cycle per error, and hides up front whether the problem
+    is a stray click or the entire export.
     """
 
     def __init__(self, message: str, problems: tuple[str, ...] = ()) -> None:
         super().__init__(message)
-        #: Cada problema por separado, ya formateado con su ubicacion.
+        #: Each problem on its own, already formatted with its location.
         self.problems = problems or (message,)
 
     @classmethod
     def combine(cls, problems: list[str], header: str) -> LabelFormatError:
-        """Un solo error con todos los problemas dentro.
+        """A single error carrying every problem.
 
-        Con uno solo el mensaje es el de siempre, para no envolver de adorno el
-        caso corriente ni romper a quien busque un texto concreto.
+        With a single one the message is the usual one, to avoid decorating the
+        common case or breaking anyone searching for a specific text.
         """
         if len(problems) == 1:
             return cls(problems[0], (problems[0],))
@@ -70,20 +70,20 @@ class Annotation:
 class LabelFile:
     path: Path
     annotations: tuple[Annotation, ...]
-    #: Avisos no fatales, ya formateados con su ubicacion.
+    #: Non-fatal warnings, already formatted with their location.
     warnings: tuple[str, ...] = ()
 
 
 def significant_digits(token: str) -> int:
-    """Cifras significativas de la mantisa.
+    """Significant digits of the mantissa.
 
-    Se ignoran signo, punto, exponente, ceros a la izquierda y ceros a la
-    derecha: ninguno de ellos aporta informacion que un float64 no pueda
-    producir, y lo que se quiere detectar es precision fabricada.
+    Sign, point, exponent, leading zeros and trailing zeros are ignored: none
+    of them carries information a float64 could not produce, and what we want
+    to detect is fabricated precision.
     """
     match = _NUMBER.match(token)
     if match is None:
-        raise ValueError(f"token no numerico: {token!r}")
+        raise ValueError(f"non-numeric token: {token!r}")
     digits = (match.group("int") or "") + (
         match.group("frac") or match.group("frac2") or ""
     )
@@ -97,8 +97,8 @@ def _parse_line(
     tokens = line.split()
     if len(tokens) != TOKENS_PER_LINE:
         raise LabelFormatError(
-            f"{where}: una linea obb_yolo tiene {TOKENS_PER_LINE} tokens "
-            f"(class + 4 vertices), se encontraron {len(tokens)}: {line.strip()!r}"
+            f"{where}: an obb_yolo line has {TOKENS_PER_LINE} tokens "
+            f"(class + 4 vertices), found {len(tokens)}: {line.strip()!r}"
         )
 
     for index, token in enumerate(tokens):
@@ -108,18 +108,18 @@ def _parse_line(
             raise LabelFormatError(f"{where}: token {index}: {exc}") from exc
         if count > MAX_SIGNIFICANT_DIGITS:
             raise LabelFormatError(
-                f"{where}: token {index} tiene {count} cifras significativas "
-                f"({token!r}); un float64 no puede serializar mas de "
-                f"{MAX_SIGNIFICANT_DIGITS}, asi que el fichero paso por un "
-                f"extractor que lo corrompio y no es una anotacion valida"
+                f"{where}: token {index} has {count} significant digits "
+                f"({token!r}); a float64 cannot serialize more than "
+                f"{MAX_SIGNIFICANT_DIGITS}, so the file went through an "
+                f"extractor that corrupted it and is not a valid annotation"
             )
 
     class_token = tokens[0]
     class_value = float(class_token)
     if class_value != int(class_value) or class_value < 0:
         raise LabelFormatError(
-            f"{where}: el id de clase debe ser un entero no negativo, "
-            f"se encontro {class_token!r}"
+            f"{where}: the class id must be a non-negative integer, "
+            f"found {class_token!r}"
         )
 
     try:
@@ -135,17 +135,17 @@ def _parse_line(
 def read_label_file(
     path: str | Path, *, aspect: float = DEFAULT_ASPECT
 ) -> LabelFile:
-    """Lee un .txt obb_yolo. Un fichero vacio es una imagen sin billetes, valido.
+    """Read an obb_yolo .txt. An empty file is an image with no banknotes, valid.
 
-    `aspect` es ancho/alto en pixeles de la imagen correspondiente. Sin el, el
-    orden canonico se calcula en el espacio normalizado, donde el lado mas largo
-    puede no ser el lado mas largo real. Pasalo siempre que lo tengas.
+    `aspect` is width/height in pixels of the corresponding image. Without it
+    the canonical order is computed in normalized space, where the longest side
+    may not be the real longest side. Pass it whenever you have it.
     """
     path = Path(path)
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
-        raise LabelFormatError(f"{path}: no existe el fichero de etiquetas") from exc
+        raise LabelFormatError(f"{path}: label file does not exist") from exc
 
     annotations: list[Annotation] = []
     messages: list[str] = []
@@ -158,8 +158,8 @@ def read_label_file(
             try:
                 parsed = _parse_line(line, path, lineno, aspect)
             except LabelFormatError as exc:
-                # Se sigue leyendo para reportar TODAS las lineas malas del
-                # fichero de una vez; el error se lanza al terminarlo.
+                # Keep reading to report EVERY bad line of the file at once;
+                # the error is raised once the file is done.
                 problems.append(str(exc))
                 continue
             annotations.append(parsed)
@@ -168,7 +168,7 @@ def read_label_file(
                 messages.append(f"{path}:{lineno}: {entry.message}")
 
     if problems:
-        raise LabelFormatError.combine(problems, f"{path}: lineas invalidas")
+        raise LabelFormatError.combine(problems, f"{path}: invalid lines")
 
     return LabelFile(
         path=path, annotations=tuple(annotations), warnings=tuple(messages)

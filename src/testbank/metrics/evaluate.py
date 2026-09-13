@@ -1,17 +1,18 @@
-"""Ensambla el `metrics.json` de una ejecucion.
+"""Assembles a run's `metrics.json`.
 
-Orden de lectura del informe, que es el orden en que se decide:
+Reading order of the report, which is the order in which decisions are made:
 
-1. `crop` -- cobertura y contaminacion. Deciden si el recorte sirve.
-2. `detection` -- mAP y tasa de deteccion. Dicen si encuentra los billetes.
-3. `geometry` -- angulo y vertices. Diagnostico, nunca criterio de exito.
+1. `crop` -- coverage and contamination. They decide whether the crop works.
+2. `detection` -- mAP and detection rate. They say whether it finds the banknotes.
+3. `geometry` -- angle and vertices. Diagnostic, never a success criterion.
 
-Todo lo que decide lleva intervalo. Lo que es diagnostico no, para no dar a
-entender que se esta comparando con ello.
+Everything that decides carries an interval. What is diagnostic does not, so
+as not to suggest it is being compared on.
 
-Se empareja UNA vez por imagen y umbral, y el bootstrap remuestrea indices sobre
-lo ya calculado. Emparejar dentro del bucle serian 2000 replicas x 10 umbrales x
-101 imagenes de shapely, que medido no termina. Ver `detection.py`.
+Matching happens ONCE per image and threshold, and the bootstrap resamples
+indices over what is already computed. Matching inside the loop would be 2000
+replicates x 10 thresholds x 101 images of shapely, which measured does not
+finish. See `detection.py`.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ from testbank.metrics.matching import match_image
 
 
 def _filter_by_score(item, minimum: float):
-    """Misma imagen con solo las predicciones que superan `minimum`."""
+    """Same image with only the predictions above `minimum`."""
     from testbank.metrics.core import ImageEval
 
     return ImageEval(
@@ -58,11 +59,11 @@ def _percentile(values, q: float) -> float:
 
 
 def geometry_diagnostics(items, caches, *, match_iou: float) -> dict:
-    """Angulo y distancia por vertice, solo sobre pares emparejados.
+    """Angle and per-vertex distance, only over matched pairs.
 
-    Diagnostico, no criterio de exito: la especificacion dice que la precision
-    geometrica exacta no es el objetivo, asi que estos numeros van sin intervalo
-    para que nadie los use para elegir candidato.
+    Diagnostic, not a success criterion: the specification says exact
+    geometric precision is not the goal, so these numbers go without an
+    interval so that nobody uses them to pick a candidate.
     """
     angles: list[float] = []
     vertex_px: list[float] = []
@@ -95,14 +96,14 @@ def geometry_diagnostics(items, caches, *, match_iou: float) -> dict:
             "p95": _percentile(vertex_frac, 95),
         },
         "note": (
-            "Diagnostico. Un rectangulo aproximado es la politica de anotacion, "
-            "asi que la desviacion por vertice no es un fallo del detector."
+            "Diagnostic. An approximate rectangle is the annotation policy, so "
+            "the per-vertex deviation is not a detector failure."
         ),
     }
 
 
 def evaluate(items, config: Config | None = None, *, split: str = "valid") -> dict:
-    """Metricas completas de un conjunto de imagenes ya predichas."""
+    """Full metrics of a set of already predicted images."""
     config = config or Config()
     items = list(items)
     caches = [PolygonCache.build(i) for i in items]
@@ -112,7 +113,7 @@ def evaluate(items, config: Config | None = None, *, split: str = "valid") -> di
     seed = config.metrics.seed
     indices = list(range(len(items)))
 
-    # --- precomputo, una sola vez -----------------------------------------
+    # --- precompute, once only --------------------------------------------
     thresholds = tuple(sorted({match_iou, *COCO_THRESHOLDS}))
     stats = {
         t: image_stats(items, caches, iou_threshold=t) for t in thresholds
@@ -128,7 +129,7 @@ def evaluate(items, config: Config | None = None, *, split: str = "valid") -> di
             for item, cache in zip(items, caches)
         ]
 
-    # --- agregacion y bootstrap sobre indices ------------------------------
+    # --- aggregation and bootstrap over indices ---------------------------
     map50 = bootstrap_images(
         indices,
         lambda picked: ap_from_stats([stats[match_iou][i] for i in picked]),
@@ -150,9 +151,9 @@ def evaluate(items, config: Config | None = None, *, split: str = "valid") -> di
     with_ignored = counts_from_stats(stats[match_iou])
     without_ignored = counts_from_stats(stats_no_ignore)
 
-    # Los recuentos a la confianza de DECISION: la pregunta que se lee es
-    # cuantos falsos positivos habria al desplegar, no cuantas cajas dejo pasar
-    # el NMS con el umbral bajo que necesita la curva precision-recall.
+    # Counts at the DECISION confidence: the question people read is how many
+    # false positives there would be at deployment, not how many boxes the NMS
+    # let through at the low threshold the precision-recall curve needs.
     decision = config.metrics.report_confidence
     decided = [_filter_by_score(item, decision) for item in items]
     decided_counts = counts_from_stats(
@@ -214,8 +215,8 @@ def evaluate(items, config: Config | None = None, *, split: str = "valid") -> di
             "by_margin": crop_by_margin,
         },
         "coverage_p5": chosen["coverage_p5_all_ci"],
-        #: Agregado sobre las dos escenas. Se conserva por continuidad, pero el
-        #: veredicto son las dos entradas de abajo: mezclarlas oculta las dos.
+        #: Aggregate over both scenes. Kept for continuity, but the verdict is
+        #: the two entries below: mixing them hides both.
         "contamination_p95": chosen["contamination_p95_ci"],
         "contamination": {
             "by_scene": chosen["contamination_by_scene"],
@@ -223,20 +224,20 @@ def evaluate(items, config: Config | None = None, *, split: str = "valid") -> di
                 v["passes"] for v in chosen["contamination_by_scene"].values()
             ),
             "note": (
-                "Dos umbrales porque la distribucion es bimodal. En imagenes de "
-                "un solo billete el suelo es cero exacto y cualquier "
-                "contaminacion es un error real. En abanicos ni un detector "
-                "perfecto baja del 0.89: si un billete esta parcialmente "
-                "tapado, su caja contiene por fuerza pixeles del que lo tapa. "
-                "Para comparar candidatos en abanicos mira la mediana, no el "
-                "p95, que discrimina poco por estar casi saturado."
+                "Two thresholds because the distribution is bimodal. In "
+                "single-banknote images the floor is exactly zero and any "
+                "contamination is a real error. In fans not even a perfect "
+                "detector goes below 0.89: if a banknote is partially covered, "
+                "its box necessarily contains pixels of the one covering it. "
+                "To compare candidates on fans look at the median, not the "
+                "p95, which discriminates little because it is nearly saturated."
             ),
         },
         "detection": {
             "match_iou": match_iou,
-            #: Confianza a la que se hizo la inferencia. Es la que usa el AP.
+            #: Confidence the inference was run at. It is the one AP uses.
             "inference_confidence": config.detector.confidence_threshold,
-            #: Confianza a la que se leen los recuentos de abajo.
+            #: Confidence at which the counts below are read.
             "decision_confidence": decision,
             "at_decision_confidence": {
                 "true_positives": decided_counts.true_positives,
@@ -244,8 +245,8 @@ def evaluate(items, config: Config | None = None, *, split: str = "valid") -> di
                 "ignored": decided_counts.ignored,
                 "detection_rate": decided_counts.detection_rate,
                 "note": (
-                    "Lo que se veria al desplegar con este umbral. Es la cifra "
-                    "que hay que leer."
+                    "What would be seen at deployment with this threshold. "
+                    "This is the figure to read."
                 ),
             },
             "with_ignored": {
@@ -260,16 +261,15 @@ def evaluate(items, config: Config | None = None, *, split: str = "valid") -> di
                 "detection_rate": without_ignored.detection_rate,
             },
             "note": (
-                "`with_ignored` y `without_ignored` estan a la confianza de "
-                "INFERENCIA, baja a proposito para que el AP tenga la cola de "
-                "la curva: ahi el recuento de falsos positivos mide cuantas "
-                "cajas dejo pasar el NMS, no calidad, y no mejora entrenando "
-                "mas. Para leer, usa `at_decision_confidence`. "
-                "La diferencia de false_positives entre las dos entradas es el "
-                "coste de nuestra propia politica de anotacion: detecciones "
-                "correctas sobre billetes que el filtro de area dejo fuera. Un "
-                "salto grande dice que hay que revisar la anotacion, no el "
-                "detector."
+                "`with_ignored` and `without_ignored` are at the INFERENCE "
+                "confidence, deliberately low so AP keeps the tail of the "
+                "curve: there the false positive count measures how many boxes "
+                "the NMS let through, not quality, and does not improve with "
+                "more training. To read, use `at_decision_confidence`. "
+                "The difference in false_positives between the two entries is "
+                "the cost of our own annotation policy: correct detections on "
+                "banknotes the area filter left out. A big jump says the "
+                "annotation needs review, not the detector."
             ),
         },
         "map50": map50.to_dict(),

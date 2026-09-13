@@ -1,4 +1,4 @@
-"""Casi-duplicados: agrupacion, informe y manifiesto."""
+"""Near-duplicates: grouping, report and manifest."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from testbank.data.duplicates import (
 
 def _sample(directory: Path, sample_id: str, array: np.ndarray) -> Sample:
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{sample_id}.png"  # PNG: sin perdida, ruido controlado
+    path = directory / f"{sample_id}.png"  # PNG: lossless, controlled noise
     Image.fromarray(array.astype(np.uint8)).save(path)
     return Sample(
         sample_id=sample_id,
@@ -34,34 +34,34 @@ def _noise(seed: int, size: int = 64) -> np.ndarray:
 
 
 def _jitter(array: np.ndarray, amount: int, seed: int) -> np.ndarray:
-    """Misma imagen con una perturbacion pequena, como dos tomas seguidas."""
+    """Same image with a small perturbation, like two consecutive shots."""
     delta = np.random.default_rng(seed).integers(-amount, amount + 1, array.shape)
     return np.clip(array.astype(int) + delta, 0, 255)
 
 
-# --- la firma -------------------------------------------------------------
+# --- the signature --------------------------------------------------------
 
 
-def test_la_firma_esta_normalizada(tmp_path):
+def test_the_signature_is_normalized(tmp_path):
     s = _sample(tmp_path, "a", _noise(1))
     vector = signature(s.image_path)
-    assert vector.size == 16 * 16 * 3  # color: tres canales
+    assert vector.size == 16 * 16 * 3  # color: three channels
     assert np.linalg.norm(vector) == pytest.approx(1.0)
     assert vector.mean() == pytest.approx(0.0, abs=1e-9)
 
 
-def test_una_imagen_de_un_solo_tono_no_revienta(tmp_path):
-    """Norma cero: dividir daria NaN y contaminaria toda la matriz."""
-    s = _sample(tmp_path, "plana", np.full((64, 64, 3), 128))
+def test_a_single_tone_image_does_not_blow_up(tmp_path):
+    """Zero norm: dividing would give NaN and contaminate the whole matrix."""
+    s = _sample(tmp_path, "flat", np.full((64, 64, 3), 128))
     vector = signature(s.image_path)
     assert np.all(np.isfinite(vector))
     assert np.linalg.norm(vector) == pytest.approx(0.0)
 
 
-# --- la agrupacion --------------------------------------------------------
+# --- the grouping ---------------------------------------------------------
 
 
-def test_dos_tomas_casi_iguales_van_al_mismo_grupo(tmp_path):
+def test_two_nearly_equal_shots_go_to_the_same_group(tmp_path):
     base = _noise(1)
     a = _sample(tmp_path, "a", base)
     b = _sample(tmp_path, "b", _jitter(base, 4, seed=2))
@@ -71,17 +71,17 @@ def test_dos_tomas_casi_iguales_van_al_mismo_grupo(tmp_path):
     assert report.n_groups == 1
 
 
-def test_imagenes_distintas_no_se_agrupan(tmp_path):
+def test_different_images_are_not_grouped(tmp_path):
     samples = [_sample(tmp_path, f"s{i}", _noise(i)) for i in range(4)]
     report = find_duplicates(samples)
     assert report.pairs == []
     assert report.n_groups == 4
 
 
-def test_la_agrupacion_es_transitiva(tmp_path):
-    """A~B y B~C ponen a los tres juntos aunque A y C no se parezcan.
+def test_the_grouping_is_transitive(tmp_path):
+    """A~B and B~C put the three together even if A and C do not resemble each other.
 
-    Repartirlos dejaria la fuga a medias, que es casi lo mismo que no hacer nada.
+    Splitting them would leave the leak half done, which is almost the same as doing nothing.
     """
     base = _noise(7)
     a = _sample(tmp_path, "a", base)
@@ -92,18 +92,18 @@ def test_la_agrupacion_es_transitiva(tmp_path):
     assert len({report.groups[i] for i in ("a", "b", "c")}) == 1
 
 
-def test_la_clave_del_grupo_no_depende_del_orden(tmp_path):
-    """El manifiesto tiene que salir igual se pasen como se pasen."""
+def test_the_group_key_does_not_depend_on_order(tmp_path):
+    """The manifest has to come out the same however they are passed."""
     base = _noise(3)
     a = _sample(tmp_path, "aaa", base)
     b = _sample(tmp_path, "bbb", _jitter(base, 4, seed=9))
-    directo = find_duplicates([a, b]).groups
-    inverso = find_duplicates([b, a]).groups
-    assert directo == inverso
-    assert set(directo.values()) == {"aaa"}
+    forward = find_duplicates([a, b]).groups
+    reverse = find_duplicates([b, a]).groups
+    assert forward == reverse
+    assert set(forward.values()) == {"aaa"}
 
 
-def test_un_umbral_mas_alto_agrupa_menos(tmp_path):
+def test_a_higher_threshold_groups_less(tmp_path):
     base = _noise(5)
     a = _sample(tmp_path, "a", base)
     b = _sample(tmp_path, "b", _jitter(base, 90, seed=4))
@@ -111,10 +111,10 @@ def test_un_umbral_mas_alto_agrupa_menos(tmp_path):
     assert find_duplicates([a, b], threshold=0.999).n_groups == 2
 
 
-# --- el informe -----------------------------------------------------------
+# --- the report -----------------------------------------------------------
 
 
-def test_se_marcan_los_pares_que_cruzan_particiones(tmp_path):
+def test_pairs_crossing_splits_are_flagged(tmp_path):
     base = _noise(11)
     a = _sample(tmp_path, "a", base)
     b = _sample(tmp_path, "b", _jitter(base, 4, seed=1))
@@ -129,7 +129,7 @@ def test_se_marcan_los_pares_que_cruzan_particiones(tmp_path):
     assert "train <-> test" in report.crossing[0].describe()
 
 
-def test_un_par_dentro_de_la_misma_particion_no_cruza(tmp_path):
+def test_a_pair_within_the_same_split_does_not_cross(tmp_path):
     base = _noise(13)
     a = _sample(tmp_path, "a", base)
     b = _sample(tmp_path, "b", _jitter(base, 4, seed=1))
@@ -138,23 +138,23 @@ def test_un_par_dentro_de_la_misma_particion_no_cruza(tmp_path):
     assert report.crossing == []
 
 
-def test_sin_muestras_no_falla():
+def test_no_samples_does_not_fail():
     report = find_duplicates([])
     assert report.n_samples == 0 and report.pairs == []
 
 
-def test_el_informe_dice_que_no_reparticiona(tmp_path):
-    """Quien lea el JSON tiene que saber que esto NO ha tocado la particion."""
+def test_the_report_says_it_does_not_re_split(tmp_path):
+    """Whoever reads the JSON has to know this has NOT touched the split."""
     note = find_duplicates([_sample(tmp_path, "a", _noise(1))]).to_dict()["note"]
-    assert "No re-particiona" in note
-    assert "la decide el export" in note
-    assert "validacion cruzada" in note
+    assert "Does not re-split" in note
+    assert "the export decides" in note
+    assert "--repartition" in note
 
 
-# --- el manifiesto --------------------------------------------------------
+# --- the manifest ---------------------------------------------------------
 
 
-def test_el_manifiesto_tiene_el_formato_de_group_manifest(tmp_path):
+def test_the_manifest_has_the_group_manifest_format(tmp_path):
     base = _noise(21)
     a = _sample(tmp_path, "a", base)
     b = _sample(tmp_path, "b", _jitter(base, 4, seed=1))
@@ -167,27 +167,28 @@ def test_el_manifiesto_tiene_el_formato_de_group_manifest(tmp_path):
     assert all(isinstance(v, str) for v in data.values())
 
 
-def test_el_umbral_por_defecto_es_el_medido():
+def test_the_default_threshold_is_the_measured_one():
     assert DEFAULT_THRESHOLD == 0.90
 
 
-def test_mismo_encuadre_con_distinto_color_no_es_duplicado(tmp_path):
-    """REGRESION: en gris, dos fotos de stock con el mismo encuadre y billetes
-    de distinto valor (un 50 naranja, un 500 morado) salian como la misma toma.
-    18 de 93 pares reales eran eso. Aqui: mismo dibujo, distinto tinte."""
+def test_same_framing_with_different_color_is_not_a_duplicate(tmp_path):
+    """REGRESSION: in grayscale, two stock photos with the same framing and
+    banknotes of different value (an orange 50, a purple 500) came out as the
+    same shot. 18 of 93 real pairs were that. Here: same drawing, different tint."""
     base = _noise(51).astype(float)
-    naranja = np.clip(base * [1.0, 0.6, 0.2], 0, 255)
-    morado = np.clip(base * [0.6, 0.2, 1.0], 0, 255)
-    a = _sample(tmp_path, "a", naranja)
-    b = _sample(tmp_path, "b", morado)
+    orange = np.clip(base * [1.0, 0.6, 0.2], 0, 255)
+    purple = np.clip(base * [0.6, 0.2, 1.0], 0, 255)
+    a = _sample(tmp_path, "a", orange)
+    b = _sample(tmp_path, "b", purple)
     assert find_duplicates([a, b]).pairs == []
 
 
-def test_el_desglose_por_particion_destaca_test(tmp_path):
-    """El numero que mas importa es cuanto test esta contaminado.
+def test_the_per_split_breakdown_highlights_test(tmp_path):
+    """The number that matters most is how much test is contaminated.
 
-    Regresion: sin este desglose habia que contarlo a mano sobre la lista
-    truncada de pares, y asi se colo un 4 donde eran 21 en un informe.
+    Regression: without this breakdown it had to be counted by hand over the
+    truncated list of pairs, and that is how a 4 slipped in where there were
+    21 in a report.
     """
     base = _noise(31)
     a = _sample(tmp_path, "a", base)
@@ -202,12 +203,12 @@ def test_el_desglose_por_particion_destaca_test(tmp_path):
     assert report.affected_in("train") == {"a"}
     assert report.touching("valid") == []
 
-    lineas = "\n".join(report.summary_lines({"train": 2, "test": 1}))
-    assert "test" in lineas and "SELLADO" in lineas
-    assert lineas.index("test") < lineas.index("train"), "test va primero"
+    lines = "\n".join(report.summary_lines({"train": 2, "test": 1}))
+    assert "test" in lines and "SEALED" in lines
+    assert lines.index("test") < lines.index("train"), "test goes first"
 
 
-def test_el_desglose_va_tambien_al_json(tmp_path):
+def test_the_breakdown_also_goes_to_the_json(tmp_path):
     base = _noise(41)
     a = _sample(tmp_path, "a", base)
     b = _sample(tmp_path, "b", _jitter(base, 4, seed=1))

@@ -1,18 +1,18 @@
-"""Registro de candidatos.
+"""Candidate registry.
 
-Importar los adaptadores aqui es lo que los registra. Todos importan su libreria
-de forma PEREZOSA, dentro de sus metodos, asi que estos imports no exigen tener
-nada instalado: `import testbank` funciona con el conjunto base pelado.
+Importing the adapters here is what registers them. All of them import their
+library LAZILY, inside their methods, so these imports do not require anything
+installed: `import testbank` works with the bare base set.
 
-Es lo que permite que `list` y `compare` enseñen candidatos que este entorno no
-puede ejecutar -- RTMDet-R necesita torch 2.0 en un entorno aparte, y aun asi
-tiene que aparecer en la tabla.
+It is what lets `list` and `compare` show candidates this environment cannot
+run -- RTMDet-R needs torch 2.0 in a separate environment, and it still has
+to appear in the table.
 """
 
 from testbank.detectors import (
-    rtmdet_r,  # noqa: F401  (registra)
-    ultralytics_obb,  # noqa: F401  (registra)
-    yolox_obb,  # noqa: F401  (registra)
+    rtmdet_r,  # noqa: F401  (registers)
+    ultralytics_obb,  # noqa: F401  (registers)
+    yolox_obb,  # noqa: F401  (registers)
 )
 from testbank.detectors.base import (
     BaseDetector,

@@ -1,11 +1,12 @@
-"""El port de DDGRCF/YOLOX_OBB, el IoU de poligonos y los cargadores de pesos.
+"""The DDGRCF/YOLOX_OBB port, the polygon IoU and the weight loaders.
 
-La comparacion tensor a tensor contra SU modelo construido de verdad se hizo
-fuera de la suite (necesita su clon y un stub de sus operadores): 426 claves y
-formas identicas, `strict=True` carga, y con sus pesos la salida coincide con
-la suya a 3e-5 px. Aqui se ancla lo que se puede anclar sin el clon: el numero
-de parametros que salio de esa comparacion, los nombres que su checkpoint
-espera, y que los cargadores fallan ruidosamente cuando algo no encaja.
+The tensor-by-tensor comparison against THEIR actually built model was done
+outside the suite (it needs their clone and a stub of their operators): 426
+identical keys and shapes, `strict=True` loads, and with their weights the
+output matches theirs to 3e-5 px. Here what can be anchored without the clone
+is anchored: the parameter count that came out of that comparison, the names
+their checkpoint expects, and that the loaders fail loudly when something
+does not fit.
 """
 
 from __future__ import annotations
@@ -25,24 +26,24 @@ from testbank.models.yolox_obb import YoloxObb
 
 torch.manual_seed(0)
 
-# --- el port -----------------------------------------------------------------
+# --- the port ----------------------------------------------------------------
 
 
-def test_el_port_tiene_exactamente_los_parametros_de_su_modelo():
-    """8.051.797: el numero que dio SU `Model` construido con sus yamls."""
+def test_the_port_has_exactly_the_parameters_of_their_model():
+    """8,051,797: the number THEIR `Model` built with their yamls gave."""
     assert DdgrcfYoloxObb(num_classes=1).parameter_count() == 8_051_797
 
 
-def test_las_claves_siguen_su_esquema_de_nombres():
+def test_the_keys_follow_their_naming_scheme():
     keys = set(DdgrcfYoloxObb(num_classes=1).state_dict())
     assert "model.0.conv.weight" in keys
     assert "model.2.m.0.cv1.conv.weight" in keys
-    # Los tallos de las cabezas van SIN Sequential: `round(2 * 0.33) = 1`.
+    # The head stems go WITHOUT Sequential: `round(2 * 0.33) = 1`.
     assert "model.27.conv.weight" in keys and "model.27.0.conv.weight" not in keys
     assert "model.33.cls_preds.0.bias" in keys and "model.33.reg_preds.2.weight" in keys
 
 
-def test_el_port_saca_tres_niveles_con_su_regresion_y_angulo():
+def test_the_port_outputs_three_levels_with_their_regression_and_angle():
     outputs = DdgrcfYoloxObb(num_classes=1)(torch.zeros(1, 3, 128, 128))
     assert [o.stride for o in outputs] == [8, 16, 32]
     for o in outputs:
@@ -51,8 +52,8 @@ def test_el_port_saca_tres_niveles_con_su_regresion_y_angulo():
         assert o.objectness is not None and o.classes.shape[1] == 1
 
 
-def test_cargar_sus_pesos_de_dota_salta_solo_la_capa_de_clase():
-    """Sus pesos tienen 15 clases; el port, una. Todo lo demas, estricto."""
+def test_loading_their_dota_weights_skips_only_the_class_layer():
+    """Their weights have 15 classes; the port, one. Everything else, strict."""
     fifteen = DdgrcfYoloxObb(num_classes=15).state_dict()
     model = DdgrcfYoloxObb(num_classes=1)
     skipped = load_ddgrcf(model, _saved(fifteen))
@@ -60,13 +61,13 @@ def test_cargar_sus_pesos_de_dota_salta_solo_la_capa_de_clase():
     assert torch.equal(model.state_dict()["model.0.conv.weight"], fifteen["model.0.conv.weight"])
 
 
-def test_un_checkpoint_que_no_cubre_el_port_es_error():
+def test_a_checkpoint_that_does_not_cover_the_port_is_an_error():
     partial = {k: v for k, v in DdgrcfYoloxObb(num_classes=1).state_dict().items() if "model.1" not in k}
-    with pytest.raises(RuntimeError, match="no cubre el port"):
+    with pytest.raises(RuntimeError, match="does not cover the port"):
         load_ddgrcf(DdgrcfYoloxObb(num_classes=1), _saved(partial))
 
 
-def _saved(state, tmp=[]):  # noqa: B006
+def _saved(state):
     import tempfile
     from pathlib import Path
 
@@ -75,7 +76,7 @@ def _saved(state, tmp=[]):  # noqa: B006
     return path
 
 
-# --- el IoU exacto en torch ----------------------------------------------------
+# --- the exact IoU in torch ----------------------------------------------------
 
 
 def _random_boxes(n, seed):
@@ -102,30 +103,30 @@ def _shapely(a, b):
     return torch.tensor(out)
 
 
-def test_el_iou_de_poligonos_coincide_con_shapely():
+def test_the_polygon_iou_matches_shapely():
     a, b = _random_boxes(500, 1), _random_boxes(500, 2)
-    b[:, :2] = a[:, :2] + (torch.rand(500, 2) - 0.5) * 80  # que se solapen
+    b[:, :2] = a[:, :2] + (torch.rand(500, 2) - 0.5) * 80  # so they overlap
     assert torch.allclose(rotated_iou(a, b), _shapely(a, b), atol=1e-5)
 
 
-def test_casos_limite_del_iou():
+def test_iou_edge_cases():
     b = _random_boxes(20, 3)
     assert torch.allclose(rotated_iou(b, b), torch.ones(20), atol=1e-5)
-    lejos = b.clone()
-    lejos[:, 0] += 1000
-    assert rotated_iou(b, lejos).max().item() == 0.0
-    dentro = b.clone()
-    dentro[:, 2:4] *= 0.5
-    assert torch.allclose(rotated_iou(b, dentro), torch.full((20,), 0.25), atol=1e-5)
+    far = b.clone()
+    far[:, 0] += 1000
+    assert rotated_iou(b, far).max().item() == 0.0
+    inside = b.clone()
+    inside[:, 2:4] *= 0.5
+    assert torch.allclose(rotated_iou(b, inside), torch.full((20,), 0.25), atol=1e-5)
 
 
-def test_el_iou_es_diferenciable_con_gradiente_finito():
+def test_the_iou_is_differentiable_with_finite_gradient():
     p = _random_boxes(50, 4).requires_grad_(True)
     (1 - rotated_iou(p, _random_boxes(50, 5))).sum().backward()
     assert torch.isfinite(p.grad).all() and p.grad.abs().sum() > 0
 
 
-def test_la_version_por_pares_coincide_con_la_directa():
+def test_the_pairwise_version_matches_the_direct_one():
     a, b = _random_boxes(6, 6), _random_boxes(3, 7)
     pw = pairwise_rotated_iou(a, b)
     for i in range(6):
@@ -133,22 +134,22 @@ def test_la_version_por_pares_coincide_con_la_directa():
             assert pw[i, j].item() == pytest.approx(rotated_iou(a[i : i + 1], b[j : j + 1]).item(), abs=1e-6)
 
 
-# --- su convencion de angulo ---------------------------------------------------
+# --- their angle convention ----------------------------------------------------
 
 
-def test_regularizar_el_angulo_deja_el_mismo_rectangulo_en_su_rango():
+def test_regularizing_the_angle_leaves_the_same_rectangle_in_their_range():
     boxes = _random_boxes(200, 8)
     reg = regularize_angle_ddgrcf(boxes)
     assert (reg[:, 4] > -math.pi / 4 - 1e-6).all() and (reg[:, 4] <= math.pi / 4 + 1e-6).all()
-    assert torch.allclose(rotated_iou(boxes, reg), torch.ones(200), atol=1e-4), "es el mismo rectangulo"
+    assert torch.allclose(rotated_iou(boxes, reg), torch.ones(200), atol=1e-4), "it is the same rectangle"
 
 
-# --- COCO de Megvii en la cabeza propia ----------------------------------------
+# --- Megvii's COCO into the own head -------------------------------------------
 
 
-def test_el_mapeo_de_megvii_cubre_backbone_y_cuello_y_descarta_su_cabeza():
-    """Se simula su checkpoint renombrando el nuestro al reves: la ida y vuelta
-    tiene que cubrir los 354 tensores de backbone+cuello y ninguno de la cabeza."""
+def test_the_megvii_mapping_covers_backbone_and_neck_and_discards_their_head():
+    """Their checkpoint is simulated by renaming ours the other way round: the
+    round trip has to cover the 354 backbone+neck tensors and none of the head."""
     model = YoloxObb("small")
     from testbank.models.pretrained import _MEGVII_NECK
 
@@ -160,20 +161,20 @@ def test_el_mapeo_de_megvii_cubre_backbone_y_cuello_y_descarta_su_cabeza():
         elif key.startswith("neck."):
             module, _, tail = key[len("neck.") :].partition(".")
             fake[f"backbone.{inverse[module]}.{tail}"] = value * 0 + 7.0
-    fake["head.cls_preds.0.weight"] = torch.zeros(80, 128, 1, 1)  # su cabeza COCO
+    fake["head.cls_preds.0.weight"] = torch.zeros(80, 128, 1, 1)  # their COCO head
     report = load_megvii_yolox(model, _saved(fake))
     assert report["loaded"] == 354 and report["skipped_head"] == 1
     assert (model.state_dict()["neck.p4.conv1.conv.weight"] == 7.0).all()
 
 
-def test_cargar_la_variante_equivocada_es_error_y_no_medias_tintas():
+def test_loading_the_wrong_variant_is_an_error_and_not_half_measures():
     small = YoloxObb("small").state_dict()
     fake = {"backbone.backbone." + k[len("backbone.") :]: v for k, v in small.items() if k.startswith("backbone.")}
-    with pytest.raises(RuntimeError, match="no encaja"):
+    with pytest.raises(RuntimeError, match="does not fit"):
         load_megvii_yolox(YoloxObb("nano"), _saved(fake))
 
 
-def test_una_clave_de_cuello_desconocida_no_se_traga():
-    with pytest.raises(KeyError, match="cuello desconocido"):
-        remap_megvii_key("backbone.modulo_inventado.conv.weight")
+def test_an_unknown_neck_key_is_not_swallowed():
+    with pytest.raises(KeyError, match="unknown neck module"):
+        remap_megvii_key("backbone.made_up_module.conv.weight")
     assert remap_megvii_key("head.obj_preds.0.bias") is None

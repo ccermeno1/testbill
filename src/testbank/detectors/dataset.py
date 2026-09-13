@@ -1,24 +1,24 @@
-"""Vista del dataset en el formato que lee Ultralytics.
+"""View of the dataset in the format Ultralytics reads.
 
-Ultralytics, MMDetection y los forks de YOLOX no saben nada de `SplitLoader` ni
-del filtro de area: leen ficheros de un arbol de directorios. Si les dejaramos el
-directorio de datos tal cual, entrenarian con DOS incoherencias:
+Ultralytics, MMDetection and the YOLOX forks know nothing about `SplitLoader`
+or the area filter: they read files from a directory tree. If we handed them
+the data directory as is, they would train with TWO inconsistencies:
 
-1. **La particion equivocada.** La nuestra esta congelada en `splits/*.txt`, y el
-   arbol de Roboflow puede cambiar. Todo lee de los txt, nunca del arbol.
+1. **The wrong split.** Ours is frozen in `splits/*.txt`, and the Roboflow
+   tree can change. Everything reads from the txt files, never from the tree.
 
-2. **Anotaciones que ya no estan vigentes.** El filtro de area relativa se aplica
-   en carga, asi que las metricas evaluan contra la verdad filtrada, pero el
-   entrenador leeria los ficheros de origen sin filtrar. Entrenar con una verdad
-   y medir contra otra hace que las cifras no signifiquen nada.
+2. **Annotations that are no longer in force.** The relative area filter is
+   applied on load, so the metrics evaluate against the filtered truth, but the
+   trainer would read the unfiltered source files. Training with one truth and
+   measuring against another makes the figures mean nothing.
 
-Asi que se escribe una vista derivada bajo `data/derived/`. **Los ficheros de
-origen no se tocan**: esto es una copia de trabajo, regenerable y desechable.
+So a derived view is written under `data/derived/`. **The source files are not
+touched**: this is a working copy, regenerable and disposable.
 
-El filtro y la politica de borde viven en `dataio/prepare.py`, compartidos con los
-exportadores de DOTA, VOC y COCO. Repetirlos aqui habria dejado que derivaran, y
-entonces dos candidatos entrenarian con verdades distintas mientras la tabla los
-compara como si fueran lo mismo.
+The filter and the border policy live in `dataio/prepare.py`, shared with the
+DOTA and COCO exporters. Repeating them here would have let them drift, and
+then two candidates would train on different truths while the table compares
+them as if they were the same.
 """
 
 from __future__ import annotations
@@ -59,15 +59,15 @@ class MaterializedDataset:
     root: Path
     data_yaml: Path
     counts: dict[str, int]
-    #: Anotaciones que el filtro dejo fuera y que por tanto NO se escribieron.
+    #: Annotations the filter left out and that therefore were NOT written.
     dropped: int
-    #: Politica aplicada a los billetes que cruzan el borde, y cuantos la
-    #: necesitaron. Con `keep` este numero es el de imagenes que Ultralytics
-    #: descartara, asi que la perdida queda registrada en vez de ser invisible.
+    #: Policy applied to banknotes crossing the border, and how many needed
+    #: it. With `keep` this number is the number of images Ultralytics will
+    #: discard, so the loss is recorded instead of being invisible.
     out_of_bounds: str = OutOfBoundsPolicy.CLIP.value
     adjusted: int = 0
-    #: Solo con `pad`: quads que seguian fuera DESPUES de padear y hubo que
-    #: recortar. Un numero alto dice que `pad_fraction` se queda corto.
+    #: Only with `pad`: quads that were still outside AFTER padding and had
+    #: to be clipped. A high number says `pad_fraction` falls short.
     clipped_after_pad: int = 0
     pad_fraction: float = 0.0
 
@@ -92,12 +92,12 @@ class MaterializedDataset:
         if self.out_of_bounds == OutOfBoundsPolicy.PAD.value:
             extra = (
                 f", pad={self.pad_fraction:.0%}, "
-                f"{self.clipped_after_pad} recortadas aun asi"
+                f"{self.clipped_after_pad} clipped anyway"
             )
         return (
-            f"{self.root} ({counts}; {self.dropped} anotaciones filtradas; "
-            f"borde={self.out_of_bounds}, {self.adjusted} anotaciones fuera "
-            f"del marco{extra})"
+            f"{self.root} ({counts}; {self.dropped} annotations filtered; "
+            f"border={self.out_of_bounds}, {self.adjusted} annotations outside "
+            f"the frame{extra})"
         )
 
 
@@ -109,7 +109,7 @@ def materialize(
     class_names: tuple[str, ...] = DEFAULT_CLASS_NAMES,
     overwrite: bool = True,
 ) -> MaterializedDataset:
-    """Escribe `images/` y `labels/` por particion, con la verdad ya filtrada."""
+    """Writes `images/` and `labels/` per split, with the truth already filtered."""
     import shutil
 
     config = config or Config()
@@ -141,8 +141,9 @@ def materialize(
             {
                 "path": str(root.resolve()),
                 "train": "train/images",
-                # Ultralytics usa la clave `val`; el directorio se llama `valid`
-                # porque es el nombre que exporta Roboflow. Son cosas distintas.
+                # Ultralytics uses the `val` key; the directory is called
+                # `valid` because that is the name Roboflow exports. They are
+                # different things.
                 "val": "valid/images",
                 "names": dict(enumerate(class_names)),
             },

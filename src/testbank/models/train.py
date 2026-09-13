@@ -1,19 +1,20 @@
-"""Bucle de entrenamiento del candidato propio.
+"""Training loop of the own candidate.
 
-Deliberadamente sobrio. Sin mosaico, sin mixup, sin EMA, sin escalado
-multiescala. Todo eso ayuda en COCO con 118.000 imagenes; aqui hay 351, y cada
-truco anadido es un hiperparametro mas que ajustar a ciegas sobre un conjunto de
-validacion de 101 imagenes donde las diferencias caen dentro del ruido.
+Deliberately plain. No mosaic, no mixup, no EMA, no multi-scale. All of that
+helps on COCO with 118,000 images; here there are 351, and every added trick
+is one more hyperparameter to tune blindly on a validation set of 101 images
+where the differences fall within the noise.
 
-La linea base tiene que ser interpretable antes que buena. Si hace falta subir,
-se anade UNA cosa y se mide -- que es para lo que existe la tabla comparativa.
+The baseline has to be interpretable before it is good. If it needs to go up,
+ONE thing is added and measured -- which is what the comparison table exists
+for.
 
-Determinismo
-------------
-Semilla fijada y registrada, `DataLoader` sin workers y con generador propio.
-Con `num_workers > 0` el orden de los lotes depende de la planificacion del
-sistema operativo y dos ejecuciones con la misma semilla dejan de coincidir.
-Con 351 imagenes de 416x416 la carga no es el cuello de botella.
+Determinism
+-----------
+Seed fixed and logged, `DataLoader` without workers and with its own
+generator. With `num_workers > 0` the batch order depends on the operating
+system's scheduling and two runs with the same seed stop matching. With 351
+images of 416x416 loading is not the bottleneck.
 """
 
 from __future__ import annotations
@@ -31,19 +32,19 @@ from testbank.models.data import BanknoteDataset, Batch, collate
 from testbank.models.losses import architecture_of, build_model, losses_for_image
 from testbank.models.yolox_obb import HeadSpec, YoloxObb
 
-#: Fraccion del entrenamiento dedicada a subir el learning rate desde casi cero.
-#: Sin calentamiento, las primeras iteraciones con la cabeza recien inicializada
-#: dan gradientes enormes que desestabilizan la BatchNorm.
+#: Fraction of training spent raising the learning rate from almost zero.
+#: Without warmup, the first iterations with the freshly initialized head give
+#: huge gradients that destabilize the BatchNorm.
 WARMUP_FRACTION = 0.05
 
 
 @dataclass
 class TrainingHistory:
-    """Lo que paso en cada epoca. Va al `run.json` para poder mirarlo despues."""
+    """What happened in each epoch. Goes to `run.json` to be looked at later."""
 
     epochs: list[dict] = field(default_factory=list)
-    #: Cosas que pasaron una vez y conviene dejar escritas: p. ej. que
-    #: preentreno se cargo y que tensores se saltaron.
+    #: Things that happened once and are worth leaving written: e.g. which
+    #: pretraining was loaded and which tensors were skipped.
     notes: list[str] = field(default_factory=list)
 
     def record(self, epoch: int, terms: dict, learning_rate: float) -> None:
@@ -54,7 +55,7 @@ class TrainingHistory:
 
 
 def learning_rate_at(step: int, total: int, base: float) -> float:
-    """Calentamiento lineal y despues coseno hasta casi cero."""
+    """Linear warmup and then cosine down to almost zero."""
     warmup = max(1, int(total * WARMUP_FRACTION))
     if step < warmup:
         return base * (step + 1) / warmup
@@ -81,10 +82,10 @@ def train_one_epoch(
     base_lr: float,
     epoch: int = 0,
 ) -> tuple[dict, int]:
-    """Una epoca. Devuelve las perdidas promediadas y el paso alcanzado.
+    """One epoch. Returns the averaged losses and the step reached.
 
-    `epoch` se pasa porque una receta (la del fork) cambia de forma en las
-    ultimas epocas: enciende una L1. La perdida tiene que saber en cual va.
+    `epoch` is passed because one recipe (the fork's) changes shape in the
+    last epochs: it switches on an L1. The loss has to know which one it is in.
     """
     model.train()
     totals: dict[str, float] = {}
@@ -98,8 +99,8 @@ def train_one_epoch(
         images = batch.images.to(device)
         outputs = model(images)
 
-        # La asignacion es POR IMAGEN: mezclar las cajas de todo el lote haria
-        # que una celda de la imagen 3 pudiera asignarse a un billete de la 1.
+        # Assignment is PER IMAGE: mixing the boxes of the whole batch would let
+        # a cell of image 3 be assigned to a banknote of image 1.
         loss = torch.zeros((), device=device)
         accumulated: dict[str, float] = {}
         for index in range(len(batch)):
@@ -141,8 +142,9 @@ def train_one_epoch(
         loss = loss / max(1, len(batch))
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
-        # Recorte de gradiente: con lotes de 8 y una imagen dificil dentro, un
-        # gradiente suelto puede tirar los pesos a una zona de la que no vuelven.
+        # Gradient clipping: with batches of 8 and one hard image inside, a
+        # stray gradient can throw the weights into a region they do not
+        # come back from.
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
         optimizer.step()
 
@@ -156,12 +158,13 @@ def train_one_epoch(
 
 
 def pick_device() -> torch.device:
-    """`cuda` si hay, si no `mps` (la GPU de Apple), si no `cpu`.
+    """`cuda` if available, else `mps` (Apple's GPU), else `cpu`.
 
-    Todo lo que entrena con este bucle es torch puro, asi que corre en las tres.
-    Antes estaba clavado a `cpu` y en un Mac con GPU no se enteraba nadie. Se
-    puede forzar con `TESTBANK_DEVICE=cpu`, que es util para reproducir un
-    numero exacto: MPS y CUDA no garantizan la misma aritmetica que la CPU.
+    Everything that trains with this loop is pure torch, so it runs on all
+    three. Before it was pinned to `cpu` and on a Mac with a GPU nobody
+    noticed. It can be forced with `TESTBANK_DEVICE=cpu`, which is useful to
+    reproduce an exact number: MPS and CUDA do not guarantee the same
+    arithmetic as the CPU.
     """
     import os
 
@@ -185,18 +188,19 @@ def fit(
     base_lr: float = 1e-3,
     pretrained: Path | None = None,
 ) -> tuple[Path, TrainingHistory]:
-    """Entrena y deja los pesos. Devuelve `(ruta, historial)`.
+    """Train and leave the weights. Returns `(path, history)`.
 
-    `pretrained`: un checkpoint ajeno con el que arrancar (hoy solo el de DOTA
-    de DDGRCF sobre su port). Lo que no encaje se salta y queda anotado.
+    `pretrained`: a foreign checkpoint to start from (today only DDGRCF's DOTA
+    on its port, or Megvii's COCO on the own head). What does not fit is
+    skipped and noted.
     """
     device = device or pick_device()
     history = TrainingHistory()
-    history.notes.append(f"dispositivo: {device}")
-    # Se siembra TODO antes de construir el modelo, no solo el DataLoader. Los
-    # pesos se inicializan al azar desde el generador global de torch: sembrar
-    # solo el cargador dejaba dos ejecuciones con la misma semilla partiendo de
-    # redes distintas. Medido: 8.518 frente a 8.292 en la misma configuracion.
+    history.notes.append(f"device: {device}")
+    # EVERYTHING is seeded before building the model, not only the DataLoader.
+    # Weights are initialized at random from torch's global generator: seeding
+    # only the loader left two runs with the same seed starting from different
+    # networks. Measured: 8.518 versus 8.292 in the same configuration.
     seed_everything(config.metrics.seed)
     generator = torch.Generator().manual_seed(config.metrics.seed)
     loader = DataLoader(
@@ -216,7 +220,7 @@ def fit(
 
         history.notes.append(load_pretrained(model, pretrained))
     else:
-        history.notes.append("sin preentreno: pesos iniciales aleatorios")
+        history.notes.append("no pretraining: random initial weights")
     optimizer = torch.optim.AdamW(model.parameters(), lr=base_lr, weight_decay=5e-4)
 
     total_steps = max(1, len(loader) * config.detector.epochs)
@@ -246,11 +250,11 @@ def fit(
 
 
 def load_model(weights: Path, device: torch.device | None = None) -> YoloxObb:
-    """Reconstruye el modelo desde el fichero de pesos.
+    """Rebuild the model from the weights file.
 
-    La variante se guarda CON los pesos: cargar unos pesos de nano en un tiny
-    fallaria con un error de formas incomprensible, y el fichero es el unico
-    sitio donde esa informacion no se puede desincronizar.
+    The variant is stored WITH the weights: loading nano weights into a tiny
+    would fail with an incomprehensible shape error, and the file is the only
+    place where that information cannot drift out of sync.
     """
     device = device or pick_device()
     payload = torch.load(weights, map_location="cpu", weights_only=False)

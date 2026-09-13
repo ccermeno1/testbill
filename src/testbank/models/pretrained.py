@@ -1,20 +1,21 @@
-"""Carga de pesos ajenos en los modelos propios. Con mapeo explicito, sin magia.
+"""Loading foreign weights into the own models. With explicit mapping, no magic.
 
-Dos casos, y en los dos lo que no encaja se dice, no se tapa:
+Two cases, and in both what does not fit is said, not hidden:
 
-- **YOLOX de Megvii (COCO) en la cabeza propia.** `yolox_s.pth.tar`, Apache-2.0.
-  Nuestro `CSPDarknet` + `PAFPN` es la misma red que su `YOLOPAFPN`: medido,
-  354 tensores y 7.066.683 parametros en los dos, formas identicas. Solo cambian
-  los nombres: ellos envuelven el backbone como `backbone.backbone.*` y llaman a
-  los modulos del cuello `lateral_conv0`, `C3_p4`, `reduce_conv1`...; aqui son
-  `backbone.*`, `neck.lateral_c5`, `neck.p4`, `neck.lateral_c4`... La tabla de
-  abajo es ese mapeo, y se comprueba forma a forma al cargar.
+- **Megvii's YOLOX (COCO) into the own head.** `yolox_s.pth.tar`, Apache-2.0.
+  Our `CSPDarknet` + `PAFPN` is the same network as their `YOLOPAFPN`:
+  measured, 354 tensors and 7,066,683 parameters in both, identical shapes.
+  Only the names change: they wrap the backbone as `backbone.backbone.*` and
+  call the neck modules `lateral_conv0`, `C3_p4`, `reduce_conv1`...; here they
+  are `backbone.*`, `neck.lateral_c5`, `neck.p4`, `neck.lateral_c4`... The
+  table below is that mapping, and it is checked shape by shape on load.
 
-  Su cabeza (`head.*`) NO se carga: es la de COCO, 80 clases y sin angulo. Lo
-  que se hereda es "saber ver", no "saber donde esta el billete".
+  Their head (`head.*`) is NOT loaded: it is the COCO one, 80 classes and no
+  angle. What is inherited is "knowing how to see", not "knowing where the
+  banknote is".
 
-- **DDGRCF (DOTA) en el port.** Mismos nombres por construccion; ver
-  `ddgrcf.load_pretrained`. Aqui solo se despacha.
+- **DDGRCF (DOTA) into the port.** Same names by construction; see
+  `ddgrcf.load_pretrained`. Here it is only dispatched.
 """
 
 from __future__ import annotations
@@ -23,9 +24,9 @@ from pathlib import Path
 
 import torch
 
-#: Modulo del cuello de Megvii -> modulo del nuestro. Emparejados por funcion:
-#: el 1x1 que reduce C5, el C3 tras concatenar con C4, etc. Verificado con las
-#: formas: las ocho parejas tienen tensores identicos.
+#: Megvii neck module -> ours. Paired by function: the 1x1 that reduces C5,
+#: the C3 after concatenating with C4, etc. Verified with the shapes: the
+#: eight pairs have identical tensors.
 _MEGVII_NECK = {
     "lateral_conv0": "lateral_c5",
     "C3_p4": "p4",
@@ -39,28 +40,28 @@ _MEGVII_NECK = {
 
 
 def remap_megvii_key(key: str) -> str | None:
-    """Clave del checkpoint de Megvii -> clave nuestra, o None si es su cabeza."""
+    """Megvii checkpoint key -> our key, or None if it is their head."""
     if key.startswith("backbone.backbone."):
         return "backbone." + key[len("backbone.backbone.") :]
     if key.startswith("backbone."):
         module, _, tail = key[len("backbone.") :].partition(".")
         if module not in _MEGVII_NECK:
             raise KeyError(
-                f"modulo del cuello desconocido en el checkpoint: {module!r}. "
-                "O no es un YOLOX de Megvii o su PAFPN ha cambiado"
+                f"unknown neck module in the checkpoint: {module!r}. "
+                "Either it is not a Megvii YOLOX or its PAFPN has changed"
             )
         return f"neck.{_MEGVII_NECK[module]}.{tail}"
-    return None  # head.*: la cabeza de COCO, que no se quiere
+    return None  # head.*: the COCO head, which is not wanted
 
 
 def load_megvii_yolox(model, path: str | Path) -> dict:
-    """Carga backbone y cuello desde un `yolox_*.pth.tar` de Megvii.
+    """Load backbone and neck from a Megvii `yolox_*.pth.tar`.
 
-    Devuelve `{"loaded": n, "skipped_head": n, "mismatched": [...]}`. Es un
-    error, no un aviso, que un tensor del backbone o del cuello quede sin
-    cubrir: significaria que la variante no coincide (cargar `yolox_s` en
-    `nano`, por ejemplo), y entrenar "preentrenado a medias" sin saberlo es
-    peor que entrenar de cero.
+    Returns `{"loaded": n, "skipped_head": n, "mismatched": [...]}`. It is an
+    error, not a warning, for a backbone or neck tensor to remain uncovered:
+    it would mean the variant does not match (loading `yolox_s` into `nano`,
+    for example), and training "half pretrained" without knowing is worse
+    than training from scratch.
     """
     payload = torch.load(str(path), map_location="cpu", weights_only=False)
     state = payload.get("model", payload) if isinstance(payload, dict) else payload
@@ -73,10 +74,10 @@ def load_megvii_yolox(model, path: str | Path) -> dict:
             skipped_head += 1
             continue
         if target not in own:
-            mismatched.append(f"{key} -> {target}: no existe")
+            mismatched.append(f"{key} -> {target}: does not exist")
         elif own[target].shape != value.shape:
             mismatched.append(
-                f"{key} -> {target}: forma {tuple(value.shape)} != {tuple(own[target].shape)}"
+                f"{key} -> {target}: shape {tuple(value.shape)} != {tuple(own[target].shape)}"
             )
         else:
             mapped[target] = value
@@ -85,31 +86,31 @@ def load_megvii_yolox(model, path: str | Path) -> dict:
     uncovered = [k for k in expected if k not in mapped]
     if mismatched or uncovered:
         raise RuntimeError(
-            f"{Path(path).name} no encaja con {model.variant!r}: "
-            f"{len(mismatched)} tensores con conflicto y {len(uncovered)} sin cubrir. "
-            f"Primeros: {(mismatched + uncovered)[:3]}. Comprueba que la variante "
-            "del checkpoint (nano/tiny/s) es la del modelo"
+            f"{Path(path).name} does not fit {model.variant!r}: "
+            f"{len(mismatched)} conflicting tensors and {len(uncovered)} uncovered. "
+            f"First ones: {(mismatched + uncovered)[:3]}. Check that the checkpoint "
+            "variant (nano/tiny/s) is the model's"
         )
     model.load_state_dict(mapped, strict=False)
     return {"loaded": len(mapped), "skipped_head": skipped_head, "mismatched": mismatched}
 
 
 def load_pretrained(model, path: str | Path) -> str:
-    """Despacha por arquitectura y devuelve una nota para el registro."""
+    """Dispatch by architecture and return a note for the log."""
     from testbank.models.ddgrcf import DdgrcfYoloxObb
     from testbank.models.ddgrcf import load_pretrained as load_ddgrcf
 
     if isinstance(model, DdgrcfYoloxObb):
         skipped = load_ddgrcf(model, path)
         return (
-            f"preentreno DOTA cargado desde {Path(path).name}; "
-            f"{len(skipped)} tensores saltados (capa de clase): {sorted(skipped)[:2]}"
+            f"DOTA pretraining loaded from {Path(path).name}; "
+            f"{len(skipped)} tensors skipped (class layer): {sorted(skipped)[:2]}"
         )
     report = load_megvii_yolox(model, path)
     return (
-        f"preentreno COCO (Megvii) cargado desde {Path(path).name}: "
-        f"{report['loaded']} tensores de backbone+cuello; su cabeza "
-        f"({report['skipped_head']} tensores) descartada"
+        f"COCO pretraining (Megvii) loaded from {Path(path).name}: "
+        f"{report['loaded']} backbone+neck tensors; their head "
+        f"({report['skipped_head']} tensors) discarded"
     )
 
 

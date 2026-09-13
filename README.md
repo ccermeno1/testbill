@@ -1,55 +1,59 @@
-# testbank — localización de billetes
+# testbank — banknote localization
 
-Etapa de localización de un pipeline de inspección. Recorta cada billete de una
-foto y se lo pasa al clasificador de manchas, que ya existe y queda fuera de este
-alcance.
+Localization stage of an inspection pipeline. It crops each banknote out of a
+photo and hands it to the stain classifier, which already exists and is out of
+this scope.
 
-Arquitectura: **detector OBB de una etapa**. Entrada imagen, salida rectángulos
-orientados, uno por billete. El recorte se hace con margen configurable sobre
-cada caja y se rectifica por homografía.
+Architecture: **single-stage OBB detector**. Image in, oriented rectangles out,
+one per banknote. The crop is taken with a configurable margin over each box
+and rectified by homography.
 
-Las alternativas de dos etapas están descartadas y no deben implementarse. La
-segmentación clásica no separa billetes que se solapan o se tocan —son del mismo
-color y textura, no hay borde entre ellos—, y el cuadrilátero libre no aporta
-nada porque el ground truth son rectángulos girados.
+Two-stage alternatives are discarded and must not be implemented. Classical
+segmentation does not separate banknotes that overlap or touch — they share
+color and texture, there is no edge between them — and a free quadrilateral
+adds nothing because the ground truth is rotated rectangles.
 
-Caja orientada y no alineada al eje porque los billetes aparecen en abanico o
-adyacentes en ángulos distintos: las cajas alineadas de objetos alargados en
-ángulos distintos se solapan casi por completo y el NMS estándar suprime
-detecciones verdaderas. El NMS rotado lo resuelve.
+Oriented box and not axis-aligned because banknotes appear fanned or adjacent
+at different angles: the aligned boxes of elongated objects at different
+angles overlap almost entirely and standard NMS suppresses true detections.
+Rotated NMS solves it.
 
-## Salvedades
+## Caveats
 
-Todo lo que hay que saber antes de creerse un número de este proyecto. Cada
-entrada dice dónde está tratada; ninguna es un descuido pendiente de descubrir.
+Everything one has to know before believing a number from this project. Each
+entry says where it is handled; none is an oversight waiting to be discovered.
 
-### Sobre los datos
+### About the data
 
-**El aspecto de los billetes está deformado y no se recupera.** 489 de 502
-imágenes llegan ya a 416×416 desde el export, aplastadas al cuadrado. Un billete
-real es ~1.95:1 y la mediana medida es 1.45. De ahí sale el 19% de cajas casi
-cuadradas que motiva el atenuador de ángulo. → *[SOSPECHA] Ese 19%…*
+**The aspect of the banknotes is deformed and is not recovered.** 489 of 502
+images already arrive at 416×416 from the export, squashed to a square. A real
+banknote is ~1.95:1 and the measured median is 1.45. That is where the 19% of
+nearly square boxes that motivates the angle attenuator comes from. →
+*[SUSPICION] That 19%…*
 
-**Hay fuga entre particiones en el export de Roboflow, y ahora sí se puede
-arreglar.** Imágenes casi idénticas —la misma toma, dos disparos seguidos— caen
-en particiones distintas. Medido en color:
+**There is leakage between splits in the Roboflow export, and now it can be
+fixed.** Nearly identical images — the same shot, two consecutive exposures —
+fall in different splits. Measured in color:
 
 | | |
 |---|---|
-| Pares que cruzan | 27 |
-| De ellos, con `test` a un lado | **12** |
-| Imágenes de `test` implicadas | **10 de 50 (20%)** |
+| Pairs crossing | 27 |
+| Of those, with `test` on one side | **12** |
+| `test` images involved | **10 of 50 (20%)** |
 
-**Corrección: este README dijo 36% durante un tiempo, y era falso.** La primera
-medida se hizo con miniaturas en gris, y en gris 18 de los 93 pares «idénticos»
-eran billetes de *distinto valor* con el mismo encuadre de foto de stock: un 50
-naranja y un 500 morado son la misma silueta en gris. El color los separa (el
-duplicado real se queda en 0.98; los falsos caen a 0.45–0.52). Salió a la luz al
-estratificar la partición por tipo de billete, que se negó a repartir un grupo
-que cruzaba tipos. → *Por qué en color* en `data/duplicates.py`
+**Correction: this README said 36% for a while, and it was false.** The first
+measurement was done with grayscale thumbnails, and in grayscale 18 of the 93
+"identical" pairs were banknotes of *different value* with the same stock-photo
+framing: an orange 50 and a purple 500 are the same silhouette in gray. Color
+separates them (the real duplicate stays at 0.98; the false ones drop to
+0.45–0.52). It came to light when stratifying the split by banknote type, which
+refused to split a group crossing types. → *Why in color* in
+`data/duplicates.py`
 
-Un quinto del test sigue contaminado, y `evaluate-test` sobre la partición del
-export **saldrá inflado**. Pero la partición ya no es intocable:
+A fifth of the test is still contaminated, and `evaluate-test` on the export's
+split (`splits/v1`) **will come out inflated**. But the split is no longer
+untouchable, and redoing it does not destroy it: each `make-splits` writes a
+**new version** (`splits/v2`, `v3`, ...) and every run records which one it used.
 
 ```bash
 testbank find-duplicates --manifest-out runs/_inspection/dups.json
@@ -58,313 +62,347 @@ testbank make-splits --repartition \
     --stratify-regex '^(\d+|Multiple)_'
 ```
 
-Los ratios y la semilla se eligen (`--ratios 0.8,0.1,0.1 --seed 1`) y quedan en
-el manifiesto junto a un digest de la partición: misma semilla, mismos datos,
-mismos ficheros byte a byte — comprobado sobre el export real, y con test.
+Ratios and seed are chosen (`--ratios 0.8,0.1,0.1 --seed 1`) and stay in the
+manifest next to a digest of the split: same seed, same data, same files byte
+for byte — checked on the real export, and with a test.
 
-`--repartition` es la excepción explícita a «en modo adoptar manda el export»:
-junta todas las muestras y reparte **por grupos** (las dos tomas de la misma foto
-van juntas) y **por estratos** (cada partición recibe su parte de cada tipo de
-billete). Medido sobre el export real: 355 / 76 / 71, los ocho tipos en cada
-lado, y **cero pares cruzando**. El manifiesto lo deja escrito como
-`mode: repartition` para que nadie lo confunda con la partición original.
+`--repartition` is the explicit exception to "in adopt mode the export rules":
+it pools all samples and splits **by groups** (the two shots of the same photo
+go together) and **by strata** (each split receives its share of each banknote
+type). Measured on the real export: 355 / 76 / 71, all eight types on each
+side, and **zero pairs crossing**. The manifest records it as
+`mode: repartition` so nobody confuses it with the original split.
 
 → `testbank find-duplicates`, `testbank make-splits --repartition`,
 `data/duplicates.py`, `data/splits.py`
 
-**El 64.6% de las anotaciones sigue alineado al eje.** Tras la recorrección son
-cajas correctas —muchos billetes se fotografían rectos— pero significa que la
-ventaja de OBB sobre una caja alineada es menor de lo que sugiere la premisa del
-proyecto. Medido: un detector alineado con localización perfecta llega a mAP50
-0.939 frente a 1.000. La mediana de error de los formatos *lossy* es de 2 px.
+**64.6% of the annotations are still axis-aligned.** After the re-correction
+they are correct boxes — many banknotes are photographed straight — but it
+means the advantage of OBB over an aligned box is smaller than the project's
+premise suggests. Measured: an aligned detector with perfect localization
+reaches mAP50 0.939 against 1.000. The median error of the *lossy* formats is
+2 px.
 
-**La contaminación tiene un suelo de 0.89 en abanicos.** Ni un detector perfecto
-baja de ahí: si un billete está parcialmente tapado, su caja contiene por fuerza
-píxeles del que lo tapa. → *Los dos umbrales de contaminación*
+**Contamination has a floor of 0.89 in fans.** Not even a perfect detector goes
+below it: if a banknote is partially covered, its box necessarily contains
+pixels of the one covering it. → *The two contamination thresholds*
 
-**`check-visibility` puede dar 0 y no significar nada.** Solo compara quads
-anotados entre sí, así que una oclusión causada por un billete sin anotar le es
-invisible. → *Cómo leer `check-visibility`*
+**`check-visibility` can give 0 and mean nothing.** It only compares annotated
+quads with each other, so an occlusion caused by an unannotated banknote is
+invisible to it. → *How to read `check-visibility`*
 
-**Queda una anotación degenerada en Roboflow.** Se borró en local
-(`005_Euro_328`, un clic suelto), pero el próximo export la trae de vuelta.
+**One degenerate annotation remains in Roboflow.** It was deleted locally
+(`005_Euro_328`, a stray click), but the next export brings it back.
 
-**El dataset es CC BY 4.0: exige atribución** allí donde se distribuya el modelo
-o los datos. → `data/datasets.py`
+**The dataset is CC BY 4.0: it requires attribution** wherever the model or
+the data are distributed. → `data/datasets.py`
 
-### Aproximaciones asumidas
+### Assumed approximations
 
-**Se entrena con un IoU aproximado y se mide con el bueno.** El IoU rotado por
-shapely no cabe en el bucle de entrenamiento, así que la asignación usa
-envolventes alineadas y la pérdida se descompone en forma + giro. La evaluación
-sigue usando shapely, de modo que si la aproximación reparte mal el compromiso,
-el número final lo delata. → `models/assign.py`, `models/losses.py`
+**Training uses an approximate IoU and measuring uses the good one.** The
+shapely rotated IoU does not fit in the training loop, so the assignment uses
+aligned envelopes and the loss decomposes into shape + rotation. Evaluation
+keeps using shapely, so if the approximation allocates the trade-off badly, the
+final number gives it away. → `models/assign.py`, `models/losses.py`
 
-**Se entrena con la verdad recortada y se mide con la sin recortar.** La política
-`clip` ajusta la caja al marco; las métricas evalúan contra el quad original.
-Medido: el percentil 5 de cobertura no se mueve (1.0000 en validación), solo la
-cola (p1 = 0.936). El margen de recorte absorbe casi todo.
+**Training uses the clipped truth and measuring the unclipped one.** The `clip`
+policy fits the box to the frame; the metrics evaluate against the original
+quad. Measured: the 5th percentile of coverage does not move (1.0000 on
+validation), only the tail (p1 = 0.936). The crop margin absorbs almost all of
+it.
 
-**`clip` devuelve rectángulos, y antes no.** Hasta ahora pinzaba cada vértice a
-[0,1] por separado. Es lo obvio y está mal: un rectángulo **girado** cortado
-contra un marco recto da un trapecio, no un rectángulo más pequeño. Medido sobre
-los datos reales, **82 de 679 anotaciones (12%) dejaban de ser rectángulos**, y
-el único run registrado hasta entonces entrenó así.
+**`clip` returns rectangles, and before it did not.** Until now it pinned each
+vertex to [0,1] separately. It is the obvious thing and it is wrong: a
+**rotated** rectangle cut against a straight frame gives a trapezoid, not a
+smaller rectangle. Measured on the real data, **82 of 679 annotations (12%)
+stopped being rectangles**, and the only run recorded until then trained that
+way.
 
-**Lo que el cambio NO es: una mejora de calidad.** El argumento inicial era que
-un trapecio es un objetivo inalcanzable para un modelo que predice
-`(cx, cy, w, h, ángulo)`. Es verdad a medias, y la mitad que falta importa:
-`quad_to_box` ya rectangularizaba cualquier quad, tomando dos de sus cuatro
-lados. O sea que la red nunca vio un trapecio — vio una caja deducida de él en
-silencio. Medido el objetivo real contra el billete visible:
+**What the change is NOT: a quality improvement.** The initial argument was that
+a trapezoid is an unreachable target for a model that predicts
+`(cx, cy, w, h, angle)`. It is half true, and the missing half matters:
+`quad_to_box` already rectangularized any quad, taking two of its four sides.
+So the network never saw a trapezoid — it saw a box silently derived from it.
+Measuring the real target against the visible banknote:
 
-| IoU del objetivo que ve la red | mediana | p05 | mín |
+| IoU of the target the network sees | median | p05 | min |
 |---|---|---|---|
-| Recorte viejo | 0.9828 | 0.8361 | 0.7541 |
-| Recorte nuevo | 0.9852 | 0.7933 | 0.6371 |
+| Old clipping | 0.9828 | 0.8361 | 0.7541 |
+| New clipping | 0.9852 | 0.7933 | 0.6371 |
 
-Delta mediano **+0.0002**: mejora en 57 casos de 99 y empeora en 42, y la cola
-queda algo peor. Es un empate.
+Median delta **+0.0002**: better in 57 cases of 99 and worse in 42, and the
+tail is somewhat worse. It is a wash.
 
-**Lo que sí es:** coherencia. Lo que se escribe en disco ahora es lo que dice ser
-—un rectángulo—, la conversión implícita de `quad_to_box` deja de estar oculta, y
-`clip` deja de estar vetado en los formatos que solo representan rectángulos. Los
-casos de la cola, billetes muy salidos del marco, son precisamente los que `pad`
-resuelve bien y `clip` no puede.
+**What it is:** consistency. What is written to disk is now what it says it is
+— a rectangle —, the implicit conversion of `quad_to_box` stops being hidden,
+and `clip` stops being vetoed in formats that only represent rectangles. The
+tail cases, banknotes sticking far out of the frame, are precisely the ones
+`pad` solves well and `clip` cannot.
 
-Ahora se encogen los extremos de la caja **en sus propios ejes** hasta que las
-cuatro esquinas caben, con el ángulo intacto. Resultado sobre los datos reales:
+Now the extents of the box are shrunk **along its own axes** until the four
+corners fit, with the angle intact. Result on the real data:
 
-| | antes | ahora |
+| | before | now |
 |---|---|---|
-| No rectángulos | 82 / 679 | **0 / 679** |
-| Fuera de [0,1] | 0 | **0** |
-| Cobertura de lo visible | — | mediana 0.985, p05 0.793, mín 0.637 |
-| Ángulo conservado | — | 96 de 99 exacto |
+| Non-rectangles | 82 / 679 | **0 / 679** |
+| Outside [0,1] | 0 | **0** |
+| Coverage of the visible part | — | median 0.985, p05 0.793, min 0.637 |
+| Angle preserved | — | 96 of 99 exact |
 
-Los 3 que cambian de ángulo lo hacen 90° justos y todos tienen ratio < 1.1: es el
-intercambio de lados de las cajas casi cuadradas que ya documenta § *Ángulo y
-cajas casi cuadradas*, no un error de geometría — el rectángulo es el mismo, solo
-cambia qué lado se etiqueta como largo.
+The 3 that change angle do so by exactly 90° and all have ratio < 1.1: it is
+the side swap of nearly square boxes already documented in § *Angle and nearly
+square boxes*, not a geometry error — the rectangle is the same, only which
+side is labelled long changes.
 
-Dos cosas salieron de medir y no se ven leyendo el código, así que están fijadas
-con tests de regresión en `tests/test_clip_rectangulo.py`:
+Two things came out of measuring and cannot be seen by reading the code, so
+they are pinned with regression tests in `tests/test_clip_rectangle.py`:
 
-- **Envolver "lo visible" no sirve.** Cortar una **esquina** deja intactas las
-  otras tres, que son las que fijan la envolvente: las 99 anotaciones fuera de
-  marco seguían fuera, hasta un 23% del lado.
-- **Cada restricción va al eje más alineado con ella.** Sin eso el ajuste es
-  válido y aun así desastroso: en `Multiple_Euro_154`, un billete casi horizontal
-  que se sale 0.029 por arriba, la restricción `y >= 0` se «arreglaba» encogiendo
-  el lado **largo** de 0.890 a 0.064. Cumplía todo y conservaba el 8% del billete.
+- **Enveloping "the visible part" does not work.** Cutting a **corner** leaves
+  the other three intact, and those are what fix the envelope: the 99
+  out-of-frame annotations stayed outside, by up to 23% of the side.
+- **Each constraint goes to the axis most aligned with it.** Without that the
+  fit is valid and still disastrous: in `Multiple_Euro_154`, a nearly
+  horizontal banknote sticking out 0.029 at the top, the constraint `y >= 0`
+  was "fixed" by shrinking the **long** side from 0.890 to 0.064. It met
+  everything and kept 8% of the banknote.
 
-Consecuencia práctica: los formatos que solo representan rectángulos dejaron
-de necesitar un veto a `clip`. Esos formatos (`voc_xml`, `yolox_obb_voc`) se
-quitaron después en el refactor por falta de consumidor, y con ellos el veto:
-`dota` y `coco` aceptan cualquier cuadrilátero.
+Practical consequence: the formats that only represent rectangles stopped
+needing a veto on `clip`. Those formats (`voc_xml`, `yolox_obb_voc`) were
+later removed in the refactor for lack of a consumer, and the veto with them:
+`dota` and `coco` accept any quadrilateral.
 
-**El atenuador de ángulo puede sobrar.** Existe por el 19% de cajas casi
-cuadradas, que probablemente es artefacto del redimensionado. Si se resuben los
-originales, hay que volver a medir **antes** de quitarlo. → `enabled=False`
+**The angle attenuator may be unnecessary.** It exists because of the 19% of
+nearly square boxes, which is probably an artifact of the resizing. If the
+originals are re-uploaded, measure again **before** removing it. →
+`enabled=False`
 
-**Sin letterbox al redimensionar**, porque el aspecto ya se perdió en origen y
-añadirlo ahora no recupera nada. → `models/data.py`
+**No letterbox when resizing**, because the aspect was already lost at the
+source and adding it now recovers nothing. → `models/data.py`
 
-**Con `out_of_bounds=pad` e inferencia sin padding, los números miden el pipeline
-desajustado.** Sale un `AVISO` en el `run.json` y en el resumen. →
-`pad_at_inference`
+**With `out_of_bounds=pad` and inference without padding, the numbers measure
+the mismatched pipeline.** A `WARNING` appears in the `run.json` and in the
+summary. → `pad_at_inference`
 
-### Fragilidades de entorno
+### Environment fragilities
 
-**`opencv-python` y `opencv-python-headless` están los dos instalados.**
-Ultralytics arrastra el primero; ambos ocupan el espacio de nombres `cv2` y gana
-el último instalado. Se registran las dos versiones en cada ejecución para que la
-colisión sea visible. → `experiment/provenance.py`
+**`opencv-python` and `opencv-python-headless` are both installed.**
+Ultralytics drags in the former; both occupy the `cv2` namespace and the last
+one installed wins. Both versions are recorded in every run so the collision is
+visible. → `experiment/provenance.py`
 
-**El entorno de RTMDet-R se rompe solo si alguien instala algo.** `numpy<2` no lo
-declara nadie y el resolutor lo sube sin avisar. → *Entorno para RTMDet-R*
+**The RTMDet-R environment breaks on its own if anyone installs anything.**
+`numpy<2` is declared by nobody and the resolver bumps it without warning. →
+*RTMDet-R environment*
 
-**RTMDet-R usa `mmrotate` desde una rama de desarrollo sin publicar.**
+**RTMDet-R uses `mmrotate` from an unpublished development branch.**
 
-**Los candidatos corren en entornos distintos** — torch 2.0 para RTMDet-R, 2.14
-para los demás. El `run.json` registra la versión, pero sigue siendo una
-comparación entre entornos separados por dos años de PyTorch.
+**Candidates run in different environments** — torch 2.0 for RTMDet-R, 2.14
+for the rest. The `run.json` records the version, but it is still a comparison
+across environments two years of PyTorch apart.
 
-**El torch del entorno principal es CPU.** Vale para los circuitos cortos y
-para un Mac (MPS); para líneas base largas en PC hay que instalar el de CUDA en
-ese mismo entorno. → *Uso*
+**The torch of the main environment is CPU.** It is enough for smoke runs and
+for a Mac (MPS); for long baselines on a PC the CUDA torch has to be installed
+in that same environment. → *Usage*
 
-### Sin probar todavía
+### Not tried yet
 
-- **RTMDet-R no ha entrenado nunca.** Verificado que la config se construye y el
-  modelo se instancia (4.873.470 parámetros); no se ha lanzado un entrenamiento.
-- **La partición re-hecha no se ha usado para entrenar.** `--repartition` está
-  medido sobre el export real (cero pares cruzando, los ocho tipos en cada lado)
-  pero la partición activa en `splits/` sigue siendo la del export. Cambiarla es
-  una decisión, y anula toda comparación con ejecuciones anteriores.
-- **`evaluate-test` no se ha ejecutado.** Deliberado: gastaría un acceso al
-  conjunto sellado sobre un modelo que no significa nada.
-- **Ninguna línea base larga se ha lanzado.** Todo lo medido son pruebas de
-  circuito de 1 o 2 épocas, cuyos números no significan nada.
+- **RTMDet-R has never trained.** Verified that the config builds and the
+  model instantiates (4,873,470 parameters); no training has been launched.
+- **The redone split has not been used for training.** `--repartition` is
+  measured on the real export (zero pairs crossing, all eight types on each
+  side) but the only materialized version, `splits/v1`, is still the export's.
+  Writing a `v2` is a decision: runs on `v1` and `v2` are not comparable, and
+  `compare` marks it.
+- **`evaluate-test` has not been run.** Deliberate: it would spend an access
+  to the sealed set on a model that means nothing.
+- **No long baseline has been launched.** Everything measured is a 1- or
+  2-epoch smoke run, whose numbers mean nothing.
 
-## Guía de anotación
+## Annotation guide
 
-**Rectángulo orientado aproximado.** No se persigue exactitud geométrica. Un
-billete arrugado o con bordes ondulados se anota con el rectángulo que lo
-envuelva razonablemente.
+**Approximate oriented rectangle.** Geometric exactness is not pursued. A
+crumpled banknote or one with wavy edges is annotated with the rectangle that
+reasonably envelops it.
 
-**Umbral de visibilidad: 25%.** Un billete tapado por otro se anota solo si se ve
-al menos ese porcentaje. Los que asoman una franja quedan sin anotar y son fondo
-a efectos de entrenamiento.
+**Visibility threshold: 25%.** A banknote covered by another is annotated only
+if at least that percentage is visible. The ones showing a strip remain
+unannotated and are background for training purposes.
 
-Esta regla se aplica de verdad **aquí, al anotar**. El código no puede hacerla
-cumplir: si un billete no se anotó, no hay nada que medir. Lo único que se puede
-comprobar es la dirección contraria —una anotación que la contradice— y para eso
-está `check-visibility`, que es un aviso para revisión manual, nunca un error.
+This rule is really enforced **here, when annotating**. The code cannot enforce
+it: if a banknote was not annotated, there is nothing to measure. The only
+thing that can be checked is the opposite direction — an annotation that
+contradicts it — and that is what `check-visibility` is for, which is a
+warning for manual review, never an error.
 
-Lee la sección siguiente antes de fiarte de su salida.
+Read the next section before trusting its output.
 
-### Filtro de área relativa
+### Relative area filter
 
-**En cada imagen se conserva el billete de delante.** Al cargar, se descarta toda
-anotación cuya área sea menor que `min_relative_area` (por defecto **0.25**) veces
-el área de la mayor anotación de esa misma imagen.
+**In each image the front banknote is kept.** On load, every annotation whose
+area is smaller than `min_relative_area` (by default **0.25**) times the area
+of the largest annotation of that same image is discarded.
 
-Cubre las dos situaciones sin tener que distinguirlas:
+It covers both situations without having to tell them apart:
 
-- En un **abanico**, la franja visible de un billete tapado es mucho menor que el
-  billete de delante, y cae.
-- En una foto de **dos o tres billetes juntos**, todos tienen un tamaño parecido y
-  se conservan todos.
+- In a **fan**, the visible strip of a covered banknote is much smaller than
+  the front one, and it drops.
+- In a photo of **two or three banknotes together**, all have a similar size
+  and all are kept.
 
-Tres cosas que conviene tener claras:
+Three things worth being clear about:
 
-**Es una aproximación a la política de visibilidad del 25%, no una medida de
-oclusión.** El área relativa y la fracción visible son cosas distintas: una franja
-larga y estrecha puede superar el 25% de área y estar tapada del todo, y un
-billete pequeño pero entero puede quedar por debajo del umbral sin que nada lo
-tape. El filtro y `check-visibility` son complementarios, no redundantes — el
-primero quita fragmentos pequeños, el segundo marca lo grande pero tapado.
+**It is an approximation to the 25% visibility policy, not a measure of
+occlusion.** Relative area and visible fraction are different things: a long,
+narrow strip can exceed 25% of the area and be fully covered, and a small but
+whole banknote can fall below the threshold with nothing covering it. The
+filter and `check-visibility` are complementary, not redundant — the first
+removes small fragments, the second flags what is large but covered.
 
-**Es un filtro en carga, no un borrado.** Los ficheros de anotación no se tocan
-nunca. Las anotaciones filtradas **siguen en el dataset de origen**, y el informe
-las lista con imagen, índice y porcentaje de área relativa para poder revisarlas y
-corregirlas en Roboflow. Los índices son siempre la posición dentro del fichero,
-nunca la posición tras filtrar, para que lleven a la anotación correcta.
+**It is a filter on load, not a deletion.** The annotation files are never
+touched. Filtered annotations **stay in the source dataset**, and the report
+lists them with image, index and relative area percentage so they can be
+reviewed and fixed in Roboflow. Indices are always the position within the
+file, never the position after filtering, so they lead to the right annotation.
 
-**Es un parámetro, no una constante.** Está en `annotation_policy.min_relative_area`
-y se puede subir o bajar sin reexportar el dataset. `--min-relative-area 0`
-desactiva el filtro y muestra las anotaciones tal cual están en el fichero.
+**It is a parameter, not a constant.** It lives in
+`annotation_policy.min_relative_area` and can be raised or lowered without
+re-exporting the dataset. `--min-relative-area 0` disables the filter and shows
+the annotations as they are in the file.
 
-En la visualización, lo filtrado se dibuja en **gris discontinuo** con su índice y
-su porcentaje, sin vértices numerados ni flecha de ancla: está ahí para poder
-localizarlo, no como parte del conjunto canónico.
+In the visualization, what is filtered is drawn in **dashed gray** with its
+index and percentage, without numbered vertices or anchor arrow: it is there
+to be located, not as part of the canonical set.
 
-Medido sobre el export actual (502 imágenes, 693 anotaciones en `train`+`valid`),
-el filtro por defecto descarta **14 anotaciones en 10 imágenes**, un 2%.
+Measured on the current export (502 images, 693 annotations in
+`train`+`valid`), the default filter discards **14 annotations in 10 images**,
+2%.
 
-### Cómo leer `check-visibility`
+### How to read `check-visibility`
 
-El chequeo mide **solapamiento geométrico, no oclusión**, porque el orden de
-profundidad no está anotado. Que A solape a B no dice cuál está encima.
-Consecuencias medidas sobre datos sintéticos con 3 incumplimientos plantados
-entre 108 imágenes y 301 anotaciones:
+The check measures **geometric overlap, not occlusion**, because the depth
+order is not annotated. That A overlaps B does not say which one is on top.
+Consequences measured on synthetic data with 3 planted violations among 108
+images and 301 annotations:
 
 | | |
 |---|---|
-| Anotaciones marcadas | 28, en 20 imágenes |
-| Incumplimientos reales | 3 |
-| Encontrados por el chequeo | 2 de 3 |
+| Annotations flagged | 28, in 20 images |
+| Real violations | 3 |
+| Found by the check | 2 of 3 |
 
-Los **falsos positivos** salen del desconocimiento de la profundidad: un quad muy
-solapado puede ser perfectamente el de arriba, que no está tapado en absoluto. La
-línea `Incumplimientos reales: como mucho N` acota esto de forma exacta — recorre
-todos los órdenes de profundidad posibles con un DP sobre subconjuntos y devuelve
-el máximo número de anotaciones que podrían estar tapadas a la vez.
+The **false positives** come from not knowing the depth: a heavily overlapped
+quad may perfectly well be the top one, which is not covered at all. The line
+`Real violations: at most N` bounds this exactly — it walks every possible
+depth order with a DP over subsets and returns the maximum number of
+annotations that could be covered at once.
 
-El **falso negativo** tiene una causa distinta y no tiene arreglo en código: si el
-billete que tapa **no está anotado**, el chequeo no puede verlo. Es el mismo punto
-ciego de la política, con la vuelta de tuerca de que puede ocultar justo el
-incumplimiento que busca.
+The **false negative** has a different cause and no fix in code: if the
+covering banknote **is not annotated**, the check cannot see it. It is the same
+blind spot of the policy, with the twist that it can hide precisely the
+violation it is looking for.
 
-Usa el informe como lista de candidatos ordenada, y mira siempre la
-visualización antes de tocar una anotación.
+Use the report as an ordered list of candidates, and always look at the
+visualization before touching an annotation.
 
-## Coordenadas y orden canónico
+## Coordinates and canonical order
 
-El pivote de todas las conversiones es el **quad canónico**: 4 vértices
-normalizados. N formatos son 2N conversores, no N².
+The pivot of every conversion is the **canonical quad**: 4 normalized vertices.
+N formats are 2N converters, not N².
 
-**Orden canónico.** Horario respecto al centroide, arrancando en el vértice que
-abre el lado más largo. Desempate por menor `x+y`, luego menor `x`, luego menor
-`y` — la cadena entera hace falta porque `x+y` empata en rectángulos cuya
-diagonal es perpendicular a `(1,1)`.
+**Canonical order.** Clockwise with respect to the centroid, starting at the
+vertex that opens the longest side. Tie-break by smallest `x+y`, then smallest
+`x`, then smallest `y` — the whole chain is needed because `x+y` ties on
+rectangles whose diagonal is perpendicular to `(1,1)`.
 
-No se usa «la esquina más cercana al origen»: es discontinua cerca de 45° y un
-jitter de 2 px rota las etiquetas 90°.
+"The corner closest to the origin" is not used: it is discontinuous near 45°
+and a 2 px jitter rotates the labels by 90°.
 
-**Aspecto de la imagen.** Las coordenadas normalizadas dividen `x` por el ancho e
-`y` por el alto, que es un escalado **anisótropo**. En ese espacio el lado más
-largo, el ángulo y el ratio no son los geométricos: un billete 2:1 tumbado en una
-imagen 16:9 tiene ratio normalizado 1.13, y en 20:9 baja de 1 y el ancla salta al
-lado corto. Por eso toda comparación de longitudes admite el aspecto, y el lector
-lo recibe desde `data/derived/image_sizes.json`.
+**Image aspect.** Normalized coordinates divide `x` by the width and `y` by the
+height, which is an **anisotropic** scaling. In that space the longest side,
+the angle and the ratio are not the geometric ones: a 2:1 banknote lying in a
+16:9 image has normalized ratio 1.13, and in 20:9 it drops below 1 and the
+anchor jumps to the short side. That is why every length comparison accepts
+the aspect, and the reader receives it from `data/derived/image_sizes.json`.
 
-**Rejilla diádica.** Las coordenadas se ajustan a múltiplos de `2^-30`. Es lo que
-hace que `flip(flip(q)) == q` se cumpla de forma **exacta**: en float64
-`1 - (1 - 0.1)` da `0.09999999999999998`, así que `x -> 1-x` no es una involución.
-Sobre la rejilla sí lo es, bit a bit. El error introducido es `2e-6 px` en una
-imagen de 4000 px. Los ficheros de anotación no se modifican.
+**Dyadic grid.** Coordinates are snapped to multiples of `2^-30`. It is what
+makes `flip(flip(q)) == q` hold **exactly**: in float64 `1 - (1 - 0.1)` gives
+`0.09999999999999998`, so `x -> 1-x` is not an involution. On the grid it is,
+bit for bit. The introduced error is `2e-6 px` in a 4000 px image. The
+annotation files are not modified.
 
-**Rango tolerante** `[-0.5, 1.5]`, con aviso fuera de `[0,1]` pero sin fallo: hay
-billetes que cruzan el borde de la imagen y sus vértices caen fuera
-legítimamente.
+**Tolerant range** `[-0.5, 1.5]`, with a warning outside `[0,1]` but no
+failure: there are banknotes crossing the image border and their vertices fall
+outside legitimately.
 
-**Aviso de ancla inestable** si el ratio de lados baja de 1.1.
+**Unstable anchor warning** if the side ratio drops below 1.1.
 
-## Particiones
+## Splits
 
-`splits.py` es la **única puerta de acceso** a la asignación. Ningún otro módulo
-la calcula. Todo lee de `splits/{train,valid,test}.txt`, nunca del árbol de
-directorios, para que la partición quede congelada aunque el directorio cambie.
+`splits.py` is the **single door** to the assignment. No other module computes
+it. Everything reads from `splits/vN/{train,valid,test}.txt`, never from the
+directory tree, so the split stays frozen even if the directory changes.
 
-**Modo adoptar (por defecto).** Si el directorio ya trae `train/`, `valid/` y
-`test/` con `images/` y `labels/` —la estructura que exporta Roboflow— esa es la
-partición. No se recalcula ni se «mejora»: solo se congela. Roboflow usa `valid`,
-no `val`; `val` se acepta como alias dejando constancia, y tener los dos a la vez
-es error.
+**Versions.** `splits/` is a container of immutable versions: `v1` is the
+export's split as it came from Roboflow, and every `make-splits` writes the
+**next** one (`v2`, `v3`, ...) without touching the previous ones. Each
+version has its own `manifest.json` with mode, ratios, seed and digest.
+Commands read the **latest** by default; `--split-version vN` (or
+`data.split_version` in the config) pins one. Whatever gets resolved is written
+into the run's `run.json` (`split: {version, mode, digest}`) and shown by
+`compare` in a `split` column — two rows on different versions were evaluated
+on different images and are not comparable, and the table says so. A version
+can only be rewritten in place with `--split-version vN --overwrite`, which is
+for redoing one that went wrong, not for replacing history.
 
-**Modo crear.** Si no existe esa estructura, se genera con porcentajes
-configurables y semilla registrada en `splits/manifest.json`.
+```bash
+testbank make-splits --repartition ...           # writes splits/v2
+testbank train yolox-obb-nano                    # trains on v2 (latest)
+testbank train yolox-obb-nano --split-version v1 # trains on the export's split
+testbank evaluate-test runs/<run> --reason "..." --split-version v2
+```
 
-**`--repartition`: la excepción explícita.** Ignora la partición del export y
-reparte de cero como en modo crear. Existe porque la de Roboflow separa tomas
-casi idénticas de la misma foto. Es opt-in, y el manifiesto lo escribe como
-`mode: repartition` con el modo del export al lado, para que nadie confunda esta
-partición con la original. Si se intenta *adoptar* con un manifiesto de grupos
-que demuestra que el export reparte alguno, se niega y el mensaje apunta aquí:
-la fuga no se congela en silencio.
+The test-access log (`runs/test_evaluations.jsonl`) also records the version:
+opening the test of `v1` and the test of `v2` are two different sets, and each
+spends its own access.
 
-**Se reparten grupos, no fotos.** Con `--group-key manifest` y el JSON que
-escribe `find-duplicates`, las dos tomas de la misma foto caen en el mismo lado.
-Consecuencia: los ratios se aplican sobre el número de grupos, así que 0.8 sobre
-441 grupos da 394 fotos y no 402. Es lo correcto —partir un grupo para cuadrar
-un número sería reintroducir la fuga— pero el recuento exacto no sale redondo.
+**Adopt mode (default).** If the directory already brings `train/`, `valid/`
+and `test/` with `images/` and `labels/` — the structure Roboflow exports —
+that is the split. It is neither recomputed nor "improved": only frozen.
+Roboflow uses `valid`, not `val`; `val` is accepted as an alias with a note,
+and having both at once is an error.
 
-**`--stratify-regex`: representativos de cada tipo en cada lado.** Una regex
-con un grupo de captura sobre el nombre de la muestra; para el export de
-Roboflow, `'^(\d+|Multiple)_'` saca el tipo de billete. El reparto se hace
-dentro de cada estrato y luego se junta, así que cada partición recibe su
-proporción de cada tipo. El comando imprime la tabla estrato × partición y el
-manifiesto la guarda. Dos límites honestos: con pocos grupos por tipo el redondeo
-puede dejar la partición pequeña sin alguno (`round(2 × 0.1) = 0`), y un grupo
-que cruce tipos —dos fotos «iguales» con billetes de distinto valor— se reparte
-igualmente y se avisa, porque agrupar de más es barato y bloquear no.
+**Create mode.** If that structure does not exist, it is generated with
+configurable percentages and a seed recorded in `splits/manifest.json`.
 
-**`--ratios` y `--seed`.** `--ratios 0.8,0.1,0.1` (deben sumar 1); `--seed N`.
-Misma semilla, mismos datos, mismos ficheros byte a byte: comprobado sobre el
-export real y anclado con test. El manifiesto guarda ratios, semilla y un
-digest de la partición para verificarlo después.
+**`--repartition`: the explicit exception.** Ignores the export's split and
+splits from scratch as in create mode. It exists because Roboflow's separates
+nearly identical shots of the same photo. It is opt-in, and the manifest writes
+it as `mode: repartition` with the export's mode next to it, so nobody confuses
+this split with the original. If one tries to *adopt* with a group manifest
+that proves the export spreads some group, it refuses and the message points
+here: the leak is not frozen silently.
+
+**Groups are split, not photos.** With `--group-key manifest` and the JSON
+written by `find-duplicates`, the two shots of the same photo fall on the same
+side. Consequence: ratios apply to the number of groups, so 0.8 over 441
+groups gives 394 photos and not 402. It is the right thing — splitting a group
+to make a number add up would reintroduce the leak — but the exact count does
+not come out round.
+
+**`--stratify-regex`: representatives of each type on each side.** A regex
+with one capture group over the sample name; for the Roboflow export,
+`'^(\d+|Multiple)_'` extracts the banknote type. Splitting is done within each
+stratum and then merged, so each split receives its proportion of each type.
+The command prints the stratum × split table and the manifest stores it. Two
+honest limits: with few groups per type the rounding can leave the small split
+without one (`round(2 × 0.1) = 0`), and a group crossing types — two "equal"
+photos with banknotes of different value — is split anyway and warned about,
+because over-grouping is cheap and blocking is not.
+
+**`--ratios` and `--seed`.** `--ratios 0.8,0.1,0.1` (must sum to 1);
+`--seed N`. Same seed, same data, same files byte for byte: checked on the real
+export and pinned with a test. The manifest stores ratios, seed and a digest of
+the split to verify it later.
 
 ```bash
 testbank find-duplicates --manifest-out runs/_inspection/dups.json
@@ -373,233 +411,242 @@ testbank make-splits --repartition --ratios 0.8,0.1,0.1 --seed 1 \
     --stratify-regex '^(\d+|Multiple)_'
 ```
 
-`--group-key` acepta `filename-prefix`, `directory`, `manifest` y `none`. El
-valor `none` afirma que cada imagen es independiente, y exige
-`--i-confirm-independence` para que sea una afirmación explícita y no un
-descuido: si existen varias tomas del mismo billete físico repartidas entre
-particiones, las métricas salen infladas. La confirmación **solo se exige al
-crear**; en modo adoptar no elegimos el reparto, únicamente lo congelamos.
+`--group-key` accepts `filename-prefix`, `directory`, `manifest` and `none`.
+The value `none` asserts that every image is independent, and requires
+`--i-confirm-independence` so that it is an explicit assertion and not an
+oversight: if several shots of the same physical banknote exist spread across
+splits, the metrics come out inflated. The confirmation **is only required
+when creating**; in adopt mode we do not choose the split, we only freeze it.
 
-**Integridad al cargar.** Una muestra en dos particiones es error fatal con
-mensaje que la identifica. Con clave de grupo, también un grupo repartido.
+**Integrity on load.** A sample in two splits is a fatal error with a message
+that identifies it. With a group key, a spread group as well.
 
-**Sin `extend-splits`.** Hubo un comando para anexar muestras nuevas a una
-partición ya materializada; se quitó en el refactor. Si llega un export nuevo,
-o se adopta su partición o se re-parte con `--repartition`: dos caminos que
-hacen cosas distintas con los datos nuevos era una ambigüedad de más.
+**`splits/duplicate_groups.json` is stale.** It is the group manifest from the
+first, grayscale duplicate measurement (the one with 18 false pairs of
+different-value banknotes). Do not feed it to `--repartition`: regenerate it
+with `find-duplicates`, which now works in color.
 
-**Test sellado.** `SplitLoader.load("test")` exige `allow_test=True`. El runner
-nunca lo pasa. El comando aparte `evaluate-test` registra cada acceso en
-`runs/test_evaluations.jsonl`.
+**No `extend-splits`.** There was a command to append new samples to an
+already materialized split; it was removed in the refactor. If a new export
+arrives, either its split is adopted or it is re-split with `--repartition`:
+two paths doing different things with the new data was one ambiguity too many.
 
-**Sin validación cruzada.** Hubo un `make-folds`; se quitó en el refactor
-porque la validación cruzada quedó descartada y el runner de pliegues nunca se
-escribió. El manifiesto de casi-duplicados sirve ahora para `--repartition`.
+**Sealed test.** `SplitLoader.load("test")` requires `allow_test=True`. The
+runner never passes it. The separate command `evaluate-test` records every
+access in `runs/test_evaluations.jsonl`.
 
-## Métricas
+**No cross-validation.** There was a `make-folds`; it was removed in the
+refactor because cross-validation was discarded and the fold runner was never
+written. The near-duplicate manifest now serves `--repartition`.
 
-Las dos que deciden, porque miden si el recorte sirve:
+## Metrics
 
-- **Cobertura** — fracción del billete real dentro del recorte predicho con
-  margen. Un recorte que corta media mancha arruina el clasificador de aguas
-  abajo. Objetivo ≥ 0.98 en el percentil 5.
-- **Contaminación** — fracción del recorte que pertenece a otro billete. El
-  fondo es ruido inocuo; un trozo del vecino puede meter una mancha ajena y
-  provocar un falso positivo. **Dos umbrales**, ver abajo.
+The two that decide, because they measure whether the crop works:
 
-### Los dos umbrales de contaminación
+- **Coverage** — fraction of the real banknote inside the predicted crop with
+  margin. A crop that cuts half a stain ruins the downstream classifier.
+  Target ≥ 0.98 at the 5th percentile.
+- **Contamination** — fraction of the crop belonging to another banknote.
+  Background is harmless noise; a piece of the neighbour can bring in a foreign
+  stain and cause a false positive. **Two thresholds**, see below.
 
-La distribución es **bimodal, no continua**, así que un umbral único sería inútil
-en los dos sentidos a la vez. Medido con un detector perfecto (predicción =
-verdad) sobre train+valid del export actual, a margen 0.05:
+### The two contamination thresholds
 
-| escena | n | mediana | p95 | umbral |
+The distribution is **bimodal, not continuous**, so a single threshold would be
+useless in both directions at once. Measured with a perfect detector
+(prediction = truth) on train+valid of the current export, at margin 0.05:
+
+| scene | n | median | p95 | threshold |
 |---|---|---|---|---|
-| un billete | 301 | 0.0000 | **0.0000** | 0.01 |
-| abanico | 378 | 0.0231 | **0.8906** | 0.92 |
+| single banknote | 301 | 0.0000 | **0.0000** | 0.01 |
+| fan | 378 | 0.0231 | **0.8906** | 0.92 |
 
-En **imágenes de un solo billete** el suelo es cero exacto: no hay nada más en la
-imagen que pueda ensuciar el recorte, así que cualquier contaminación es un error
-real del detector. El umbral 0.01 es holgado respecto al suelo y estricto en
-términos absolutos, que es lo que se quiere.
+In **single-banknote images** the floor is exactly zero: there is nothing else
+in the image that can dirty the crop, so any contamination is a real detector
+error. The 0.01 threshold is generous with respect to the floor and strict in
+absolute terms, which is what is wanted.
 
-En **abanicos** ni un detector perfecto baja del 0.89, y no por ser malo: si un
-billete está parcialmente tapado, su caja contiene por fuerza píxeles del que lo
-tapa. Es geometría, no error. El umbral 0.92 deja ~3 puntos de holgura, un cuarto
-del recorrido que queda hasta 1.0.
+In **fans** not even a perfect detector goes below 0.89, and not for being bad:
+if a banknote is partially covered, its box necessarily contains pixels of the
+one covering it. It is geometry, not error. The 0.92 threshold leaves ~3 points
+of slack, a quarter of the remaining way to 1.0.
 
-**Aviso al leer el umbral de abanico:** entre el suelo (0.89) y el techo (1.0)
-quedan 11 puntos, así que discrimina poco — solo caza detectores bastante peores
-que el perfecto. Para comparar candidatos en abanicos mira la **mediana**, que el
-detector perfecto deja en 0.023 y tiene recorrido de sobra.
+**Warning when reading the fan threshold:** between the floor (0.89) and the
+ceiling (1.0) there are 11 points, so it discriminates little — it only catches
+detectors considerably worse than the perfect one. To compare candidates on
+fans look at the **median**, which the perfect detector leaves at 0.023 and has
+plenty of room.
 
-Una imagen cuenta como abanico si tiene **más de un billete presente**, contando
-también los que el filtro de área descartó: un vecino filtrado sigue en los
-píxeles y sigue ensuciando.
+An image counts as a fan if it has **more than one banknote present**, also
+counting the ones the area filter discarded: a filtered neighbour is still in
+the pixels and still dirties.
 
-Los dos números salen de los datos, así que hay que rederivarlos cuando cambie el
-export: `contamination_floor()` en `metrics/crop.py` los recalcula.
+Both numbers come from the data, so they have to be re-derived when the export
+changes: `contamination_floor()` in `metrics/crop.py` recomputes them.
 
-### [PENDIENTE] Enmascarado por polígono en el recorte
+### [PENDING] Polygon masking in the crop
 
-Mejora pendiente para la etapa de recorte, **fuera del alcance actual**.
+Pending improvement for the crop stage, **outside the current scope**.
 
-Hoy el recorte es la caja predicha con margen, así que en abanico arrastra
-inevitablemente píxeles del billete de delante. Pero en inferencia se tienen
-todas las detecciones de la imagen, no solo una: se pueden **enmascarar los
-polígonos de los demás billetes** dentro del recorte antes de pasárselo al
-clasificador de manchas. La contaminación pasaría de ser píxeles de otro billete
-—que pueden meter una mancha ajena— a ser fondo, que es ruido inocuo.
+Today the crop is the predicted box with margin, so in a fan it inevitably
+drags pixels of the front banknote. But at inference all detections of the
+image are available, not only one: the **polygons of the other banknotes can
+be masked** inside the crop before handing it to the stain classifier.
+Contamination would go from being pixels of another banknote — which can bring
+in a foreign stain — to being background, which is harmless noise.
 
-Bajaría el suelo de 0.89 y haría el umbral de abanico mucho más discriminante.
-Toca la etapa que alimenta al clasificador, que queda fuera de este alcance.
+It would lower the 0.89 floor and make the fan threshold far more
+discriminating. It touches the stage feeding the classifier, which is out of
+this scope.
 
-Ambas dependen del **margen de recorte**, que por eso vive en la config
-(`crop.margin`), se registra en `metrics.json` y se reporta barrido en
-`{0.00, 0.05, 0.10}`: el margen intercambia una métrica por la otra y una sola
-fila oculta el intercambio. La contaminación se reporta junto a la del **quad
-anotado** con el mismo margen: en abanico el propio ground truth ya contiene
-trozos del vecino, y sin ese suelo no se puede separar el error del modelo de la
-geometría irreducible.
+Both depend on the **crop margin**, which is why it lives in the config
+(`crop.margin`), is recorded in `metrics.json` and is reported swept over
+`{0.00, 0.05, 0.10}`: the margin trades one metric for the other and a single
+row hides the trade. Contamination is reported next to that of the
+**annotated quad** with the same margin: in a fan the ground truth itself
+already contains pieces of the neighbour, and without that floor the model's
+error cannot be separated from the irreducible geometry.
 
-Detección: mAP50 y mAP50-95 con IoU rotado vía shapely. Ángulo: error módulo
-180°, como `min(|Δ|, 180-|Δ|)`. Vértices: distancia mediana y p95, en píxeles y
-como fracción del lado mayor — diagnóstico, no criterio de éxito.
+Detection: mAP50 and mAP50-95 with rotated IoU via shapely. Angle: error modulo
+180°, as `min(|Δ|, 180-|Δ|)`. Vertices: median and p95 distance, in pixels and
+as a fraction of the longest side — diagnostic, not a success criterion.
 
-Emparejamiento por IoU rotado, umbral 0.5, asignación greedy por confianza
-descendente. **Los billetes no detectados cuentan como fallo**, no se excluyen:
-excluirlos hace que un detector que solo encuentra los casos fáciles salga mejor,
-que es la conclusión invertida. Se reportan por separado tasa de detección, error
-condicionado a detección, y agregado.
+Matching by rotated IoU, threshold 0.5, greedy assignment by descending
+confidence. **Undetected banknotes count as misses**, they are not excluded:
+excluding them makes a detector that only finds the easy cases look better,
+which is the inverted conclusion. Detection rate, error conditioned on
+detection, and aggregate are reported separately.
 
-**Intervalos.** Toda fila de la tabla comparativa lleva `n` e intervalo por
-bootstrap, sin excepción. La **unidad de remuestreo es la imagen**, no la
-detección: varios billetes de una misma imagen están correlacionados y
-remuestrear detecciones estrecha los intervalos artificialmente.
+**Intervals.** Every row of the comparison table carries `n` and a bootstrap
+interval, without exception. The **resampling unit is the image**, not the
+detection: several banknotes in the same image are correlated and resampling
+detections narrows the intervals artificially.
 
-La tabla que decide se calcula sobre el `valid` adoptado. La validación cruzada
-de 5 pliegues queda como comprobación del candidato ganador.
+The deciding table is computed on the adopted `valid`. 5-fold cross-validation
+remains as a check of the winning candidate.
 
-**Al interpretar:** por la política de visibilidad, en imágenes con abanico el
-modelo puede detectar correctamente billetes que no están anotados y contarán
-como falsos positivos. Si ves precisión hundida en esas imágenes, mira las
-visualizaciones antes de concluir que el modelo falla.
+**When interpreting:** because of the visibility policy, in fan images the
+model can correctly detect banknotes that are not annotated and they will
+count as false positives. If you see precision sunk on those images, look at
+the visualizations before concluding the model fails.
 
-## Preentreno: qué carga cada candidato, y el port que lo hace posible en CPU
+## Pretraining: what each candidate loads, and the port that makes it possible on CPU
 
-Hasta aquí ningún candidato propio leía un checkpoint: la cabeza propia
-entrenaba de cero y el port de DDGRCF no existía. Las dos cosas han cambiado.
+Until here no own candidate read a checkpoint: the own head trained from
+scratch and the DDGRCF port did not exist. Both things have changed.
 
-### La cabeza propia carga el COCO de Megvii
+### The own head loads Megvii's COCO
 
-`yolox_s.pth.tar` —el YOLOX-S oficial, Apache-2.0, el mismo fichero que trae el
-fork de buzhidaoshenme— **encaja entero en nuestro backbone y cuello de
-`small`**. Medido: 354 tensores y 7.066.683 parámetros en los dos, formas
-idénticas. Sólo cambian los nombres: ellos envuelven el backbone como
-`backbone.backbone.*` y llaman a los módulos del cuello `lateral_conv0`,
-`C3_p4`, `reduce_conv1`…; aquí son `backbone.*` y `neck.lateral_c5`, `neck.p4`,
-`neck.lateral_c4`… El mapeo está en `models/pretrained.py`, emparejado por
-función y comprobado forma a forma al cargar. Su cabeza (80 clases, sin ángulo)
-se descarta: lo que se hereda es *saber ver*, no *saber dónde está el billete*.
+`yolox_s.pth.tar` — the official YOLOX-S, Apache-2.0, the same file the
+buzhidaoshenme fork ships — **fits entirely into our `small` backbone and
+neck**. Measured: 354 tensors and 7,066,683 parameters in both, identical
+shapes. Only the names change: they wrap the backbone as `backbone.backbone.*`
+and call the neck modules `lateral_conv0`, `C3_p4`, `reduce_conv1`…; here they
+are `backbone.*` and `neck.lateral_c5`, `neck.p4`, `neck.lateral_c4`… The
+mapping is in `models/pretrained.py`, paired by function and checked shape by
+shape on load. Their head (80 classes, no angle) is discarded: what is
+inherited is *knowing how to see*, not *knowing where the banknote is*.
 
 ```bash
 testbank train yolox-obb-small --pretrained weights/yolox_s.pth.tar
 ```
 
-`--pretrained` va a la config y queda congelado en la ejecución: dos runs con y
-sin preentreno no son comparables, y el `config.yaml` lo tiene que decir.
-Cargar la variante equivocada (`yolox_s` en `nano`) es un **error**, no un
-aviso: entrenar «preentrenado a medias» sin saberlo es peor que entrenar de
-cero. Megvii publica también `yolox_tiny.pth` y `yolox_nano.pth` en las releases
-de GitHub —descarga directa, sin Baidu— y **los tres cargan enteros en su
-variante**: 354 tensores en `small` y `tiny`, 462 en `nano` (las convoluciones
-*depthwise* se parten en dos). Las tres arquitecturas propias son idénticas a
-las suyas; medido, no supuesto. Van en `weights/`, ignorada por git.
+`--pretrained` goes into the config and is frozen in the run: two runs with and
+without pretraining are not comparable, and the `config.yaml` has to say so.
+Loading the wrong variant (`yolox_s` into `nano`) is an **error**, not a
+warning: training "half pretrained" without knowing is worse than training
+from scratch. Megvii also publishes `yolox_tiny.pth` and `yolox_nano.pth` in
+the GitHub releases — direct download, no Baidu — and **all three load
+entirely into their variant**: 354 tensors in `small` and `tiny`, 462 in
+`nano` (the *depthwise* convolutions split in two). The three own architectures
+are identical to theirs; measured, not assumed. They go in `weights/`, ignored
+by git.
 
-Efecto en una época de circuito, para calibrar: `classes 0.24` frente a `1.87`
-de cero, `box 0.57` frente a `0.86`. No es un resultado, es la señal de que el
-mapeo carga algo que sirve.
+Effect over one smoke epoch, for calibration: `classes 0.24` against `1.87`
+from scratch, `box 0.57` against `0.86`. It is not a result, it is the signal
+that the mapping loads something useful.
 
-### El port de DDGRCF/YOLOX_OBB: entrena en CPU y en MPS
+### The DDGRCF/YOLOX_OBB port: trains on CPU and on MPS
 
-`yolox-obb-ddgrcf-port` es su red reescrita en torch puro (`models/ddgrcf.py`),
-capa a capa siguiendo su yaml y **con sus mismos nombres de parámetro**, para
-que su checkpoint de DOTA cargue con `strict=True` sin ningún mapeo. Verificado
-contra su modelo construido de verdad (con sus operadores sustituidos por un
-stub, que sólo se llaman al entrenar): **426 claves y formas idénticas,
-8.051.797 parámetros**, y con sus pesos cargados la salida coincide con la suya
-—obj, cls y θ exactos; cajas decodificadas a 3e-5 px—. Eso valida a la vez el
-port y nuestro decodificador para su regresión `(dx, dy, log w, log h)`.
+`yolox-obb-ddgrcf-port` is their network rewritten in pure torch
+(`models/ddgrcf.py`), layer by layer following their yaml and **with their
+same parameter names**, so their DOTA checkpoint loads with `strict=True`
+without any mapping. Verified against their actually built model (with their
+operators replaced by a stub, which are only called when training): **426
+identical keys and shapes, 8,051,797 parameters**, and with their weights
+loaded the output matches theirs — obj, cls and θ exact; decoded boxes to 3e-5
+px. That validates both the port and our decoder for their
+`(dx, dy, log w, log h)` regression.
 
-Un detalle que costó un intento: su yaml pone `n=2` en los tallos de las
-cabezas, pero su parser aplica el multiplicador de profundidad, `round(2 ×
-0.33) = 1`, y queda **una** conv sin `Sequential`. Con dos, el port tenía 8,94M
-parámetros y las claves `model.27.0.*` en vez de `model.27.*`.
+A detail that cost one attempt: their yaml puts `n=2` in the head stems, but
+their parser applies the depth multiplier, `round(2 × 0.33) = 1`, and **one**
+conv without `Sequential` remains. With two, the port had 8.94M parameters and
+the keys `model.27.0.*` instead of `model.27.*`.
 
-Lo que sustituye a sus operadores compilados:
+What replaces their compiled operators:
 
-| Suyo (C++/CUDA) | Aquí |
+| Theirs (C++/CUDA) | Here |
 |---|---|
-| `box_iou_rotated` en el SimOTA | `models/overlap.py`: IoU exacto de polígonos en torch, 18,6 ms por imagen |
-| PolyIoU en la pérdida | El mismo, diferenciable; coincide con shapely a 2,5e-6 en 2.000 pares |
-| `nms_rotated` | Nuestro `rotated_nms` |
-| Su `Trainer` y `DataPrefetcher` (CUDA) | El bucle de testbank |
+| `box_iou_rotated` in SimOTA | `models/overlap.py`: exact polygon IoU in torch, 18.6 ms per image |
+| PolyIoU in the loss | The same, differentiable; matches shapely to 2.5e-6 over 2,000 pairs |
+| `nms_rotated` | Our `rotated_nms` |
+| Their `Trainer` and `DataPrefetcher` (CUDA) | testbank's loop |
 
-La receta `ddgrcf` reproduce su `get_losses`: PolyIoU ×5 + obj + cls por IoU +
-L1 tardía, todo `Σ / num_fg`, SimOTA con `−log IoU`. Una desviación, dicha: su
-L1 tardía deja el objetivo del **ángulo a cero** (`get_reg_l1_target` rellena 4
-de 5 componentes), casi seguro un descuido; aquí va el ángulo real. Y lo que el
-port **no** reproduce: su *dataloader* (mosaico, mixup, resampling), su
-optimizador y su EMA.
+The `ddgrcf` recipe reproduces their `get_losses`: PolyIoU ×5 + obj + cls by
+IoU + late L1, everything `Σ / num_fg`, SimOTA with `−log IoU`. One deviation,
+stated: their late L1 leaves the **angle target at zero** (`get_reg_l1_target`
+fills 4 of 5 components), almost certainly an oversight; here the real angle
+goes in. And what the port does **not** reproduce: their *dataloader* (mosaic,
+mixup, resampling), their optimizer and their EMA.
 
-Es **apto para producción** —nada compilado, ningún clon— y es hoy el único
-candidato con preentreno DOTA que puede entrenar en un M4. Sus pesos están en
-Baidu Pan (hace falta su cliente): `--pretrained weights/yolox_s_dota1_0.pth`.
+It is **fit for production** — nothing compiled, no clone — and it is today the
+only candidate with DOTA pretraining that can train on an M4. Its weights are
+on Baidu Pan (their client is needed): `--pretrained weights/yolox_s_dota1_0.pth`.
 
-### La entrada iba en el formato equivocado, y con preentreno se notaba
+### The input went in the wrong format, and with pretraining it showed
 
-El port con los pesos de DOTA dio **mAP 0,000** tras una época, peor que `small`
-con sólo COCO. Puntuación máxima 0,004, y todas las cajas en la misma esquina
-en todas las imágenes: la red no localizaba nada. Con backbone *y* cabeza de
-regresión entrenados en DOTA, eso sólo pasa si la imagen llega en otro formato.
+The port with the DOTA weights gave **mAP 0.000** after one epoch, worse than
+`small` with only COCO. Maximum score 0.004, and every box in the same corner
+in every image: the network localized nothing. With backbone *and* regression
+head trained on DOTA, that only happens if the image arrives in another format.
 
-Y llegaba: nuestro bucle daba **RGB en [0, 1]**; YOLOX —Megvii y DDGRCF por
-igual— espera **BGR crudo en 0–255**, sin normalizar. Canales cambiados y escala
-255 veces menor en la primera capa. Entrenando de cero no importa (la BatchNorm
-absorbe la escala); con preentreno lo destroza. `models/data.py:image_to_input`
-fija ahora la convención de YOLOX en un solo sitio, para entrenamiento e
-inferencia.
+And it did: our loop gave **RGB in [0, 1]**; YOLOX — Megvii and DDGRCF alike —
+expects **raw BGR in 0–255**, not normalized. Swapped channels and a scale 255
+times smaller at the first layer. Training from scratch it does not matter
+(BatchNorm absorbs the scale); with pretraining it wrecks it.
+`models/data.py:image_to_input` now fixes the YOLOX convention in a single
+place, for training and inference.
 
-Mismo circuito de una época, antes y después:
+Same one-epoch smoke run, before and after:
 
 | | RGB [0, 1] | BGR 0–255 |
 |---|---|---|
-| Port + pesos DOTA | 0,000 | **0,105** [0,075–0,153] |
+| Port + DOTA weights | 0.000 | **0.105** [0.075–0.153] |
 
-No es una línea base —es una época— pero es la primera vez que un circuito da
-un número que no es cero por una razón que se entiende.
+It is not a baseline — it is one epoch — but it is the first time a smoke run
+gives a number that is not zero for a reason that is understood.
 
-### Lo que salió al probarlo
+### What came out when trying it
 
-Con el backbone COCO recién cargado y la cabeza sin entrenar, la red predijo un
-vértice en −0,54 normalizado y `Quad` lo rechazó con un `QuadError`: **la
-evaluación entera se cayó**. Habría tumbado una línea base real a la primera.
-Y cuando el port con DOTA produjo por fin detecciones, la visualización de la
-ejecución cayó por lo mismo (`'NoneType' object has no attribute 'points'`):
-ningún circuito anterior había producido una predicción así. Arreglado en los
-dos consumidores que quedaban, con test.
+With the COCO backbone freshly loaded and the head untrained, the network
+predicted a vertex at −0.54 normalized and `Quad` rejected it with a
+`QuadError`: **the whole evaluation went down**. It would have brought down a
+real baseline at the first try. And when the port with DOTA finally produced
+detections, the run's visualization went down for the same reason
+(`'NoneType' object has no attribute 'points'`): no previous smoke run had
+produced such a prediction. Fixed in the two remaining consumers, with a test.
 
-La primera corrección descartaba esas predicciones, y eso era un regalo a la
-métrica: una caja que el modelo predijo mayormente fuera de la imagen es un
-falso positivo que cometió. Ahora la predicción se emite **sin geometría**
-(`Prediction.quad = None`), no empareja con nada y **cuenta como falso positivo
-a su puntuación**. Es lo que hacen en la práctica los frameworks de referencia,
-que no descartan. Con test de regresión sobre el emparejamiento.
+The first fix discarded those predictions, and that was a gift to the metric:
+a box the model predicted mostly outside the image is a false positive it
+committed. Now the prediction is emitted **without geometry**
+(`Prediction.quad = None`), matches nothing and **counts as a false positive at
+its score**. It is what the reference frameworks do in practice, which do not
+discard. With a regression test on the matching.
 
-## Recetas de pérdida: tres redes sobre un mismo backbone
+## Loss recipes: three networks on the same backbone
 
-La cabeza propia puede entrenarse con **tres recetas de pérdida completas**,
-cada una la de una red concreta y sin mezclar componentes entre ellas:
+The own head can be trained with **three complete loss recipes**, each the one
+of a concrete network and without mixing components between them:
 
 ```bash
 testbank train yolox-obb-nano --loss-recipe own
@@ -607,173 +654,182 @@ testbank train yolox-obb-nano --loss-recipe yolox_obb_fork
 testbank train yolox-obb-nano --loss-recipe ultralytics_obb
 ```
 
-| Receta | Caja | Otros términos | Asignador | Cabeza |
+| Recipe | Box | Other terms | Assigner | Head |
 |---|---|---|---|---|
-| `own` | `1 − IoU` alineada | ángulo (coseno sobre `sin 2θ, cos 2θ`, atenuado), obj BCE, cls BCE | SimOTA, coste `−log IoU` | directa |
-| `yolox_obb_fork` | KLD ×5 | obj BCE, cls BCE con objetivo `one-hot × solape`, L1 tardía; todo `Σ / num_fg` | SimOTA, coste = KLD | directa |
-| `ultralytics_obb` | `1 − ProbIoU` ×7.5 | DFL ×1.5, cls BCE ×0.5 con objetivo **suave**; sin objectness; todo `Σ / Σ objetivos` | TAL (`topk=10, α=0.5, β=6`) | **DFL** (16 bins/lado), ángulo escalar, sin obj |
+| `own` | aligned `1 − IoU` | angle (cosine over `sin 2θ, cos 2θ`, attenuated), obj BCE, cls BCE | SimOTA, cost `−log IoU` | direct |
+| `yolox_obb_fork` | KLD ×5 | obj BCE, cls BCE with target `one-hot × overlap`, late L1; everything `Σ / num_fg` | SimOTA, cost = KLD | direct |
+| `ultralytics_obb` | `1 − ProbIoU` ×7.5 | DFL ×1.5, cls BCE ×0.5 with **soft** target; no objectness; everything `Σ / Σ targets` | TAL (`topk=10, α=0.5, β=6`) | **DFL** (16 bins/side), scalar angle, no obj |
 
-Una receta no es una pérdida de caja: es asignador + objetivos + términos +
-normalización + ganancias. Por eso `ultralytics_obb` **cambia la cabeza**: su DFL
-exige que cada distancia se prediga como una distribución, y su BCE de clase sin
-objectness necesita los objetivos suaves de TAL. Entrenar «su pérdida» sobre
-nuestra regresión directa habría sido comparar otra cosa con su nombre puesto.
-La receta fija la cabeza (`HeadSpec`), y la cabeza viaja **dentro del
-checkpoint**: cargar unos pesos reconstruye la que los produjo.
+The fourth recipe, `ddgrcf`, belongs to the DDGRCF port (§ *Pretraining*):
+`yolox-obb-ddgrcf-port` forces it.
 
-### Licencias, y qué es fiel y qué no
+A recipe is not a box loss: it is assigner + targets + terms + normalization +
+gains. That is why `ultralytics_obb` **changes the head**: its DFL requires
+each distance to be predicted as a distribution, and its class BCE without
+objectness needs the soft targets of TAL. Training "their loss" on our direct
+regression would have been comparing something else under its name. The recipe
+fixes the head (`HeadSpec`), and the head travels **inside the checkpoint**:
+loading weights rebuilds the one that produced them.
 
-**El fork es Apache-2.0 y se leyó entero.** Se reproduce su `get_losses`:
-mismos términos, mismas ganancias (`reg_weight = 5.0`, `τ = 1.0`), misma
-normalización, mismo objetivo de clase, mismo SimOTA con la KLD como coste. La
-KLD propia está anclada numéricamente contra su fórmula en
-`tests/test_overlap.py` (500 pares aleatorios, `atol 1e-5`). Dos desviaciones,
-las dos de cabeza: ellos regresan el ángulo en grados directamente —con el salto
-en ±90°— y aquí se mantiene `(sin 2θ, cos 2θ)`; y su L1 tardía va sobre
-`(dx, dy, log w, log h)` mientras aquí va sobre las cuatro distancias, que es la
-regresión cruda de *esta* cabeza. Con circuitos cortos la L1 está encendida
-desde la primera época, igual que en el fork cuando `no_aug_epochs ≥ max_epoch`.
+### Licenses, and what is faithful and what is not
 
-**Ultralytics es AGPL y no se ha leído ni copiado una línea.** La *composición*
-—qué términos, qué ganancias, qué asignador— sale de su documentación pública.
-Las *fórmulas* salen de los papers: ProbIoU (Llerena et al., 2021), DFL (Li et
-al., 2020), TAL (Feng et al., "TOOD", 2021). La ProbIoU se verifica contra una
-implementación matricial independiente de la distancia de Bhattacharyya; el
-test de aislamiento sigue garantizando que nada fuera del adaptador importa
-`ultralytics`. Es una reproducción de la receta descrita, no una copia: si su
-código tuviera un detalle no documentado, aquí no está.
+**The fork is Apache-2.0 and was read in full.** Its `get_losses` is
+reproduced: same terms, same gains (`reg_weight = 5.0`, `τ = 1.0`), same
+normalization, same class target, same SimOTA with the KLD as cost. The own
+KLD is numerically anchored against their formula in `tests/test_overlap.py`
+(500 random pairs, `atol 1e-5`). Two deviations, both of head: they regress the
+angle in degrees directly — with the jump at ±90° — and here
+`(sin 2θ, cos 2θ)` is kept; and their late L1 goes over
+`(dx, dy, log w, log h)` while here it goes over the four distances, which is
+the raw regression of *this* head. With short smoke runs the L1 is on from the
+first epoch, just like in the fork when `no_aug_epochs ≥ max_epoch`.
 
-### Dos convenciones de covarianza que no se pueden mezclar
+**Ultralytics is AGPL and not a line has been read or copied.** The
+*composition* — which terms, which gains, which assigner — comes from its
+public documentation. The *formulas* come from the papers: ProbIoU (Llerena et
+al., 2021), DFL (Li et al., 2020), TAL (Feng et al., "TOOD", 2021). ProbIoU is
+verified against an independent matrix implementation of the Bhattacharyya
+distance; the isolation test keeps guaranteeing that nothing outside the
+adapter imports `ultralytics`. It is a reproduction of the described recipe,
+not a copy: if their code had an undocumented detail, it is not here.
 
-Los dos papers convierten `(w, h)` en varianzas de forma distinta —`w²/4` la
-KLD, `w²/12` la ProbIoU— y mezclarlas cambia los números sin cambiar el nombre.
-`box_to_gaussian` exige el divisor explícito para que no se pueda llamar «a
-secas». → `models/overlap.py`
+### Two covariance conventions that cannot be mixed
 
-### Lo que está medido
+The two papers turn `(w, h)` into variances differently — `w²/4` for KLD,
+`w²/12` for ProbIoU — and mixing them changes the numbers without changing the
+name. `box_to_gaussian` requires the explicit divisor so it cannot be called
+"plainly". → `models/overlap.py`
 
-Las tres recetas completan el circuito de 1 época sobre los datos reales, con
-pérdidas finitas, gradientes finitos y cada una reportando **sus** términos (la
-propia tiene ángulo; el fork ángulo cero y L1; Ultralytics DFL y sin
-objectness). El mAP tras una época en CPU es 0 en las tres, como toca: es un
-circuito, no un resultado. Las tres son comparables porque comparten backbone,
-datos, partición y métrica; lo único que cambia es la receta.
+### What is measured
 
-## Ángulo y cajas casi cuadradas
+The three recipes complete the 1-epoch smoke run on the real data, with finite
+losses, finite gradients and each reporting **its** terms (the own one has
+angle; the fork zero angle and L1; Ultralytics DFL and no objectness). The mAP
+after one epoch on CPU is 0 for all three, as it should be: it is a smoke run,
+not a result. The three are comparable because they share backbone, data,
+split and metric; the only thing that changes is the recipe.
 
-La cabeza OBB propia predice el ángulo como **`(sin 2θ, cos 2θ)`**, no como un
-escalar en radianes. Un rectángulo girado θ y otro girado θ+180° son el mismo
-rectángulo; regresar θ directamente castigaría al modelo por acertar —predecir
-179° con verdad 1° daría un error enorme siendo 2° de error real—. Con el ángulo
-doblado, los dos caen en el mismo punto del círculo y la ambigüedad desaparece
-por construcción.
+## Angle and nearly square boxes
 
-**Eso resuelve la periodicidad de 180°, pero no el intercambio de lados.** Cuando
-`w ≈ h`, la caja `(w, h, θ)` y la caja `(h, w, θ+90°)` describen el mismo
-rectángulo y la codificación las manda a puntos opuestos: dos objetivos
-contradictorios para la misma caja.
+The own OBB head predicts the angle as **`(sin 2θ, cos 2θ)`**, not as a scalar
+in radians. A rectangle rotated θ and another rotated θ+180° are the same
+rectangle; regressing θ directly would punish the model for being right —
+predicting 179° with truth 1° would give a huge error for 2° of real error.
+With the doubled angle, both fall on the same point of the circle and the
+ambiguity disappears by construction.
 
-Por eso la pérdida de ángulo se **atenúa** cuando el ratio de la caja verdadera
-es bajo. Si el rectángulo es casi cuadrado, el ángulo apenas cambia el recorte
-—la política de anotación ya dice que un rectángulo aproximado basta—, así que no
-tiene sentido gastar capacidad castigando algo que ni está bien definido ni
-altera el resultado.
+**That solves the 180° periodicity, but not the side swap.** When `w ≈ h`, the
+box `(w, h, θ)` and the box `(h, w, θ+90°)` describe the same rectangle and the
+encoding sends them to opposite points: two contradictory targets for the same
+box.
 
-Todo es parametrizable en `detector.loss.angle_weight`: `enabled`,
-`ratio_threshold`, `min_weight` y `decay` (`linear`, `smoothstep`, `quadratic`,
-`step`). Va en la config y no clavado en el código **para poder medirlo**: la
-pregunta «cuánto aporta esto» se responde entrenando con y sin, y ambas
-ejecuciones quedan registradas con su config.
+That is why the angle loss is **attenuated** when the ratio of the true box is
+low. If the rectangle is nearly square, the angle barely changes the crop —
+the annotation policy already says an approximate rectangle is enough — so it
+makes no sense to spend capacity punishing something that is neither well
+defined nor alters the result.
 
-Se descartó la representación gaussiana (GWD/KLD), que absorbería la ambigüedad
-de forma natural, porque se aleja del IoU rotado por shapely con el que medimos.
-Esa trazabilidad pesa más que la elegancia de la formulación.
+Everything is parametrizable in `detector.loss.angle_weight`: `enabled`,
+`ratio_threshold`, `min_weight` and `decay` (`linear`, `smoothstep`,
+`quadratic`, `step`). It is in the config and not hard-coded **so it can be
+measured**: the question "how much does this contribute" is answered by
+training with and without, and both runs stay recorded with their config.
 
-### [SOSPECHA] Ese 19% probablemente es un artefacto
+The Gaussian representation (GWD/KLD), which would absorb the ambiguity
+naturally, was discarded because it moves away from the shapely rotated IoU we
+measure with. That traceability weighs more than the elegance of the
+formulation.
 
-El atenuador existe porque **145 de 762 anotaciones (19%)** tienen ratio < 1.1 —
-el mismo 19% que dispara el aviso de ancla inestable. Pero hay motivos para creer
-que ese número **no describe el dominio, sino el export**:
+### [SUSPICION] That 19% is probably an artifact
+
+The attenuator exists because **145 of 762 annotations (19%)** have ratio <
+1.1 — the same 19% that triggers the unstable anchor warning. But there are
+reasons to believe that number **does not describe the domain, but the
+export**:
 
 | | |
 |---|---|
-| Ratio real de un billete de euro | **~1.95:1** en todas las denominaciones |
-| Mediana de ratio medida | **1.45** |
-| Imágenes a 416×416 | 489 de 502 |
+| Real ratio of a euro banknote | **~1.95:1** in every denomination |
+| Measured median ratio | **1.45** |
+| Images at 416×416 | 489 of 502 |
 
-Un billete es 1.95:1 en el mundo. Que la mediana salga en 1.45 apunta a la
-deformación del redimensionado a cuadrado, no a que los billetes aparezcan
-escorzados. Las imágenes llegaron ya redimensionadas en origen, así que la
-distorsión no se puede deshacer desde aquí.
+A banknote is 1.95:1 in the world. That the median comes out at 1.45 points to
+the deformation of the resizing to a square, not to banknotes appearing
+foreshortened. The images arrived already resized at the source, so the
+distortion cannot be undone from here.
 
-**Si en algún momento se resuben los originales sin redimensionar**, hay que
-volver a medir la distribución de ratios. Es bastante probable que el 19% se
-desplome y que el atenuador deje de hacer falta — en cuyo caso `enabled=False`
-y a otra cosa. Medirlo antes de quitarlo, no al revés.
+**If at some point the originals are re-uploaded without resizing**, the ratio
+distribution has to be measured again. It is quite likely that the 19%
+collapses and the attenuator stops being needed — in which case
+`enabled=False` and move on. Measure it before removing it, not the other way
+round.
 
-## Descartados en el refactor: los dos clones de YOLOX-OBB
+## Discarded in the refactor: the two YOLOX-OBB clones
 
-Hubo dos adaptadores que envolvían repositorios ajenos clonados y parcheados.
-Se quitaron en `feature/refactor_code` porque lo que aportaban ya está en casa,
-y los dos exigían CUDA. Se deja lo aprendido, que costó medirlo.
+There were two adapters wrapping cloned and patched foreign repositories. They
+were removed in `feature/refactor_code` because what they contributed is now
+in-house, and both required CUDA. What was learned is kept, because it cost
+measuring.
 
-**`buzhidaoshenme/YOLOX-OBB`** (Apache-2.0, abandonado en 2021). Aportaba su
-receta KLD y el COCO de Megvii (`yolox_s.pth.tar`, backbone sin rama de
-ángulo). Hoy la receta es `--loss-recipe yolox_obb_fork` sobre la cabeza propia
-—anclada numéricamente contra su fórmula— y el COCO lo carga `--pretrained` en
-las tres variantes. Lo que costó hacerlo arrancar, por si alguien vuelve:
-`polyiou` es una extensión C++ con SWIG sin wheel de la que cuelga `import
-yolox` entero (se sustituía por shapely: dos nombres, `VectorDouble` e
-`iou_poly`); `apex` importado sin condición; `np.int0` y `np.bool` eliminados
-en NumPy 2.0; su lector VOC resta 1 a las coordenadas mientras su generador
-escribe en base 0; su `evaluate_detections` devuelve `0.0, 0.0` fijo; y su
-`DataPrefetcher` está construido sobre `torch.cuda.Stream`. Su README dice
-0.712 mAP en DOTA pero no publica ese checkpoint.
+**`buzhidaoshenme/YOLOX-OBB`** (Apache-2.0, abandoned in 2021). It contributed
+its KLD recipe and Megvii's COCO (`yolox_s.pth.tar`, backbone without angle
+branch). Today the recipe is `--loss-recipe yolox_obb_fork` on the own head —
+numerically anchored against their formula — and the COCO is loaded by
+`--pretrained` in the three variants. What it cost to get it running, in case
+anyone goes back: `polyiou` is a C++ extension with SWIG without a wheel that
+the whole `import yolox` hangs from (it was replaced by shapely: two names,
+`VectorDouble` and `iou_poly`); `apex` imported unconditionally; `np.int0` and
+`np.bool` removed in NumPy 2.0; their VOC reader subtracts 1 from the
+coordinates while their generator writes in base 0; their
+`evaluate_detections` returns a fixed `0.0, 0.0`; and their `DataPrefetcher`
+is built on `torch.cuda.Stream`. Their README claims 0.712 mAP on DOTA but does
+not publish that checkpoint.
 
-**`DDGRCF/YOLOX_OBB`** (Apache-2.0, 2022). Aportaba el único YOLOX con cabeza
-OBB **entrenada en DOTA** publicada (`YOLOX_s_dota1_0`, 70.82 mAP@0.5, en Baidu
-Pan). Hoy eso es `yolox-obb-ddgrcf-port`: su red portada tensor a tensor y su
-receta con el IoU exacto en torch (§ *Preentreno*). El clon exigía compilar sus
-operadores C++/CUDA (`box_iou_rotated`, `nms_rotated`, `convex`) con MSVC —aquí
-no lo hay: `Microsoft Visual C++ 14.0 or greater is required`— y BboxToolkit,
-que sí es Python puro. El camino de datos (`export dota` → `img_split.py`
-`--sizes 1024` → sus `.pkl`, 1 parche = 1 imagen) se verificó entero. El
-operador compilado estaba *dentro* de su SimOTA, así que no admitía el truco
-de shapely del otro fork; por eso el port reimplementa el IoU de polígonos.
+**`DDGRCF/YOLOX_OBB`** (Apache-2.0, 2022). It contributed the only published
+YOLOX with an OBB head **trained on DOTA** (`YOLOX_s_dota1_0`, 70.82 mAP@0.5,
+on Baidu Pan). Today that is `yolox-obb-ddgrcf-port`: their network ported
+tensor by tensor and their recipe with the exact IoU in torch
+(§ *Pretraining*). The clone required compiling their C++/CUDA operators
+(`box_iou_rotated`, `nms_rotated`, `convex`) with MSVC — not available here:
+`Microsoft Visual C++ 14.0 or greater is required` — and BboxToolkit, which is
+pure Python. The data path (`export dota` → `img_split.py --sizes 1024` →
+their `.pkl`, 1 patch = 1 image) was verified end to end. The compiled operator
+was *inside* their SimOTA, so it did not admit the shapely trick of the other
+fork; that is why the port reimplements the polygon IoU.
 
-## Entorno para RTMDet-R
+## RTMDet-R environment
 
-RTMDet-R es Apache 2.0 y apto para producción, pero **no entra en el entorno
-principal**. MMCV lleva operadores compilados —NMS rotado, IoU rotado— enlazados
-contra la ABI binaria de una versión concreta de PyTorch, y de ahí sale una
-cadena de restricciones que empuja el proyecto entero dos años atrás.
+RTMDet-R is Apache 2.0 and fit for production, but **it does not fit in the
+main environment**. MMCV carries compiled operators — rotated NMS, rotated IoU
+— linked against the binary ABI of a specific PyTorch version, and from there
+comes a chain of constraints that pushes the whole project two years back.
 
-### La cadena, y por qué acaba en torch 2.0
+### The chain, and why it ends at torch 2.0
 
 ```
 mmrotate 1.0.0rc1   ->  mmdet >=3.0.0rc6, <3.2.0
 mmdet 3.1.0         ->  mmcv  >=2.0.0rc4, <2.1.0
-mmcv 2.0.x          ->  solo existe en el índice de torch 2.0
+mmcv 2.0.x          ->  only exists on the torch 2.0 index
 ```
 
-Cada eslabón empuja al siguiente. Y **ninguna de estas incompatibilidades la ve
-el resolutor de dependencias**: son `assert` dentro del `__init__.py` de cada
-paquete, que solo saltan al importar.
+Each link pushes the next. And **none of these incompatibilities is seen by
+the dependency resolver**: they are `assert`s inside each package's
+`__init__.py`, which only fire on import.
 
-Ruedas `cp311-win_amd64` disponibles, medido:
+`cp311-win_amd64` wheels available, measured:
 
-| índice | mmcv disponibles |
+| index | mmcv available |
 |---|---|
-| `torch2.14` | el índice no existe |
-| `torch2.4` | solo `manylinux` |
-| `torch2.1` | 2.1.0, 2.2.0 — **las dos por encima del tope de mmdet** |
-| **`torch2.0`** | **2.0.0, 2.0.1** — las únicas que sirven |
+| `torch2.14` | the index does not exist |
+| `torch2.4` | only `manylinux` |
+| `torch2.1` | 2.1.0, 2.2.0 — **both above mmdet's cap** |
+| **`torch2.0`** | **2.0.0, 2.0.1** — the only ones that work |
 
-Y `mmrotate` **no está publicado en PyPI en su línea 1.x**: en PyPI solo hay
-0.3.4, que va con `mmcv-full` 1.x y `mmdet <3`. Hay que instalarlo desde la rama
-`dev-1.x` de GitHub.
+And `mmrotate` **is not published on PyPI in its 1.x line**: PyPI only has
+0.3.4, which goes with `mmcv-full` 1.x and `mmdet <3`. It has to be installed
+from the `dev-1.x` branch on GitHub.
 
-### Receta verificada
+### Verified recipe
 
 ```bash
 uv venv .venv-rtmdet --python 3.11
@@ -782,126 +838,133 @@ VIRTUAL_ENV=.venv-rtmdet uv pip install --only-binary=:all:   --find-links https
 VIRTUAL_ENV=.venv-rtmdet uv pip install mmdet==3.1.0   "git+https://github.com/open-mmlab/mmrotate@dev-1.x" "numpy==1.26.4"
 ```
 
-Comprobado de punta a punta: los cuatro paquetes importan, `box_iou_rotated`
-calcula (0.6337 en el caso de prueba), `RotatedRTMDetHead` está en el registro, y
-Ultralytics sigue cargando YOLO26-obb en ese mismo entorno.
+Checked end to end: the four packages import, `box_iou_rotated` computes
+(0.6337 in the test case), `RotatedRTMDetHead` is in the registry, and
+Ultralytics still loads YOLO26-obb in that same environment.
 
-**`numpy<2` es la parte frágil.** Torch 2.0 es anterior a NumPy 2 y no lo
-restringe; `mmcv` y `mmengine` piden `numpy` sin tope. El resolutor lo sube solo
-y `torch.from_numpy` empieza a fallar con *"Numpy is not available"*. Cualquier
-instalación posterior en ese entorno puede volver a romperlo **en silencio**:
-hay que repetir el pin en cada `uv pip install`.
+**`numpy<2` is the fragile part.** Torch 2.0 predates NumPy 2 and does not
+restrict it; `mmcv` and `mmengine` ask for `numpy` without a cap. The resolver
+bumps it on its own and `torch.from_numpy` starts failing with *"Numpy is not
+available"*. Any later install in that environment can break it again
+**silently**: the pin has to be repeated in every `uv pip install`.
 
-### [DESVIACIÓN] El preentreno COCO no existe para tiny
+### [DEVIATION] COCO pretraining does not exist for tiny
 
-La especificación pedía *"la config con preentreno COCO, no ImageNet"*. Para la
-variante `tiny` —la que encaja con el despliegue móvil— **esa config no está
-publicada**:
+The specification asked for *"the config with COCO pretraining, not
+ImageNet"*. For the `tiny` variant — the one that fits the mobile deployment —
+**that config is not published**:
 
 ```python
 # rotated_rtmdet_tiny-3x-dota.py
 checkpoint = '.../cspnext_rsb_pretrain/cspnext-tiny_imagenet_600e.pth'
 ```
 
-El único `coco_pretrain` es el de la variante `l`, ~52M parámetros: diez veces
-el presupuesto móvil.
+The only `coco_pretrain` is the `l` variant's, ~52M parameters: ten times the
+mobile budget.
 
-**Lo que se usa en su lugar**, y por qué es mejor que ambas opciones: los
-checkpoints publicados no son preentrenos de backbone, son **detectores rotados
-ya entrenados en DOTA**.
+**What is used instead**, and why it is better than both options: the
+published checkpoints are not backbone pretrainings, they are **rotated
+detectors already trained on DOTA**.
 
-| checkpoint | mAP en DOTA |
+| checkpoint | mAP on DOTA |
 |---|---|
 | `rotated_rtmdet_tiny-3x-dota` | 75.60 |
 | `rotated_rtmdet_tiny-3x-dota_ms` | 79.82 |
 
-Eso es más que «aprendió a localizar en COCO»: es un modelo que ya predice
-**cajas orientadas**, que es exactamente nuestra tarea. Partir de ahí y ajustar
-sobre 351 imágenes es mejor punto de partida que cualquier preentreno de
-clasificación. La cadena real es ImageNet → DOTA, y el destino es lo que importa.
+That is more than "it learned to localize on COCO": it is a model that already
+predicts **oriented boxes**, which is exactly our task. Starting there and
+fine-tuning on 351 images is a better starting point than any classification
+pretraining. The real chain is ImageNet → DOTA, and the destination is what
+matters.
 
-### Al comparar
+### When comparing
 
-Un candidato entrenado aquí corre con **torch 2.0** mientras el candidato propio
-y Ultralytics corren con **2.14**. El `run.json` registra la versión, así que la
-diferencia es visible en `compare`, pero sigue siendo una comparación entre
-entornos separados por dos años de PyTorch. Conviene decirlo al leer los números.
+A candidate trained here runs with **torch 2.0** while the own candidate and
+Ultralytics run with **2.14**. The `run.json` records the version, so the
+difference is visible in `compare`, but it is still a comparison across
+environments two years of PyTorch apart. It is worth saying when reading the
+numbers.
 
-## Licencias
+## Licenses
 
-Sin código AGPL ni GPL en producción. El registro distingue **dos ejes
-independientes**:
+No AGPL or GPL code in production. The registry distinguishes **two
+independent axes**:
 
-- `production_ready` — licencia del **código**. Ultralytics es AGPL-3.0, así que
-  queda en `False`: solo referencia de rendimiento, aislado tras la interfaz
-  común y en grupo opcional de dependencias. Un test comprueba que ningún módulo
-  fuera de su adaptador importa `ultralytics`.
-- `restricted_pretrain` — licencia de los **datos de preentreno**. DOTA-v1.0 se
-  distribuye solo para uso académico y eso alcanza a los pesos derivados.
+- `production_ready` — license of the **code**. Ultralytics is AGPL-3.0, so it
+  stays `False`: performance reference only, isolated behind the common
+  interface and in an optional dependency group. A test checks that no module
+  outside its adapter imports `ultralytics`.
+- `restricted_pretrain` — license of the **pretraining data**. DOTA-v1.0 is
+  distributed for academic use only and that reaches the derived weights.
+  *Planned, not implemented: today the registry only carries
+  `production_ready`, and the DOTA-pretrained runs are told apart by the
+  `--pretrained` path frozen in their `config.yaml`.*
 
-Los dos ejes se separan a propósito: cada candidato apto se instancia en dos
-variantes, con y sin preentreno DOTA, y `compare` las muestra como filas hermanas
-con la columna marcada. Nada queda descartado de antemano.
+The two axes are separated on purpose: the idea is that each fit candidate is
+instantiated in two variants, with and without DOTA pretraining, and `compare`
+shows them as sibling rows with the column marked. Nothing is discarded up
+front.
 
-Los datasets llevan `license`, `production_ready` y `sources: list[str]` con la
-licencia de cada fuente, porque la licencia de un agregado no anula la de sus
-fuentes. `compare` marca una ejecución como no apta si cualquier dataset de su
-cadena lo es.
+Datasets carry `license`, `production_ready` and `sources: list[str]` with the
+license of each source, because the license of an aggregate does not override
+that of its sources. `compare` marks a run as unfit if any dataset in its
+chain is.
 
-## Uso: entornos y cómo lanzar cada candidato
+## Usage: environments and how to launch each candidate
 
-Hay **tres entornos**, no uno, y la razón es siempre la misma: dependencias que
-no caben juntas. Cada candidato dice cuál necesita.
+There are **three environments**, not one, and the reason is always the same:
+dependencies that do not fit together. Each candidate says which one it needs.
 
-### Entorno principal — `.venv`
+### Main environment — `.venv`
 
-Todo lo que no es un modelo, más la cabeza propia y Ultralytics.
+Everything that is not a model, plus the own head and Ultralytics.
 
 ```bash
 uv venv --python 3.11
 uv pip install -e ".[dev,torch]"          # base + torch (CPU)
-uv pip install -e ".[ultralytics]"        # opcional: la referencia AGPL
-pytest -q                                 # 495 tests
+uv pip install -e ".[ultralytics]"        # optional: the AGPL reference
+pytest -q                                 # 493 tests
 ```
 
-El `torch` que instala es **CPU**. En un Mac con M-series el bucle propio usa
-MPS solo; en un PC con NVIDIA hace falta el torch con CUDA de
-<https://pytorch.org/get-started/locally/> instalado *en este mismo entorno*.
+The `torch` it installs is **CPU**. On a Mac with M-series the own loop uses
+MPS on its own; on a PC with NVIDIA the CUDA torch from
+<https://pytorch.org/get-started/locally/> is needed, installed *in this same
+environment*.
 
-| Candidato | Entorno | Comando |
+| Candidate | Environment | Command |
 |---|---|---|
-| `yolox-obb-nano` (857k) | principal | `testbank train yolox-obb-nano --name nano_base` |
-| `yolox-obb-tiny` (4.37M) | principal | `testbank train yolox-obb-tiny --name tiny_base` |
-| `yolox-obb-small` (7.75M) | principal | `testbank train yolox-obb-small --name small_base` |
-| `ultralytics-yolo-obb` | principal + `[ultralytics]` | `testbank train ultralytics-yolo-obb --name ul_ref` |
-| `yolox-obb-ddgrcf-port` (8.05M) | principal | `testbank train yolox-obb-ddgrcf-port --pretrained <DOTA.pth>` |
-| `rtmdet-r-tiny` | `.venv-rtmdet` aparte | ver abajo |
+| `yolox-obb-nano` (857k) | main | `testbank train yolox-obb-nano --name nano_base` |
+| `yolox-obb-tiny` (4.37M) | main | `testbank train yolox-obb-tiny --name tiny_base` |
+| `yolox-obb-small` (7.75M) | main | `testbank train yolox-obb-small --name small_base` |
+| `ultralytics-yolo-obb` | main + `[ultralytics]` | `testbank train ultralytics-yolo-obb --name ul_ref` |
+| `yolox-obb-ddgrcf-port` (8.05M) | main | `testbank train yolox-obb-ddgrcf-port --pretrained <DOTA.pth>` |
+| `rtmdet-r-tiny` | separate `.venv-rtmdet` | see below |
 
-`train` entrena, evalúa sobre `valid` con las métricas de testbank y deja la
-ejecución en `runs/<fecha>_<nombre>/` con la config congelada. **El test no se
-toca**: ver *Test sellado* en § *Particiones*.
+`train` trains, evaluates on `valid` with testbank's metrics and leaves the
+run in `runs/<date>_<name>/` with the frozen config. **The test is not
+touched**: see *Sealed test* in § *Splits*.
 
-Opciones que valen para todos:
-
-```bash
---epochs N                  # sustituye al de la config; queda registrado
---out-of-bounds clip|pad|keep   # política de borde; clip por defecto
---loss-recipe own|yolox_obb_fork|ultralytics_obb   # solo cabeza propia; § Recetas
---pretrained ruta.pth       # checkpoint ajeno con el que ARRANCAR; queda en la config
---weights ruta.pt           # reevalúa unos pesos en vez de entrenar
-```
-
-Y después de varias ejecuciones:
+Options valid for all:
 
 ```bash
-testbank compare --csv-out runs/tabla.csv
+--epochs N                  # overrides the config's; it is recorded
+--out-of-bounds clip|pad|keep   # border policy; clip by default
+--loss-recipe own|yolox_obb_fork|ultralytics_obb|ddgrcf   # own head (ddgrcf: the port); § Recipes
+--pretrained path.pth       # foreign checkpoint to START from; stays in the config
+--weights path.pt           # re-evaluates some weights instead of training
 ```
 
-### RTMDet-R — `.venv-rtmdet`, aparte
+And after several runs:
 
-Exige torch 2.0 y una cadena de versiones que no convive con el entorno
-principal. La receta completa y verificada está en § *Entorno para RTMDet-R*;
-resumida:
+```bash
+testbank compare --csv-out runs/table.csv
+```
+
+### RTMDet-R — `.venv-rtmdet`, separate
+
+It requires torch 2.0 and a chain of versions that does not coexist with the
+main environment. The full, verified recipe is in § *RTMDet-R environment*;
+in short:
 
 ```bash
 uv venv .venv-rtmdet --python 3.11
@@ -912,60 +975,59 @@ VIRTUAL_ENV=.venv-rtmdet uv pip install -e .
 .venv-rtmdet/Scripts/testbank train rtmdet-r-tiny --name rtmdet_base
 ```
 
-Sus números salen de torch 2.0 y los demás de torch 2.14: la tabla lo anota.
+Its numbers come from torch 2.0 and the rest from torch 2.14: the table notes it.
 
-### Antes de las líneas base
+### Before the baselines
 
-- **`clip` es la política por defecto y devuelve rectángulos** — con el ángulo
-  original, dentro del marco. `pad` y `keep` siguen disponibles por flag.
-- Lo que hay en `runs/` hasta hoy son circuitos de 1–2 épocas. **Ninguno es una
-  medida de calidad.** Conviene vaciarlo, o nombrar las líneas base de forma que
-  `compare` no los mezcle.
-- Las tres variantes propias, el port de DDGRCF y Ultralytics se pueden lanzar
-  hoy, y usan la GPU si la hay (`cuda` → `mps` → `cpu`; `TESTBANK_DEVICE` lo
-  fuerza). RTMDet-R necesita su entorno.
-- **Decidir la partición.** La activa es la del export, con un 20% del test
-  contaminado por casi-duplicados. `make-splits --repartition` la rehace sin
-  fugas y estratificada (§ *Particiones*); hacerlo invalida la comparación con
-  cualquier ejecución anterior, así que es antes de las líneas base o nunca.
+- **`clip` is the default policy and returns rectangles** — with the original
+  angle, inside the frame. `pad` and `keep` remain available by flag.
+- What is in `runs/` to date are 1–2 epoch smoke runs. **None is a quality
+  measurement.** It is worth emptying it, or naming the baselines so that
+  `compare` does not mix them.
+- The three own variants, the DDGRCF port and Ultralytics can be launched
+  today, and use the GPU if there is one (`cuda` → `mps` → `cpu`;
+  `TESTBANK_DEVICE` forces it). RTMDet-R needs its environment.
+- **Decide the split.** The only version is `v1`, the export's, with 20% of
+  the test contaminated by near-duplicates. `make-splits --repartition` writes
+  a `v2` without leaks and stratified (§ *Splits*) and leaves `v1` intact;
+  runs record their version and `compare` shows it, so mixing them is visible
+  but still meaningless — pick one before the baselines.
 
-## Estado
+## Status
 
-**Hecho.** Quad canónico con las cinco invariantes del volteo. Lector `obb_yolo`
-estricto, que acumula todos los errores de un fichero en vez de morir en la
-primera línea. Detección de estructura y materialización de splits en los dos
-modos, chequeo de visibilidad, filtro por área relativa, política de borde
-(`clip` / `pad` / `keep`, con `clip` devolviendo rectángulos con el ángulo
-original), detección de casi-duplicados en color, y re-partición opt-in por
-grupos y estratos con ratios y semilla (`--repartition`). Seis conversores de
-formato y cuatro exportadores. Métricas con AP a 101 puntos, IoU rotado por
-shapely y bootstrap por imagen. Motor de experimentos con la config congelada en
-cada ejecución. Cabeza OBB propia sobre YOLOX en tres variantes (857k / 4.37M /
-7.75M parámetros), entrenamiento determinista, atenuador de ángulo por ratio.
-Adaptadores: Ultralytics (referencia, `production_ready=False`), RTMDet-R, el
-fork de YOLOX-OBB (`predict` verificado; `train` exige CUDA) y las tres variantes
-propias, y DDGRCF/YOLOX_OBB **como port en torch puro** (`yolox-obb-ddgrcf-port`,
-entrena en CPU/MPS, carga sus pesos de DOTA). Seis candidatos registrados; los
-dos clones de YOLOX-OBB se quitaron en el refactor (§ *Descartados*). La cabeza propia carga el **COCO de Megvii**
-(`--pretrained`). La cabeza propia entrena con **tres
-recetas de pérdida completas** (`--loss-recipe own | yolox_obb_fork |
-ultralytics_obb`), cada una la de una red concreta, sobre el mismo backbone.
+**Done.** Canonical quad with the five flip invariants. Strict `obb_yolo`
+reader, which accumulates all the errors of a file instead of dying at the
+first line. Structure detection and split materialization in both modes,
+visibility check, relative area filter, border policy (`clip` / `pad` /
+`keep`, with `clip` returning rectangles with the original angle),
+near-duplicate detection in color, and opt-in re-splitting by groups and
+strata with ratios and seed (`--repartition`). Three format converters
+(`obb_yolo`, `dota`, `bbox_coco`) and two exporters (`dota`, `coco`). Metrics
+with 101-point AP, rotated IoU via shapely and bootstrap by image. Experiment
+engine with the config frozen in every run. Own OBB head on YOLOX in three
+variants (857k / 4.37M / 7.75M parameters), deterministic training, angle
+attenuator by ratio. Adapters: Ultralytics (reference,
+`production_ready=False`), RTMDet-R, the three own variants, and
+DDGRCF/YOLOX_OBB **as a pure-torch port** (`yolox-obb-ddgrcf-port`, trains on
+CPU/MPS, loads its DOTA weights). Six registered candidates; the two YOLOX-OBB
+clones were removed in the refactor (§ *Discarded*). The own head loads
+**Megvii's COCO** (`--pretrained`). The own head trains with **three complete
+loss recipes** (`--loss-recipe own | yolox_obb_fork | ultralytics_obb`), each
+the one of a concrete network, on the same backbone; the port trains with its
+own (`ddgrcf`).
 
-**Datos reales dentro.** 502 imágenes de Roboflow, 762 anotaciones. Ya no se
-depende de `tools/make_synthetic.py`, que se conserva para los tests.
+**Real data in.** 502 images from Roboflow, 762 annotations. No longer
+dependent on `tools/make_synthetic.py`, which is kept for the tests.
 
-**Pendiente.**
+**Pending.**
 
-- Entrenar `buzhidaoshenme/YOLOX-OBB`. El adaptador está hecho y `predict` está
-  verificado, pero su `Trainer` exige CUDA y este equipo es CPU
-  (§ *Descartados en el refactor*).
-- Prueba de humo de RTMDet-R: el entorno se resolvió y el `Runner` se construye,
-  pero no se ha ejecutado ni una época.
-- Enmascarado por polígono para el recorte, hoy rectangular (§ *Salvedades*).
-- Líneas base largas y la tabla comparativa. Todo lo ejecutado hasta ahora son
-  circuitos de 1–2 épocas para verificar que la cañería no gotea, **no
-  resultados**: ningún número de rendimiento de este repositorio es todavía una
-  medida de calidad del detector.
-- El conjunto de test sigue **sellado**. `evaluate-test` es el único camino y
-  deja constancia. Sobre la partición del export, un 20% del test tiene un
-  casi-duplicado en train; `--repartition` lo deja en cero (§ *Salvedades*).
+- RTMDet-R smoke test: the environment resolved and the `Runner` builds, but
+  not a single epoch has run.
+- Polygon masking for the crop, rectangular today (§ *Caveats*).
+- Long baselines and the comparison table. Everything run so far is 1–2 epoch
+  smoke runs to verify the plumbing does not leak, **not results**: no
+  performance number in this repository is yet a quality measurement of the
+  detector.
+- The test set remains **sealed**. `evaluate-test` is the only path and leaves
+  a record. On the export's split, 20% of the test has a near-duplicate in
+  train; `--repartition` brings it to zero (§ *Caveats*).

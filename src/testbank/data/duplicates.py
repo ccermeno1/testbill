@@ -1,62 +1,62 @@
-"""Deteccion de casi-duplicados y manifiesto de grupos.
+"""Near-duplicate detection and group manifest.
 
-El problema, medido sobre el export actual
-------------------------------------------
-27 pares de imagenes casi identicas cruzan particiones (medido en color; ver
-abajo por que no en gris), con indices consecutivos: `Multiple_Euro_090` en test
-y `_091` en train. Son la misma toma repartida entre particiones, asi que
-validacion y test salen optimistas: 10 de las 50 imagenes de test tienen su
-gemela en train o valid.
-
-Por que esto NO re-particiona por su cuenta
+The problem, measured on the current export
 -------------------------------------------
-La especificacion es explicita: en modo adoptar, la particion la decide el export
-y **no se recalcula ni se "mejora"**. Asi que esto no toca `splits/{train,valid,
-test}.txt`. Hace dos cosas:
+27 pairs of nearly identical images cross splits (measured in color; see below
+why not in grayscale), with consecutive indices: `Multiple_Euro_090` in test
+and `_091` in train. They are the same shot spread across splits, so
+validation and test come out optimistic: 10 of the 50 test images have their
+twin in train or valid.
 
-1. **Informa** de la fuga que ya existe, para que los numeros se lean sabiendola.
-2. **Escribe un manifiesto de grupos** para quien SI reparte: los pliegues de
-   validacion cruzada, y `make-splits --repartition`, que es la excepcion
-   explicita y opt-in a la regla de arriba (ver `splits.py`).
+Why this does NOT re-split on its own
+-------------------------------------
+The specification is explicit: in adopt mode the export decides the split and
+**it is neither recomputed nor "improved"**. So this does not touch
+`splits/{train,valid,test}.txt`. It does two things:
 
-Por que un manifiesto y no una estrategia nueva
------------------------------------------------
-`GroupResolver.key()` es por muestra y sin estado. Meter ahi la lectura de 500
-imagenes lo convertiria en algo caro e impredecible, y la agrupacion dejaria de
-ser auditable. Escribir un JSON `{identificador: grupo}` y pasarlo con el
-`--group-key manifest` que ya existe reutiliza el mecanismo, congela el
-resultado y permite revisarlo a mano antes de fiarse.
+1. **Reports** the leak that already exists, so the numbers are read knowing it.
+2. **Writes a group manifest** for whoever DOES split: `make-splits
+   --repartition`, the explicit, opt-in exception to the rule above (see
+   `splits.py`).
 
-Como se comparan
-----------------
-COLOR, 16x16, media cero y norma uno; correlacion por producto escalar. No se usa
-una libreria de hashes perceptuales para no anadir dependencia por algo que son
-cuatro lineas de numpy, y porque una correlacion se razona mejor que un hash: el
-umbral se puede subir o bajar mirando los pares que caen cerca.
+Why a manifest and not a new strategy
+-------------------------------------
+`GroupResolver.key()` is per sample and stateless. Putting the reading of 500
+images in there would make it expensive and unpredictable, and the grouping
+would stop being auditable. Writing a JSON `{identifier: group}` and passing
+it with the existing `--group-key manifest` reuses the mechanism, freezes the
+result and allows reviewing it by hand before trusting it.
 
-Por que en color y no en gris, que fue lo primero
--------------------------------------------------
-En gris, 18 de los 93 pares "casi identicos" eran billetes de DISTINTO valor: un
-50 con un 500, un 20 con un 200. Vistos, son fotos de stock con el mismo
-encuadre -- fondo blanco y la banda del banco de imagenes en el mismo sitio -- y
-una miniatura de 16x16 en gris ve "blanco con una barra oscura" en las dos. La
-resolucion no lo arregla (16, 32 y 64 dan lo mismo); el color si, porque un 50
-es naranja y un 500 morado:
+How they are compared
+---------------------
+COLOR, 16x16, zero mean and unit norm; correlation by dot product. No
+perceptual-hash library, to avoid adding a dependency for four lines of numpy,
+and because a correlation is easier to reason about than a hash: the threshold
+can be raised or lowered by looking at the pairs that fall near it.
 
-    par                          gris    color
+Why in color and not in grayscale, which came first
+---------------------------------------------------
+In grayscale, 18 of the 93 "nearly identical" pairs were banknotes of a
+DIFFERENT value: a 50 with a 500, a 20 with a 200. Looked at, they are stock
+photos with the same framing -- white background and the image bank's banner in
+the same place -- and a 16x16 grayscale thumbnail sees "white with a dark bar"
+in both. Resolution does not fix it (16, 32 and 64 give the same); color does,
+because a 50 is orange and a 500 is purple:
+
+    pair                         gray    color
     100_035 ~ 100_037 (real)     0.988   0.979
-    050_232 ~ 500_437 (falso)    0.948   0.519
-    020_284 ~ 200_096 (falso)    0.896   0.455
+    050_232 ~ 500_437 (false)    0.948   0.519
+    020_284 ~ 200_096 (false)    0.896   0.455
 
-Salio a la luz al estratificar la particion por tipo de billete: un grupo de
-"duplicados" que cruza tipos es imposible por definicion, y el reparto se nego.
-Consecuencia: la cifra de contaminacion que este proyecto dio durante un tiempo
-(42 pares, 36% del test) estaba INFLADA por esos falsos: en color son 27
-pares y el 20% del test.
+It came to light when stratifying the split by banknote type: a group of
+"duplicates" crossing types is impossible by definition, and the split refused.
+Consequence: the contamination figure this project reported for a while (42
+pairs, 36% of test) was INFLATED by those false positives: in color it is 27
+pairs and 20% of test.
 
-La agrupacion es por componentes conexas (union-find), no por pares: si A se
-parece a B y B a C, los tres van al mismo grupo aunque A y C no se parezcan.
-Repartirlos seria dejar la fuga a medias.
+Grouping is by connected components (union-find), not by pairs: if A looks
+like B and B like C, all three go to the same group even if A and C do not
+look alike. Splitting them would leave the leak half open.
 """
 
 from __future__ import annotations
@@ -68,17 +68,17 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-#: Correlacion por encima de la cual dos imagenes se consideran la misma toma.
-#: 0.90 sale de mirar los pares reales EN COLOR: por encima de 0.95 hay 48 pares
-#: y ninguno cruza tipo de billete; entre 0.90 y 0.95 estan las tomas
-#: consecutivas (005_111 ~ 005_112, 010_360 ~ 010_361) con un solo cruce de
-#: tipo; por debajo de 0.90 empiezan a dominar los encuadres iguales con
-#: billetes distintos. Se tira a lo bajo a proposito: para REPARTIR, agrupar de
-#: mas es barato y agrupar de menos es la fuga que se quiere evitar.
+#: Correlation above which two images count as the same shot. 0.90 comes from
+#: looking at the real pairs IN COLOR: above 0.95 there are 48 pairs and none
+#: crosses banknote type; between 0.90 and 0.95 sit the consecutive shots
+#: (005_111 ~ 005_112, 010_360 ~ 010_361) with a single type crossing; below
+#: 0.90 identical framings with different banknotes start to dominate. It is
+#: deliberately on the low side: for SPLITTING, over-grouping is cheap and
+#: under-grouping is the leak we want to avoid.
 DEFAULT_THRESHOLD = 0.90
 
-#: Lado de la miniatura. 16x16 basta para distinguir tomas y es inmune a
-#: diferencias de compresion JPEG que dispararian un hash exacto.
+#: Thumbnail side. 16x16 is enough to tell shots apart and is immune to the
+#: JPEG compression differences that would trip an exact hash.
 THUMBNAIL = 16
 
 
@@ -108,7 +108,7 @@ class DuplicateReport:
     threshold: float
     n_samples: int
     pairs: list[DuplicatePair] = field(default_factory=list)
-    #: identificador -> clave de grupo, con las componentes conexas ya resueltas.
+    #: identifier -> group key, with the connected components already resolved.
     groups: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -124,11 +124,11 @@ class DuplicateReport:
         return len(set(self.groups.values()))
 
     def touching(self, split: str) -> list[DuplicatePair]:
-        """Pares que cruzan y tienen `split` a un lado."""
+        """Crossing pairs that have `split` on one side."""
         return [p for p in self.crossing if split in (p.split_a, p.split_b)]
 
     def affected_in(self, split: str) -> set[str]:
-        """Imagenes DE `split` que tienen un casi-duplicado en otra particion."""
+        """Images OF `split` that have a near-duplicate in another split."""
         out = set()
         for pair in self.touching(split):
             if pair.split_a == split:
@@ -140,27 +140,29 @@ class DuplicateReport:
     def summary_lines(self, sizes: dict[str, int] | None = None) -> list[str]:
         share = 100 * len(self.affected) / self.n_samples if self.n_samples else 0.0
         lines = [
-            f"Casi-duplicados: umbral de correlacion {self.threshold:.2f}",
-            f"Imagenes analizadas:     {self.n_samples}",
-            f"Pares detectados:        {len(self.pairs)}",
-            f"Pares que CRUZAN:        {len(self.crossing)}",
-            f"Imagenes implicadas:     {len(self.affected)} ({share:.1f}%)",
-            f"Grupos resultantes:      {self.n_groups}",
+            f"Near-duplicates: correlation threshold {self.threshold:.2f}",
+            f"Images analysed:      {self.n_samples}",
+            f"Pairs detected:       {len(self.pairs)}",
+            f"Pairs that CROSS:     {len(self.crossing)}",
+            f"Images involved:      {len(self.affected)} ({share:.1f}%)",
+            f"Resulting groups:     {self.n_groups}",
         ]
-        # El desglose por particion va SIEMPRE, y `test` el primero. Sin el, hay
-        # que contar a mano sobre una lista truncada, y contar a mano sobre una
-        # lista truncada es exactamente como se cuela un numero equivocado en un
-        # informe: paso, y por eso esta aqui.
+        # The per-split breakdown ALWAYS goes in, and `test` first. Without it
+        # one has to count by hand over a truncated list, and counting by hand
+        # over a truncated list is exactly how a wrong number slips into a
+        # report: it happened, and that is why this is here.
         for split in ("test", "valid", "train"):
-            afectadas = self.affected_in(split)
+            affected = self.affected_in(split)
             if not self.touching(split):
                 continue
             total = (sizes or {}).get(split)
-            proporcion = f" de {total} ({100*len(afectadas)/total:.0f}%)" if total else ""
-            marca = "  <- el conjunto SELLADO" if split == "test" else ""
+            share_of_split = (
+                f" of {total} ({100 * len(affected) / total:.0f}%)" if total else ""
+            )
+            mark = "  <- the SEALED set" if split == "test" else ""
             lines.append(
-                f"  {split:5s}: {len(self.touching(split))} pares, "
-                f"{len(afectadas)} imagenes{proporcion}{marca}"
+                f"  {split:5s}: {len(self.touching(split))} pairs, "
+                f"{len(affected)} images{share_of_split}{mark}"
             )
         return lines
 
@@ -180,10 +182,9 @@ class DuplicateReport:
             },
             "n_groups": self.n_groups,
             "note": (
-                "No re-particiona: en modo adoptar la particion la decide el "
-                "export. Esto informa de la fuga y da un manifiesto de grupos "
-                "para los pliegues de validacion cruzada, que si generamos "
-                "nosotros."
+                "Does not re-split: in adopt mode the export decides the "
+                "split. This reports the leak and provides a group manifest "
+                "for `make-splits --repartition`, which does split."
             ),
             "crossing_pairs": [
                 {
@@ -199,19 +200,20 @@ class DuplicateReport:
 
 
 def signature(path: Path) -> np.ndarray:
-    """Miniatura en COLOR, centrada y normalizada. Lista para producto escalar.
+    """COLOR thumbnail, centered and normalized. Ready for a dot product.
 
-    En color y no en gris: ver el modulo. La media se resta sobre los tres
-    canales juntos, no por canal, para que dos fotos con el mismo encuadre y
-    distinto billete no se vuelvan a parecer al quitarles el color medio.
+    In color and not grayscale: see the module. The mean is subtracted over the
+    three channels together, not per channel, so that two photos with the same
+    framing and a different banknote do not become alike again once their
+    average color is removed.
     """
     with Image.open(path) as image:
         thumb = image.convert("RGB").resize((THUMBNAIL, THUMBNAIL), Image.BILINEAR)
     values = np.asarray(thumb, dtype=np.float64).ravel()
     values -= values.mean()
     norm = np.linalg.norm(values)
-    # Una imagen de un solo tono da norma cero: no se parece a nada por
-    # correlacion, asi que se deja en ceros en vez de dividir por cero.
+    # A single-tone image has zero norm: it resembles nothing by correlation,
+    # so it is left as zeros instead of dividing by zero.
     return values / norm if norm > 0 else values
 
 
@@ -235,7 +237,7 @@ def find_duplicates(
     split_of: dict[str, str] | None = None,
     threshold: float = DEFAULT_THRESHOLD,
 ) -> DuplicateReport:
-    """Agrupa por componentes conexas de "casi identicas"."""
+    """Group by connected components of "nearly identical"."""
     samples = list(samples)
     split_of = split_of or {}
     if not samples:
@@ -265,8 +267,8 @@ def find_duplicates(
     for index, root in enumerate(roots):
         members[root].append(samples[index].sample_id)
 
-    # La clave del grupo es el identificador menor de la componente: estable
-    # frente al orden de entrada, asi que el manifiesto es reproducible.
+    # The group key is the smallest identifier in the component: stable
+    # against input order, so the manifest is reproducible.
     groups = {
         sample_id: min(ids)
         for ids in members.values()
@@ -282,7 +284,7 @@ def find_duplicates(
 
 
 def write_manifest(report: DuplicateReport, path: str | Path) -> Path:
-    """JSON `{identificador: clave_de_grupo}`, el formato de `--group-manifest`."""
+    """JSON `{identifier: group_key}`, the `--group-manifest` format."""
     import json
 
     path = Path(path)

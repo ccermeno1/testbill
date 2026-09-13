@@ -1,9 +1,9 @@
-"""Interfaz de linea de comandos.
+"""Command-line interface.
 
-Toda lectura de particiones pasa por SplitLoader. Test esta sellado: el unico
-comando que lo abre es `evaluate-test`, que exige una razon por escrito, la
-registra en runs/test_evaluations.jsonl y ensena los accesos anteriores antes
-de evaluar.
+Every read of splits goes through SplitLoader. Test is sealed: the only
+command that opens it is `evaluate-test`, which requires a written reason,
+logs it in runs/test_evaluations.jsonl and shows the previous accesses before
+evaluating.
 """
 
 from __future__ import annotations
@@ -46,9 +46,19 @@ from testbank.experiment.runner import (
 )
 from testbank.viz.inspect import fixed_validation_sample, inspect_samples
 
-#: Cuantas entradas se listan por pantalla antes de resumir. El informe JSON las
-#: lleva todas; esto es solo para que la salida quepa en una terminal.
+#: How many entries are listed on screen before summarizing. The JSON report
+#: carries them all; this is only so the output fits in a terminal.
 _MAX_LISTED = 20
+
+
+def _loader(args, config: Config) -> SplitLoader:
+    """Every command reads the split through here: same container, same
+    version rule (`--split-version`, then the config, then the latest)."""
+    return SplitLoader(
+        args.splits_dir or config.data.splits_dir,
+        args.data_root,
+        version=args.split_version or config.data.split_version,
+    )
 
 
 def _group_config(args, config: Config) -> GroupConfig:
@@ -66,14 +76,14 @@ def _group_config(args, config: Config) -> GroupConfig:
 
 def cmd_detect(args, config: Config) -> int:
     layout = detect_layout(args.data_root or config.data.root)
-    print(f"Modo: {layout.mode.value}")
+    print(f"Mode: {layout.mode.value}")
     if layout.mode is LayoutMode.ADOPT:
         for split in ("train", "valid", "test"):
-            print(f"  {split:6s} {len(layout.groups.get(split, ())):5d} muestras")
+            print(f"  {split:6s} {len(layout.groups.get(split, ())):5d} samples")
     else:
-        print(f"  sin particion previa: {len(layout.all_samples)} muestras")
+        print(f"  no previous split: {len(layout.all_samples)} samples")
     for note in layout.notes:
-        print(f"  aviso: {note}")
+        print(f"  warning: {note}")
     return 0
 
 
@@ -81,13 +91,13 @@ def _parse_ratios(text: str) -> tuple[float, float, float]:
     try:
         parts = tuple(float(x) for x in text.split(","))
     except ValueError:
-        raise SystemExit(f"--ratios: {text!r} no son tres numeros") from None
+        raise SystemExit(f"--ratios: {text!r} are not three numbers") from None
     if len(parts) != 3:
-        raise SystemExit(f"--ratios: hacen falta tres valores (train,valid,test), hay {len(parts)}")
+        raise SystemExit(f"--ratios: three values are needed (train,valid,test), got {len(parts)}")
     if abs(sum(parts) - 1.0) > 1e-9:
-        raise SystemExit(f"--ratios: deben sumar 1, suman {sum(parts):g}")
+        raise SystemExit(f"--ratios: must add up to 1, they add up to {sum(parts):g}")
     if any(x < 0 for x in parts):
-        raise SystemExit("--ratios: ninguna proporcion puede ser negativa")
+        raise SystemExit("--ratios: no proportion can be negative")
     return parts
 
 
@@ -102,19 +112,20 @@ def cmd_make_splits(args, config: Config) -> int:
         overwrite=args.overwrite,
         repartition=args.repartition,
         stratify_regex=args.stratify_regex,
+        version=args.split_version,
     )
-    print(f"Modo: {manifest['mode']}")
+    print(f"Split version: {manifest['version']}  (mode: {manifest['mode']})")
     if manifest["mode"] == "repartition":
-        print("  (la particion del export se ha IGNORADO; esta es nuestra)")
+        print("  (the export's split has been IGNORED; this one is ours)")
     if manifest.get("ratios"):
         r = manifest["ratios"]
-        print(f"  ratios {r['train']:g}/{r['valid']:g}/{r['test']:g}   semilla {manifest['seed']}")
+        print(f"  ratios {r['train']:g}/{r['valid']:g}/{r['test']:g}   seed {manifest['seed']}")
     for split, count in manifest["counts"].items():
         print(f"  {split:6s} {count:5d}")
     if manifest.get("strata"):
-        # Una fila por estrato, para ver de un vistazo que ninguna particion se
-        # ha quedado sin un tipo de billete.
-        print("  por estrato:      train  valid   test")
+        # One row per stratum, to see at a glance that no split has been left
+        # without a banknote type.
+        print("  per stratum:      train  valid   test")
         for stratum, counts in sorted(manifest["strata"].items()):
             print(
                 f"    {stratum:12s}  {counts['train']:5d}  {counts['valid']:5d}  "
@@ -122,12 +133,16 @@ def cmd_make_splits(args, config: Config) -> int:
             )
     print(f"  digest {manifest['digest'][:16]}")
     for note in manifest["notes"]:
-        print(f"  aviso: {note}")
+        print(f"  warning: {note}")
+    print(
+        f"  Commands read the latest version by default; "
+        f"--split-version {manifest['version']} pins this one."
+    )
     return 0
 
 
 def cmd_check_visibility(args, config: Config) -> int:
-    loader = SplitLoader(args.splits_dir or config.data.splits_dir, args.data_root)
+    loader = _loader(args, config)
     splits = args.splits or ["train", "valid"]
     samples = [s for split in splits for s in loader.load(split)]
     sizes = SizeIndex.for_samples(
@@ -149,11 +164,11 @@ def cmd_check_visibility(args, config: Config) -> int:
         print(line)
     if filter_report.dropped:
         shown = sorted(filter_report.dropped, key=lambda d: d.relative_area)
-        print("\nDescartadas por el filtro (siguen en el dataset de origen):")
+        print("\nDiscarded by the filter (still in the source dataset):")
         for dropped in shown[:_MAX_LISTED]:
             print(f"  - {dropped.describe()}")
         if len(shown) > _MAX_LISTED:
-            print(f"  ... y {len(shown) - _MAX_LISTED} mas")
+            print(f"  ... and {len(shown) - _MAX_LISTED} more")
     print()
     print(report.summary())
     if args.json_out:
@@ -167,16 +182,17 @@ def cmd_check_visibility(args, config: Config) -> int:
             json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
-        print(f"\nInforme JSON: {args.json_out}")
-    # Aviso, no error fatal.
+        print(f"\nJSON report: {args.json_out}")
+    # A warning, not a fatal error.
     return 0
 
 
 def cmd_find_duplicates(args, config: Config) -> int:
-    loader = SplitLoader(args.splits_dir or config.data.splits_dir, args.data_root)
-    # Se miran las TRES particiones, test incluido. No es romper el sello: no se
-    # leen anotaciones ni se evalua nada, solo se comprueba si una toma de test
-    # esta tambien en train. Justamente eso es lo que hay que saber.
+    loader = _loader(args, config)
+    # All THREE splits are looked at, test included. It is not breaking the
+    # seal: no annotations are read and nothing is evaluated, it only checks
+    # whether a test shot is also in train. That is precisely what one needs
+    # to know.
     samples, split_of = [], {}
     for split in ("train", "valid", "test"):
         for sample in loader.load(split, allow_test=True):
@@ -191,21 +207,21 @@ def cmd_find_duplicates(args, config: Config) -> int:
         print(line)
 
     if report.crossing:
-        print("\nPares que cruzan particiones:")
+        print("\nPairs crossing splits:")
         for pair in report.crossing[:_MAX_LISTED]:
             print(f"  {pair.describe()}")
         if len(report.crossing) > _MAX_LISTED:
-            print(f"  ... y {len(report.crossing) - _MAX_LISTED} mas")
+            print(f"  ... and {len(report.crossing) - _MAX_LISTED} more")
         print(
-            "\n  La particion adoptada NO se recalcula: la decide el export. "
-            "Esto es un aviso para leer los numeros sabiendolo."
+            "\n  The adopted split is NOT recomputed: the export decides it. "
+            "This is a warning so the numbers are read knowing it."
         )
 
     if args.manifest_out:
         path = write_manifest(report, args.manifest_out)
-        print(f"\nManifiesto de grupos: {path}")
+        print(f"\nGroup manifest: {path}")
         print(
-            "  Usalo al repartir:\n"
+            "  Use it when splitting:\n"
             f"    testbank make-splits --repartition --group-key manifest --group-manifest {path}"
         )
     return 0
@@ -216,12 +232,12 @@ def cmd_export(args, config: Config) -> int:
         config = config.model_copy(
             update={
                 "detector": config.detector.model_copy(
-                    # El enum, no la cadena: `model_copy(update=...)` NO valida.
+                    # The enum, not the string: `model_copy(update=...)` does NOT validate.
                     update={"out_of_bounds": OutOfBoundsPolicy(args.out_of_bounds)}
                 )
             }
         )
-    loader = SplitLoader(args.splits_dir or config.data.splits_dir, args.data_root)
+    loader = _loader(args, config)
     splits = args.splits or ["train", "valid"]
     samples = {split: list(loader.load(split)) for split in splits}
 
@@ -231,37 +247,35 @@ def cmd_export(args, config: Config) -> int:
         config,
         out_dir=Path(args.out_dir) if args.out_dir else None,
     )
-    print(f"Formato:      {result.name}")
-    print(f"Raiz:         {result.root}")
-    print(f"Punto entrada: {result.entry_point}")
+    print(f"Format:       {result.name}")
+    print(f"Root:         {result.root}")
+    print(f"Entry point:  {result.entry_point}")
     print(f"  {result.report.describe()}")
-    # El motivo lo pone el formato, no esta funcion. Antes estaba aqui escrito
-    # a mano ("pierde la orientacion"), que vale para bbox_* y es FALSO para
-    # yolox_obb_voc: ese conserva el angulo y solo redondea. Un aviso que miente
-    # sobre lo que pierde es peor que no avisar.
+    # The reason comes from the format, not from this function: a warning that
+    # lies about what is lost is worse than no warning.
     annotation_format = get_format(get_exporter(args.format).annotation_format)
     if annotation_format.lossy:
-        print(f"  AVISO: formato LOSSY -- {annotation_format.lossy_reason}.")
+        print(f"  WARNING: LOSSY format -- {annotation_format.lossy_reason}.")
     return 0
 
 
 def cmd_evaluate_test(args, config: Config) -> int:
-    """El unico camino al conjunto sellado. Deja constancia siempre."""
+    """The only path to the sealed set. Always leaves a record."""
     run_directory = Path(args.run)
     record = load_run(run_directory)
     weights = Path(args.weights) if args.weights else _only_weights(run_directory)
 
     previous = read_test_accesses()
     if previous:
-        print(f"AVISO: el test ya se ha abierto {len(previous)} vez/veces:")
+        print(f"WARNING: the test has already been opened {len(previous)} time(s):")
         for entry in previous[-_MAX_LISTED:]:
             print(
                 f"  {entry.get('utc', '?')}  {entry.get('run', '?')}  "
                 f"-- {entry.get('reason', '')}"
             )
         print(
-            "  Cada evaluacion adicional gasta el conjunto: elegir entre varias "
-            "es ajustar al test aunque no se toque el modelo.\n"
+            "  Every additional evaluation spends the set: choosing among "
+            "several is tuning to the test even without touching the model.\n"
         )
 
     outcome = evaluate_on_test(
@@ -272,13 +286,14 @@ def cmd_evaluate_test(args, config: Config) -> int:
         reason=args.reason,
         splits_dir=args.splits_dir or config.data.splits_dir,
         data_root=args.data_root,
+        split_version=args.split_version or config.data.split_version,
     )
     print(outcome.summary())
     print(
-        f"\nAcceso numero {outcome.entry['access_number']}, "
-        f"registrado en {TEST_LOG_PATH}"
+        f"\nAccess number {outcome.entry['access_number']}, "
+        f"logged in {TEST_LOG_PATH}"
     )
-    print(f"Metricas: {run_directory / TEST_METRICS}")
+    print(f"Metrics: {run_directory / TEST_METRICS}")
     return 0
 
 
@@ -286,17 +301,17 @@ def _only_weights(run_directory: Path) -> Path:
     found = sorted((run_directory / "weights").glob("*"))
     if len(found) != 1:
         raise SplitError(
-            f"{run_directory}: se esperaba un unico fichero de pesos, hay "
-            f"{len(found)}; indica cual con --weights"
+            f"{run_directory}: a single weights file was expected, there are "
+            f"{len(found)}; say which one with --weights"
         )
     return found[0]
 
 
 def cmd_train(args, config: Config) -> int:
-    # Los overrides se sustituyen DENTRO de la config, no se pasan sueltos al
-    # detector: la config resuelta es lo que se congela en la ejecucion, y dos
-    # runs con epochs o politica de borde distintos no son comparables. Si el
-    # override no llegara ahi, el config.yaml mentiria sobre lo que se ejecuto.
+    # Overrides are substituted INSIDE the config, not passed loose to the
+    # detector: the resolved config is what gets frozen in the run, and two
+    # runs with different epochs or border policy are not comparable. If the
+    # override did not get there, the config.yaml would lie about what ran.
     updates = {}
     if args.epochs is not None:
         updates["epochs"] = args.epochs
@@ -305,7 +320,7 @@ def cmd_train(args, config: Config) -> int:
     if args.pretrained is not None:
         updates["pretrained"] = Path(args.pretrained).resolve()
     if args.loss_recipe is not None:
-        # Por el constructor, que valida; `model_copy(update=...)` no.
+        # Through the constructor, which validates; `model_copy(update=...)` does not.
         updates["loss"] = config.detector.loss.model_validate(
             {**config.detector.loss.model_dump(), "recipe": args.loss_recipe}
         )
@@ -321,19 +336,20 @@ def cmd_train(args, config: Config) -> int:
         dataset_name=args.dataset,
         run_name=args.name,
         weights=Path(args.weights) if args.weights else None,
+        split_version=args.split_version or config.data.split_version,
     )
     print(outcome.summary())
-    print(f"\nVisualizaciones: {outcome.run.viz_dir}")
+    print(f"\nVisualizations: {outcome.run.viz_dir}")
     return 0
 
 
 def cmd_list(args, config: Config) -> int:
-    print("Detectores registrados:")
+    print("Registered detectors:")
     for name in detectors():
         detector = get_detector(name)
-        mark = "" if detector.production_ready else "   NO APTO para produccion"
+        mark = "" if detector.production_ready else "   NOT READY for production"
         print(f"  {name:24s} {detector.license:12s}{mark}")
-    print("\nDatasets registrados:")
+    print("\nRegistered datasets:")
     for name in datasets():
         print(f"  {name}")
     return 0
@@ -350,7 +366,7 @@ def cmd_compare(args, config: Config) -> int:
 
 
 def cmd_inspect(args, config: Config) -> int:
-    loader = SplitLoader(args.splits_dir or config.data.splits_dir, args.data_root)
+    loader = _loader(args, config)
     samples = fixed_validation_sample(
         loader.load(args.split),
         count=args.count or config.viz.sample_count,
@@ -363,17 +379,17 @@ def cmd_inspect(args, config: Config) -> int:
         visibility_threshold=config.annotation_policy.visibility_threshold,
         min_relative_area=config.annotation_policy.min_relative_area,
     )
-    print(f"Muestra fija de '{args.split}' ({len(results)} imagenes, semilla {config.viz.seed})")
+    print(f"Fixed sample of '{args.split}' ({len(results)} images, seed {config.viz.seed})")
     for result in results:
         notes = []
         if result.flagged:
-            notes.append(f"{result.flagged} marcadas")
+            notes.append(f"{result.flagged} flagged")
         if result.dropped:
-            notes.append(f"{result.dropped} filtradas")
+            notes.append(f"{result.dropped} filtered")
         suffix = f"  <- {', '.join(notes)}" if notes else ""
-        print(f"  {result.sample_id}  {result.annotations} anotaciones{suffix}")
-    print(f"\nSalida: {output_dir}")
-    print(f"Hoja de contacto: {output_dir / '_contact_sheet.png'}")
+        print(f"  {result.sample_id}  {result.annotations} annotations{suffix}")
+    print(f"\nOutput: {output_dir}")
+    print(f"Contact sheet: {output_dir / '_contact_sheet.png'}")
     return 0
 
 
@@ -381,58 +397,79 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="testbank", description=__doc__)
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--data-root", type=Path, default=None)
-    parser.add_argument("--splits-dir", type=Path, default=None)
+    parser.add_argument(
+        "--splits-dir", type=Path, default=None,
+        help="container of split versions (default: data.splits_dir, `splits/`)",
+    )
+    parser.add_argument(
+        "--split-version", default=None, metavar="vN",
+        help=(
+            "which split version to read (default: data.split_version, or the "
+            "latest). For make-splits: the name of the version to write "
+            "(default: the next one)"
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("detect", help="inspecciona la estructura del directorio")
+    subparsers.add_parser("detect", help="inspects the directory structure")
 
-    make = subparsers.add_parser("make-splits", help="materializa la particion")
+    make = subparsers.add_parser(
+        "make-splits",
+        help="materializes a NEW split version under splits/ (v1, v2, ...)",
+    )
     make.add_argument("--group-key", choices=[s.value for s in GroupStrategy], default=None)
     make.add_argument("--group-regex", default=None)
     make.add_argument("--group-manifest", default=None)
     make.add_argument(
         "--i-confirm-independence",
         action="store_true",
-        help="afirma explicitamente que cada imagen es independiente",
+        help="explicitly asserts that every image is independent",
     )
     make.add_argument(
         "--seed",
         type=int,
         default=None,
-        help="semilla del reparto; con la misma semilla y los mismos datos sale "
-        "la misma particion, y el manifiesto guarda un digest para comprobarlo",
+        help="seed of the split; with the same seed and the same data the same "
+        "split comes out, and the manifest stores a digest to check it",
     )
-    make.add_argument("--overwrite", action="store_true")
+    make.add_argument(
+        "--overwrite",
+        action="store_true",
+        help=(
+            "redo the target version in place (only with --split-version); "
+            "never needed to add a new version"
+        ),
+    )
     make.add_argument(
         "--ratios",
         default=None,
         metavar="TRAIN,VALID,TEST",
-        help="proporciones del reparto, p. ej. 0.8,0.1,0.1; deben sumar 1. Solo "
-        "cuando repartimos nosotros (modo crear o --repartition). Por defecto, "
-        "las de la config: 0.70,0.15,0.15",
+        help="proportions of the split, e.g. 0.8,0.1,0.1; must add up to 1. Only "
+        "when we do the splitting (create mode or --repartition). By default, "
+        "the config's: 0.70,0.15,0.15",
     )
     make.add_argument(
         "--repartition",
         action="store_true",
         help=(
-            "ignora la particion del export y reparte de cero, por grupos. Es la "
-            "excepcion explicita a 'en modo adoptar manda el export': existe "
-            "porque la de Roboflow tiene el 20%% del test contaminado por "
-            "casi-duplicados. Queda escrito en el manifiesto"
+            "ignores the export's split and splits from scratch, by groups. It is "
+            "the explicit exception to 'in adopt mode the export rules': it exists "
+            "because Roboflow's has 20%% of the test contaminated by "
+            "near-duplicates. It is written in the manifest"
         ),
     )
     make.add_argument(
         "--stratify-regex",
         default=None,
         help=(
-            "regex con UN grupo de captura sobre el nombre de la muestra; cada "
-            "particion recibe su proporcion de cada valor capturado. Para el "
-            r"export de Roboflow: '^(\d+|Multiple)_' (el tipo de billete)"
+            "regex with ONE capture group over the sample name; every split "
+            "receives its proportion of each captured value. For the Roboflow "
+            r"export: '^(\d+|Multiple)_' (the banknote type)"
         ),
     )
 
     visibility = subparsers.add_parser(
-        "check-visibility", help="consistencia de la politica de visibilidad"
+        "check-visibility", help="consistency of the visibility policy"
     )
     visibility.add_argument("--splits", nargs="+", default=None)
     visibility.add_argument("--visibility-threshold", type=float, default=None)
@@ -441,108 +478,107 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help=(
-            "umbral del filtro de area relativa; 0 lo desactiva y muestra "
-            "todas las anotaciones tal cual estan en el fichero"
+            "threshold of the relative area filter; 0 disables it and shows "
+            "all annotations as they are in the file"
         ),
     )
     visibility.add_argument("--json-out", default=None)
 
     train = subparsers.add_parser(
-        "train", help="entrena un candidato y deja la ejecucion en runs/"
+        "train", help="trains a candidate and leaves the run in runs/"
     )
-    train.add_argument("detector", help="nombre registrado; ver `list`")
+    train.add_argument("detector", help="registered name; see `list`")
     train.add_argument("--dataset", default=DEFAULT_DATASET)
-    train.add_argument("--name", default=None, help="nombre de la ejecucion")
+    train.add_argument("--name", default=None, help="name of the run")
     train.add_argument(
         "--out-of-bounds",
         choices=[p.value for p in OutOfBoundsPolicy],
         default=None,
         help=(
-            "billetes que cruzan el borde: clip los recorta al marco (por "
-            "defecto), pad anade borde negro para que quepan enteros (y padea "
-            "tambien en inferencia), keep no toca nada y Ultralytics descartara "
-            "esas imagenes"
+            "banknotes crossing the border: clip trims them to the frame (by "
+            "default), pad adds a black border so they fit whole (and pads at "
+            "inference too), keep touches nothing and Ultralytics will discard "
+            "those images"
         ),
     )
     train.add_argument(
         "--epochs",
         type=int,
         default=None,
-        help="sustituye detector.epochs; queda registrado en la config resuelta",
+        help="overrides detector.epochs; it is recorded in the resolved config",
     )
     train.add_argument(
         "--loss-recipe",
-        choices=["own", "yolox_obb_fork", "ultralytics_obb"],
+        choices=["own", "yolox_obb_fork", "ultralytics_obb", "ddgrcf"],
         default=None,
         help=(
-            "solo para la cabeza propia: que receta de perdida ENTERA entrena. "
-            "own = la propia; yolox_obb_fork = KLD x5 + obj + cls + L1 tardia con "
-            "SimOTA; ultralytics_obb = ProbIoU + DFL + cls suave con TAL, que "
-            "ademas cambia la cabeza (regresion DFL, angulo escalar, sin obj)"
+            "only for the own head: which WHOLE loss recipe trains. "
+            "own = the own one; yolox_obb_fork = KLD x5 + obj + cls + late L1 with "
+            "SimOTA; ultralytics_obb = ProbIoU + DFL + soft cls with TAL, which "
+            "also changes the head (DFL regression, scalar angle, no obj); "
+            "ddgrcf = exact PolyIoU x5 + obj + cls + late L1 with SimOTA, on the "
+            "DDGRCF port (the yolox-obb-ddgrcf-port candidate forces it)"
         ),
     )
     train.add_argument(
         "--pretrained",
         default=None,
         help=(
-            "checkpoint ajeno con el que ARRANCAR el entrenamiento (queda en la "
-            "config): un yolox_*.pth.tar de Megvii para la cabeza propia, o el "
-            "de DOTA de DDGRCF para su port. No confundir con --weights"
+            "foreign checkpoint to START training from (recorded in the "
+            "config): a Megvii yolox_*.pth.tar for the own head, or DDGRCF's "
+            "DOTA one for its port. Not to be confused with --weights"
         ),
     )
     train.add_argument(
         "--weights",
         default=None,
-        help="reutiliza estos pesos en vez de entrenar (para reevaluar)",
+        help="reuses these weights instead of training (to re-evaluate)",
     )
 
-    subparsers.add_parser("list", help="detectores y datasets registrados")
+    subparsers.add_parser("list", help="registered detectors and datasets")
 
     duplicates = subparsers.add_parser(
-        "find-duplicates", help="casi-duplicados y manifiesto de grupos"
+        "find-duplicates", help="near-duplicates and group manifest"
     )
     duplicates.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
     duplicates.add_argument(
         "--manifest-out",
         default=None,
-        help="escribe {identificador: grupo} para --group-manifest",
+        help="writes {identifier: group} for --group-manifest",
     )
 
     exporter = subparsers.add_parser(
-        "export", help="escribe el dataset en el formato de otro entrenador"
+        "export", help="writes the dataset in the format of another trainer"
     )
     exporter.add_argument("format", choices=exporters())
     exporter.add_argument("--splits", nargs="+", default=None)
     exporter.add_argument("--out-dir", default=None)
-    # Sin esto, los formatos de rectangulo (voc_xml, yolox_obb_voc) eran
-    # inalcanzables desde la CLI: rechazan la politica `clip` por defecto y su
-    # mensaje de error recomendaba una opcion que solo existia en `train`.
     exporter.add_argument(
         "--out-of-bounds",
         choices=[p.value for p in OutOfBoundsPolicy],
         default=None,
-        help="igual que en `train`; los formatos de rectangulo exigen `keep`",
+        help="same as in `train`: border policy applied to the exported labels",
     )
 
     evaluate = subparsers.add_parser(
         "evaluate-test",
-        help="rompe el sello del test y deja constancia; usar una sola vez",
+        help="breaks the seal of the test and leaves a record; use once",
     )
-    evaluate.add_argument("run", help="directorio de la ejecucion en runs/")
+    evaluate.add_argument("run", help="run directory in runs/")
     evaluate.add_argument(
         "--reason",
         required=True,
-        help="por que se abre el test; queda en el registro para siempre",
+        help="why the test is opened; stays in the log forever",
     )
     evaluate.add_argument("--weights", default=None)
 
     comparison = subparsers.add_parser(
-        "compare", help="tabla comparativa de las ejecuciones de runs/"
+        "compare", help="comparison table of the runs in runs/"
     )
     comparison.add_argument("--runs-dir", default=None)
     comparison.add_argument("--csv-out", default=None)
 
-    inspect = subparsers.add_parser("inspect", help="visualizacion de inspeccion")
+    inspect = subparsers.add_parser("inspect", help="inspection visualization")
     inspect.add_argument("--split", default="valid")
     inspect.add_argument("--count", type=int, default=None)
     inspect.add_argument("--output-dir", default=None)

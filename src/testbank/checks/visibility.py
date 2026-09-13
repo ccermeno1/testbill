@@ -1,21 +1,21 @@
-"""Chequeo de consistencia de la politica de visibilidad.
+"""Consistency check of the visibility policy.
 
-La politica dice: un billete tapado por otro se anota solo si se ve al menos el
-25%. El codigo no puede hacerla cumplir directamente -- si un billete no se
-anoto, no hay nada que medir. Lo que si puede hacer es detectar la direccion
-contraria: un quad ANOTADO que queda tapado por debajo del umbral, es decir, una
-anotacion que segun la politica no deberia existir.
+The policy says: a banknote covered by another is annotated only if at least
+25% of it is visible. The code cannot enforce it directly -- if a banknote was
+not annotated, there is nothing to measure. What it can do is detect the
+opposite direction: an ANNOTATED quad that is covered below the threshold,
+i.e. an annotation that according to the policy should not exist.
 
-Dos avisos sobre como leer el resultado:
+Two warnings on how to read the result:
 
-1. El orden de profundidad no esta anotado. Que A solape a B no dice cual esta
-   encima. Un quad muy solapado puede ser perfectamente el de arriba, que no
-   esta tapado en absoluto. Por eso esto es una lista de candidatos para
-   revision manual y no un error fatal.
+1. The depth order is not annotated. That A overlaps B does not say which one
+   is on top. A heavily overlapped quad may perfectly well be the top one,
+   which is not covered at all. That is why this is a list of candidates for
+   manual review and not a fatal error.
 
-2. La oclusion se calcula contra la UNION de los demas quads, no por pares. Un
-   billete tapado al 40% por un vecino y al 40% por otro queda al 20% visible e
-   incumple la politica, y ningun par lo detectaria.
+2. Occlusion is computed against the UNION of the other quads, not pairwise.
+   A banknote covered 40% by one neighbour and 40% by another is 20% visible
+   and violates the policy, and no pair would detect it.
 """
 
 from __future__ import annotations
@@ -44,19 +44,19 @@ class Finding:
     sample_id: str
     annotation_index: int
     visible_fraction: float
-    #: Vecino que mas tapa, para dirigir la revision manual.
+    #: Neighbour that covers the most, to direct the manual review.
     dominant_index: int | None
     dominant_fraction: float
 
     def describe(self) -> str:
         dominant = (
-            f", el que mas tapa es el #{self.dominant_index} "
+            f", the one covering most is #{self.dominant_index} "
             f"({self.dominant_fraction:.0%})"
             if self.dominant_index is not None
             else ""
         )
         return (
-            f"{self.sample_id}: anotacion #{self.annotation_index} queda visible al "
+            f"{self.sample_id}: annotation #{self.annotation_index} is visible at "
             f"{self.visible_fraction:.1%}{dominant}"
         )
 
@@ -68,8 +68,8 @@ class VisibilityReport:
     annotations_checked: int = 0
     findings: list[Finding] = field(default_factory=list)
     read_warnings: list[str] = field(default_factory=list)
-    #: Cota superior de incumplimientos reales, descontando el billete de encima
-    #: de cada monton, cuya marca es necesariamente un falso positivo.
+    #: Upper bound of real violations, discounting the top banknote of each
+    #: pile, whose mark is necessarily a false positive.
     upper_bound: int = 0
 
     @property
@@ -78,41 +78,41 @@ class VisibilityReport:
 
     def summary(self) -> str:
         lines = [
-            f"Politica de visibilidad: umbral {self.visibility_threshold:.0%}",
-            f"Imagenes revisadas:      {self.images_checked}",
-            f"Anotaciones revisadas:   {self.annotations_checked}",
+            f"Visibility policy: threshold {self.visibility_threshold:.0%}",
+            f"Images checked:        {self.images_checked}",
+            f"Annotations checked:   {self.annotations_checked}",
             (
-                f"Anotaciones marcadas:    {len(self.findings)} "
-                f"en {len(self.flagged_images)} imagenes"
+                f"Annotations flagged:   {len(self.findings)} "
+                f"in {len(self.flagged_images)} images"
             ),
-            f"Incumplimientos reales:  como mucho {self.upper_bound}",
+            f"Real violations:       at most {self.upper_bound}",
         ]
         if self.findings:
             lines.append("")
-            lines.append("Candidatos para revision manual (no es un error):")
+            lines.append("Candidates for manual review (not an error):")
             for finding in sorted(self.findings, key=lambda f: f.visible_fraction):
                 lines.append(f"  - {finding.describe()}")
             lines.append("")
             lines.append(
-                "  La marca mide solapamiento geometrico, no oclusion: el orden de"
+                "  The mark measures geometric overlap, not occlusion: the depth"
             )
             lines.append(
-                "  profundidad no esta anotado. En cada monton hay un billete arriba"
+                "  order is not annotated. In every pile there is a banknote on"
             )
             lines.append(
-                "  del todo que no esta tapado por nadie, asi que su marca es un falso"
+                "  the very top that nobody covers, so its mark is a sure false"
             )
             lines.append(
-                "  positivo seguro. De ahi la cota. Mira la visualizacion antes de"
+                "  positive. Hence the bound. Look at the visualization before"
             )
-            lines.append("  tocar ninguna anotacion.")
+            lines.append("  touching any annotation.")
         if self.read_warnings:
             lines.append("")
-            lines.append(f"Avisos de lectura ({len(self.read_warnings)}):")
+            lines.append(f"Read warnings ({len(self.read_warnings)}):")
             for message in self.read_warnings[:20]:
                 lines.append(f"  - {message}")
             if len(self.read_warnings) > 20:
-                lines.append(f"  ... y {len(self.read_warnings) - 20} mas")
+                lines.append(f"  ... and {len(self.read_warnings) - 20} more")
         return "\n".join(lines)
 
     def to_dict(self) -> dict:
@@ -136,7 +136,7 @@ class VisibilityReport:
 
 
 def _overlap_components(polygons: list[Polygon]) -> list[set[int]]:
-    """Componentes conexas por solapamiento, sobre TODOS los quads de la imagen."""
+    """Connected components by overlap, over ALL the quads of the image."""
     parent = list(range(len(polygons)))
 
     def find(i: int) -> int:
@@ -158,23 +158,24 @@ def _overlap_components(polygons: list[Polygon]) -> list[set[int]]:
     return list(groups.values())
 
 
-#: Por encima de este tamano de componente se renuncia al calculo exacto.
+#: Above this component size the exact computation is given up.
 _EXACT_COMPONENT_LIMIT = 9
 
 
 def _max_occluded_in_component(
     polygons: list[Polygon], component: set[int], visibility_threshold: float
 ) -> int:
-    """Maximo de quads que pueden estar tapados a la vez bajo ALGUN orden.
+    """Maximum number of quads that can be covered at once under SOME order.
 
-    Un billete solo lo tapan los que estan por ENCIMA de el. Con el orden de
-    profundidad fijado, el quad en la posicion k esta tapado por la union de los
-    k-1 anteriores, y el de arriba del todo no lo tapa nadie. Recorrer los m!
-    ordenes es innecesario: basta un DP sobre subconjuntos, donde el estado es el
-    conjunto ya colocado (de arriba abajo) y la transicion anade el siguiente.
+    A banknote is covered only by the ones ABOVE it. With the depth order
+    fixed, the quad at position k is covered by the union of the k-1 previous
+    ones, and the top one is covered by nobody. Walking the m! orders is
+    unnecessary: a DP over subsets suffices, where the state is the set
+    already placed (top to bottom) and the transition adds the next one.
 
-    El resultado es exacto, no una cota floja: es el mayor numero de anotaciones
-    de esa componente que podrian ser incumplimientos reales simultaneamente.
+    The result is exact, not a loose bound: it is the largest number of
+    annotations in that component that could be real violations
+    simultaneously.
     """
     order = sorted(component)
     size = len(order)
@@ -216,12 +217,12 @@ def max_real_violations(
     *,
     visibility_threshold: float = DEFAULT_VISIBILITY_THRESHOLD,
 ) -> int:
-    """Cuantas de las marcas de una imagen pueden ser incumplimientos de verdad.
+    """How many of the marks in an image can be real violations.
 
-    La marca por union es un sobreconjunto: si un quad no se marca es que ni
-    siquiera la union de TODOS los demas lo tapa lo bastante, asi que tampoco lo
-    tapan los de encima. Los incumplimientos reales estan por fuerza entre los
-    marcados, y este numero dice cuantos como mucho.
+    The union mark is a superset: if a quad is not marked, not even the union
+    of ALL the others covers it enough, so neither do the ones above it. Real
+    violations are necessarily among the marked ones, and this number says
+    how many at most.
     """
     if not flagged:
         return 0
@@ -238,10 +239,10 @@ def check_quads(
     visibility_threshold: float = DEFAULT_VISIBILITY_THRESHOLD,
     indices: tuple[int, ...] | None = None,
 ) -> list[Finding]:
-    """`indices` traduce cada posicion de `quads` a su posicion original en el
-    fichero. Hace falta cuando lo que llega ya viene filtrado: sin ello el
-    informe numeraria sobre la lista filtrada y apuntaria a otra anotacion al
-    abrir el fichero."""
+    """`indices` translates each position of `quads` to its original position
+    in the file. Needed when what arrives is already filtered: without it the
+    report would number over the filtered list and point to another
+    annotation when opening the file."""
     if len(quads) < 2:
         return []
 
@@ -288,16 +289,16 @@ def check_samples(
     sizes=None,
     min_relative_area: float = DEFAULT_MIN_RELATIVE_AREA,
 ) -> tuple[VisibilityReport, FilterReport]:
-    """Revisa las anotaciones que quedan VIVAS tras el filtro de area relativa.
+    """Reviews the annotations that remain ALIVE after the relative area filter.
 
-    Las dos cosas son complementarias y por eso se devuelven las dos: el informe
-    del filtro lista lo que se dejo fuera, y este revisa lo que queda, que es lo
-    que de verdad vera el detector. Revisar tambien lo filtrado devolveria
-    justo las franjas que el filtro acaba de descartar.
+    The two things are complementary and that is why both are returned: the
+    filter report lists what was left out, and this one reviews what remains,
+    which is what the detector will really see. Reviewing the filtered ones
+    too would return precisely the strips the filter just discarded.
 
-    Las razones de area son invariantes afines, asi que el aspecto no cambia
-    ningun numero de aqui. Se pasa al lector solo para que el orden canonico de
-    los quads sea el correcto de cara al informe.
+    Area ratios are affine invariants, so the aspect changes no number here.
+    It is passed to the reader only so the canonical order of the quads is
+    the right one for the report.
     """
     report = VisibilityReport(visibility_threshold=visibility_threshold)
     loaded, filter_report = load_samples(
@@ -317,9 +318,9 @@ def check_samples(
         report.findings.extend(findings)
         if findings:
             polygons = [quad_to_polygon(q).buffer(0) for q in quads]
-            # `findings` numera sobre el fichero; `polygons` sobre la lista ya
-            # filtrada. La cota se calcula sobre esta ultima, asi que hay que
-            # volver a traducir.
+            # `findings` numbers over the file; `polygons` over the already
+            # filtered list. The bound is computed over the latter, so it has
+            # to be translated back.
             position_of = {
                 original: position
                 for position, original in enumerate(item.kept_indices)

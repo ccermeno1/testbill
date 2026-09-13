@@ -1,16 +1,16 @@
-"""Quad canonico: 4 vertices normalizados, pivote de todas las conversiones.
+"""Canonical quad: 4 normalized vertices, the pivot of every conversion.
 
-N formatos son 2N conversores, no N^2: todo pasa por aqui.
+N formats mean 2N converters, not N^2: everything goes through here.
 
-Rejilla diadica
----------------
-Las coordenadas se ajustan a multiplos de 2^-SNAP_BITS. Es la unica forma de que
-`flip(flip(q)) == q` se cumpla de forma EXACTA, como exige la especificacion:
-en float64 `1 - (1 - 0.1)` da 0.09999999999999998, asi que x -> 1-x no es una
-involucion. Sobre la rejilla, 1-x es representable sin redondeo y la involucion
-es bit a bit. El error introducido es <= 2^-31 normalizado (2e-6 px en una imagen
-de 4000 px), seis ordenes de magnitud por debajo de la precision de una anotacion
-"rectangulo aproximado". Los ficheros de anotacion en disco no se modifican.
+Dyadic grid
+-----------
+Coordinates are snapped to multiples of 2^-SNAP_BITS. It is the only way for
+`flip(flip(q)) == q` to hold EXACTLY, as the specification demands: in float64
+`1 - (1 - 0.1)` gives 0.09999999999999998, so x -> 1-x is not an involution. On
+the grid, 1-x is representable without rounding and the involution is bit for
+bit. The error introduced is <= 2^-31 normalized (2e-6 px on a 4000 px image),
+six orders of magnitude below the precision of an "approximate rectangle"
+annotation. The annotation files on disk are never modified.
 """
 
 from __future__ import annotations
@@ -24,61 +24,61 @@ Point = tuple[float, float]
 SNAP_BITS = 30
 _GRID = float(2**SNAP_BITS)
 
-# Rango tolerante: hay billetes que cruzan el borde de la imagen y sus vertices
-# caen fuera de [0,1] legitimamente.
+# Tolerant range: some banknotes cross the image border and their vertices
+# legitimately fall outside [0,1].
 COORD_MIN = -0.5
 COORD_MAX = 1.5
 
-# Dos lados se consideran empatados en longitud si difieren menos de esto en
-# relativo. Sin tolerancia, el ancla de un rectangulo casi exacto (lados largos
-# que difieren un 0.3%) la elige el ruido y un jitter de 1 px la gira 180 grados.
+# Two sides count as tied in length if they differ by less than this, relative.
+# Without a tolerance, the anchor of a nearly exact rectangle (long sides that
+# differ by 0.3%) is chosen by noise and a 1 px jitter rotates it 180 degrees.
 LONG_SIDE_TIE_TOL = 0.05
 
-# Por debajo de este ratio de lados el ancla del lado mas largo es inestable.
+# Below this side ratio the longest-side anchor is unstable.
 MIN_STABLE_SIDE_RATIO = 1.1
 
 _MIN_AREA = 1e-12
 
-#: Relacion ancho/alto en pixeles de la imagen. Las coordenadas normalizadas
-#: dividen x por el ancho e y por el alto, que es un escalado ANISOTROPO: en ese
-#: espacio el lado mas largo, el angulo y el ratio no son los geometricos. Un
-#: billete 2:1 tumbado en una imagen 16:9 tiene ratio normalizado 1.13, y en 20:9
-#: baja de 1 y el ancla salta al lado corto. Por eso toda comparacion de
-#: longitudes admite el aspecto de la imagen.
+#: Width/height ratio of the image in pixels. Normalized coordinates divide x by
+#: the width and y by the height, which is an ANISOTROPIC scaling: in that space
+#: the longest side, the angle and the ratio are not the geometric ones. A 2:1
+#: banknote lying flat in a 16:9 image has normalized ratio 1.13, and in 20:9 it
+#: drops below 1 and the anchor jumps to the short side. That is why every
+#: length comparison accepts the image aspect.
 DEFAULT_ASPECT = 1.0
 
 
 class QuadShapeWarning(UserWarning):
-    """El quad es geometricamente degenerado para el anclaje canonico."""
+    """The quad is geometrically degenerate for the canonical anchoring."""
 
 
 class CoordinateRangeWarning(UserWarning):
-    """Vertice fuera de [0,1]. Legitimo si el billete cruza el borde."""
+    """Vertex outside [0,1]. Legitimate if the banknote crosses the border."""
 
 
 class QuadError(ValueError):
-    """El quad no es utilizable."""
+    """The quad is unusable."""
 
 
 def snap(value: float) -> float:
-    """Ajusta a la rejilla diadica. Exacto: round() da entero, /2^k es exacto."""
+    """Snap to the dyadic grid. Exact: round() gives an integer, /2^k is exact."""
     return round(value * _GRID) / _GRID
 
 
 @dataclass(frozen=True, slots=True)
 class Quad:
-    """Cuatro vertices normalizados, ya ajustados a la rejilla.
+    """Four normalized vertices, already snapped to the grid.
 
-    No garantiza orden canonico: usa `canonicalize`. La construccion valida
-    rango y no-degeneracion pero no reordena, para que `flip` pueda ser una
-    involucion exacta sobre la secuencia cruda.
+    Does not guarantee canonical order: use `canonicalize`. Construction
+    validates range and non-degeneracy but does not reorder, so that `flip` can
+    be an exact involution on the raw sequence.
     """
 
     points: tuple[Point, Point, Point, Point]
 
     @classmethod
     def from_xy(cls, coords) -> Quad:
-        """Construye desde 8 flotantes o 4 pares. Ajusta a rejilla y valida."""
+        """Build from 8 floats or 4 pairs. Snaps to the grid and validates."""
         flat: list[float] = []
         for item in coords:
             if isinstance(item, (tuple, list)):
@@ -86,18 +86,18 @@ class Quad:
             else:
                 flat.append(float(item))
         if len(flat) != 8:
-            raise QuadError(f"un quad son 8 coordenadas, se recibieron {len(flat)}")
+            raise QuadError(f"a quad is 8 coordinates, got {len(flat)}")
         for v in flat:
             if not math.isfinite(v):
-                raise QuadError(f"coordenada no finita: {v!r}")
+                raise QuadError(f"non-finite coordinate: {v!r}")
             if not (COORD_MIN <= v <= COORD_MAX):
                 raise QuadError(
-                    f"coordenada {v!r} fuera del rango tolerante [{COORD_MIN}, {COORD_MAX}]"
+                    f"coordinate {v!r} outside the tolerant range [{COORD_MIN}, {COORD_MAX}]"
                 )
         if any(not (0.0 <= v <= 1.0) for v in flat):
             warnings.warn(
-                "quad con vertices fuera de [0,1]; se acepta (billete que cruza "
-                "el borde de la imagen)",
+                "quad with vertices outside [0,1]; accepted (banknote crossing "
+                "the image border)",
                 CoordinateRangeWarning,
                 stacklevel=2,
             )
@@ -107,7 +107,7 @@ class Quad:
         quad._reject_degenerate()
         return quad
 
-    # -- geometria basica ---------------------------------------------------
+    # -- basic geometry -----------------------------------------------------
 
     def flat(self) -> tuple[float, ...]:
         return tuple(c for p in self.points for c in p)
@@ -119,7 +119,7 @@ class Quad:
         )
 
     def signed_area(self) -> float:
-        """Shoelace. En coordenadas de imagen (y hacia abajo), horario > 0."""
+        """Shoelace. In image coordinates (y pointing down), clockwise > 0."""
         pts = self.points
         total = 0.0
         for i in range(4):
@@ -134,11 +134,11 @@ class Quad:
     def edge_lengths(
         self, aspect: float = DEFAULT_ASPECT
     ) -> tuple[float, float, float, float]:
-        """Longitud del lado que ABRE cada vertice: L[i] = |p_i -> p_{i+1}|.
+        """Length of the side OPENED by each vertex: L[i] = |p_i -> p_{i+1}|.
 
-        `aspect` es ancho/alto en pixeles. Con el valor por defecto 1.0 se mide en
-        el espacio normalizado, que solo coincide con el geometrico si la imagen
-        es cuadrada.
+        `aspect` is width/height in pixels. With the default 1.0 the measure is
+        taken in normalized space, which only matches the geometric one when
+        the image is square.
         """
         pts = self.points
         out = []
@@ -149,7 +149,7 @@ class Quad:
         return tuple(out)  # type: ignore[return-value]
 
     def side_ratio(self, aspect: float = DEFAULT_ASPECT) -> float:
-        """Lado mayor / lado menor, promediando pares opuestos."""
+        """Longer side / shorter side, averaging opposite pairs."""
         lengths = sorted(self.edge_lengths(aspect))
         short = (lengths[0] + lengths[1]) / 2.0
         long_ = (lengths[2] + lengths[3]) / 2.0
@@ -159,17 +159,17 @@ class Quad:
 
     def _reject_degenerate(self) -> None:
         if abs(self.signed_area()) < _MIN_AREA:
-            raise QuadError(f"quad degenerado, area nula: {self.points}")
+            raise QuadError(f"degenerate quad, zero area: {self.points}")
         if len(set(self.points)) != 4:
-            raise QuadError(f"quad con vertices repetidos: {self.points}")
+            raise QuadError(f"quad with repeated vertices: {self.points}")
 
     def angle_deg(self, aspect: float = DEFAULT_ASPECT) -> float:
-        """Orientacion del lado largo p0->p1, en [0,180). Requiere canonico."""
+        """Orientation of the long side p0->p1, in [0,180). Requires canonical."""
         (x0, y0), (x1, y1) = self.points[0], self.points[1]
         return math.degrees(math.atan2(y1 - y0, (x1 - x0) * aspect)) % 180.0
 
 
-# -- orden canonico ---------------------------------------------------------
+# -- canonical order --------------------------------------------------------
 
 
 def canonical_order(
@@ -178,17 +178,17 @@ def canonical_order(
     tie_tol: float = LONG_SIDE_TIE_TOL,
     aspect: float = DEFAULT_ASPECT,
 ) -> tuple[tuple[int, int, int, int], float]:
-    """Permutacion canonica de los indices de entrada, y el margen de la decision.
+    """Canonical permutation of the input indices, and the margin of the decision.
 
-    Devolver la permutacion por separado permite testear la ESTABILIDAD de la
-    decision discreta sin confundirla con el valor de las coordenadas: una
-    perturbacion mueve los puntos, y lo que tiene que quedarse quieto es que
-    vertice hace de ancla, no su valor.
+    Returning the permutation separately allows testing the STABILITY of the
+    discrete decision without confusing it with the coordinate values: a
+    perturbation moves the points, and what has to stay put is which vertex
+    acts as anchor, not its value.
 
-    El margen es la separacion en la clave de desempate entre el candidato
-    elegido y el siguiente. Es la unica magnitud honesta frente a la que medir
-    la estabilidad: por debajo de ella la eleccion puede cambiar y eso no es un
-    fallo, es la frontera que toda seleccion discreta tiene por fuerza.
+    The margin is the separation in the tiebreak key between the chosen
+    candidate and the next one. It is the only honest quantity to measure
+    stability against: below it the choice may change, and that is not a
+    failure, it is the boundary every discrete selection necessarily has.
     """
     cx, cy = quad.centroid()
 
@@ -200,7 +200,7 @@ def canonical_order(
     for a, b in zip(keyed, keyed[1:] + keyed[:1]):
         if polar(a) == polar(b):
             raise QuadError(
-                f"dos vertices colineales con el centroide, orden ambiguo: {quad.points}"
+                f"two vertices collinear with the centroid, ambiguous order: {quad.points}"
             )
 
     ordered_pts = [quad.points[i] for i in keyed]
@@ -209,8 +209,8 @@ def canonical_order(
     ratio = ordered.side_ratio(aspect)
     if ratio < MIN_STABLE_SIDE_RATIO:
         warnings.warn(
-            f"quad con ratio de lados {ratio:.3f} < {MIN_STABLE_SIDE_RATIO}: "
-            "el ancla del lado mas largo es inestable",
+            f"quad with side ratio {ratio:.3f} < {MIN_STABLE_SIDE_RATIO}: "
+            "the longest-side anchor is unstable",
             QuadShapeWarning,
             stacklevel=3,
         )
@@ -239,14 +239,15 @@ def canonicalize(
     tie_tol: float = LONG_SIDE_TIE_TOL,
     aspect: float = DEFAULT_ASPECT,
 ) -> Quad:
-    """Orden canonico: horario, arrancando en el vertice que abre el lado mas largo.
+    """Canonical order: clockwise, starting at the vertex that opens the longest side.
 
-    Desempate: menor x+y, luego menor x, luego menor y. La cadena completa hace
-    falta porque x+y empata en rectangulos cuya diagonal es perpendicular a (1,1)
-    -- el caso a 45 grados, justo el que descarta "la esquina mas cercana al origen".
+    Tiebreak: smallest x+y, then smallest x, then smallest y. The full chain is
+    needed because x+y ties on rectangles whose diagonal is perpendicular to
+    (1,1) -- the 45 degree case, exactly the one that rules out "the corner
+    closest to the origin".
 
-    No se usa "esquina mas cercana al origen": es discontinua cerca de 45 grados
-    y un jitter de 2 px rota las etiquetas 90 grados.
+    "Corner closest to the origin" is not used: it is discontinuous near 45
+    degrees and a 2 px jitter rotates the labels by 90 degrees.
     """
     perm, _ = canonical_order(quad, tie_tol=tie_tol, aspect=aspect)
     return Quad(points=tuple(quad.points[i] for i in perm))  # type: ignore[arg-type]
@@ -263,18 +264,18 @@ def is_canonical(
         return canonicalize(quad, tie_tol=tie_tol, aspect=aspect).points == quad.points
 
 
-# -- volteo horizontal ------------------------------------------------------
+# -- horizontal flip --------------------------------------------------------
 
 
 def flip_horizontal(quad: Quad) -> Quad:
-    """Reflexion x -> 1-x, conservando la secuencia cruda de vertices.
+    """Reflection x -> 1-x, preserving the raw vertex sequence.
 
-    NO recanonicaliza: la reflexion invierte el sentido de giro, asi que el
-    resultado es antihorario y hay que pasarlo por `canonicalize` para volver a
-    la forma canonica. Mantenerlo crudo es lo que hace la involucion exacta.
+    Does NOT recanonicalize: the reflection inverts the winding, so the result
+    is counter-clockwise and must go through `canonicalize` to return to the
+    canonical form. Keeping it raw is what makes the involution exact.
 
-    Sobre la rejilla diadica 1-x no redondea, y el rango [-0.5, 1.5] es simetrico
-    respecto a 0.5, asi que la reflexion no puede sacar un vertice del rango.
+    On the dyadic grid 1-x does not round, and the range [-0.5, 1.5] is
+    symmetric about 0.5, so the reflection cannot push a vertex out of range.
     """
     flipped = tuple((1.0 - x, y) for x, y in quad.points)
     return Quad(points=flipped)  # type: ignore[arg-type]

@@ -19,20 +19,20 @@ def rect(cx, cy, half_long=0.2, ratio=2.0, theta=0.0) -> Quad:
 
 
 def axis_rect(x0, y0, x1, y1) -> Quad:
-    """Rectangulo alineado, horario en coordenadas de imagen."""
+    """Axis-aligned rectangle, clockwise in image coordinates."""
     return canonicalize(Quad.from_xy([(x0, y0), (x1, y0), (x1, y1), (x0, y1)]))
 
 
-def test_un_quad_solo_nunca_se_marca():
+def test_a_single_quad_is_never_flagged():
     assert check_quads([rect(0.5, 0.5)], "s") == []
 
 
-def test_quads_separados_no_se_marcan():
+def test_separate_quads_are_not_flagged():
     quads = [rect(0.25, 0.25), rect(0.75, 0.75)]
     assert check_quads(quads, "s") == []
 
 
-def test_quad_casi_totalmente_cubierto_se_marca():
+def test_an_almost_fully_covered_quad_is_flagged():
     covered = rect(0.5, 0.5, half_long=0.10, ratio=2.0)
     coverer = rect(0.5, 0.5, half_long=0.30, ratio=2.0)
     findings = check_quads([covered, coverer], "s")
@@ -40,8 +40,8 @@ def test_quad_casi_totalmente_cubierto_se_marca():
     assert findings[0].visible_fraction < 0.25
 
 
-def test_la_oclusion_se_calcula_contra_la_union_no_por_pares():
-    """Tapado al 51% por uno y al 51% por otro: ningun par lo detecta."""
+def test_occlusion_is_computed_against_the_union_not_pairwise():
+    """Covered 51% by one and 51% by another: no pair detects it."""
     victim = axis_rect(0.28, 0.39, 0.72, 0.61)
     left = axis_rect(0.20, 0.30, 0.505, 0.70)
     right = axis_rect(0.495, 0.30, 0.80, 0.70)
@@ -51,14 +51,14 @@ def test_la_oclusion_se_calcula_contra_la_union_no_por_pares():
         pairwise = (
             victim_poly.intersection(quad_to_polygon(other)).area / victim_poly.area
         )
-        assert pairwise < 0.75, "el montaje debe ser indetectable por pares"
+        assert pairwise < 0.75, "the setup must be undetectable pairwise"
 
     findings = check_quads([victim, left, right], "s")
     assert {f.annotation_index for f in findings} == {0}
 
 
-def test_el_umbral_es_parametrizable():
-    """Victima tapada al 90%: visible 0.10, justo entre los dos umbrales."""
+def test_the_threshold_is_parametrizable():
+    """Victim covered 90%: visible 0.10, right between the two thresholds."""
     victim = axis_rect(0.28, 0.39, 0.72, 0.61)
     coverer = axis_rect(0.28, 0.25, 0.676, 0.75)
     quads = [victim, coverer]
@@ -70,11 +70,11 @@ def test_el_umbral_es_parametrizable():
     assert check_quads(quads, "s", visibility_threshold=0.05) == []
 
 
-# -- cota de incumplimientos reales -----------------------------------------
+# -- bound of real violations -----------------------------------------------
 
 
-def test_el_de_arriba_del_todo_nunca_esta_tapado():
-    """Dos quads que se cubren mutuamente: como mucho uno puede ser real."""
+def test_the_top_one_is_never_covered():
+    """Two quads covering each other: at most one can be real."""
     a = rect(0.5, 0.5, half_long=0.2, ratio=2.0, theta=0.0)
     b = rect(0.52, 0.5, half_long=0.2, ratio=2.0, theta=0.05)
     polygons = [quad_to_polygon(a), quad_to_polygon(b)]
@@ -84,7 +84,7 @@ def test_el_de_arriba_del_todo_nunca_esta_tapado():
         assert max_real_violations(polygons, flagged) == 1
 
 
-def test_sin_marcas_la_cota_es_cero():
+def test_without_flags_the_bound_is_zero():
     polygons = [
         quad_to_polygon(rect(0.25, 0.25)),
         quad_to_polygon(rect(0.75, 0.75)),
@@ -92,7 +92,7 @@ def test_sin_marcas_la_cota_es_cero():
     assert max_real_violations(polygons, set()) == 0
 
 
-def test_la_cota_nunca_supera_el_numero_de_marcas():
+def test_the_bound_never_exceeds_the_number_of_flags():
     quads = [
         rect(0.5, 0.5, half_long=0.10),
         rect(0.5, 0.5, half_long=0.12, theta=0.3),
@@ -104,7 +104,7 @@ def test_la_cota_nunca_supera_el_numero_de_marcas():
     assert max_real_violations(polygons, flagged) <= len(flagged)
 
 
-def test_la_cota_es_invariante_al_orden_de_entrada():
+def test_the_bound_is_invariant_to_input_order():
     quads = [
         rect(0.45, 0.5, half_long=0.18, theta=0.2),
         rect(0.55, 0.5, half_long=0.18, theta=0.9),
@@ -121,8 +121,8 @@ def test_la_cota_es_invariante_al_orden_de_entrada():
     assert max_real_violations(polys2, flagged2) == first
 
 
-def test_area_ratios_no_dependen_del_aspecto():
-    """El chequeo trabaja con razones de area, invariantes bajo escalado afin."""
+def test_area_ratios_do_not_depend_on_aspect():
+    """The check works with area ratios, invariant under affine scaling."""
     quads = [rect(0.5, 0.5, half_long=0.10), rect(0.5, 0.5, half_long=0.30)]
     base = check_quads(quads, "s")
 

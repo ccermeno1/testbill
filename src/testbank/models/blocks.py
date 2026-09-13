@@ -1,20 +1,23 @@
-"""Bloques de YOLOX. Apache-2.0, PyTorch puro, sin extensiones compiladas.
+"""YOLOX building blocks. Apache-2.0, pure PyTorch, no compiled extensions.
 
-Se implementan aqui en vez de vendorizar el repositorio de Megvii por tres
-motivos:
+Implemented here instead of vendoring Megvii's repository for three reasons:
 
-1. **No hay paquete usable.** YOLOX no se publica en PyPI como libreria; el
-   nombre `yolox` en PyPI es otra cosa. La alternativa seria clonar un
-   repositorio entero para usar el 15% de su codigo.
-2. **Sin compilar nada.** Es el motivo por el que este candidato existe: todo lo
-   que hay aqui es `torch.nn`. Ver el problema de MMCV en el README.
-3. **Control del esquema.** Es el unico candidato del que controlamos la
-   arquitectura entera, asi que la cabeza OBB se acopla sin adivinar convenios
-   ajenos.
+1. **No usable package.** YOLOX is not published on PyPI as a library; the
+   `yolox` name on PyPI is something else. The alternative would be cloning a
+   whole repository to use 15% of its code.
+2. **Nothing compiled.** It is the reason this candidate exists: everything
+   here is `torch.nn`. See the MMCV problem in the README.
+3. **Control of the schema.** It is the only candidate whose architecture we
+   control entirely, so the OBB head attaches without guessing foreign
+   conventions.
 
-Nano usa convolucion separable en profundidad (`depthwise`) en todo salvo el
-tronco. Es de donde sale la diferencia de 0.91M frente a los 5.06M de tiny: una
-convolucion 3x3 de C canales a C pasa de 9C^2 a 9C + C^2 parametros.
+Nano uses depthwise separable convolutions everywhere except the stem. That is
+where the difference between 0.91M and tiny's 5.06M comes from: a 3x3
+convolution from C channels to C goes from 9C^2 to 9C + C^2 parameters.
+
+The architectures are identical to Megvii's: their COCO checkpoints
+(`yolox_s.pth`, `yolox_tiny.pth`, `yolox_nano.pth`) load into backbone and
+neck of every variant, only renaming modules (`models/pretrained.py`).
 """
 
 from __future__ import annotations
@@ -24,18 +27,18 @@ from torch import nn
 
 
 def _round_channels(channels: int, width: float) -> int:
-    """Escala los canales y los deja en multiplo de 8.
+    """Scale the channels and keep them a multiple of 8.
 
-    Los multiplos de 8 no son estetica: las rutinas vectorizadas de CPU y las
-    unidades de matriz de los moviles trabajan por bloques, y un canal suelto
-    obliga a rellenar. Es el mismo redondeo que usa YOLOX.
+    Multiples of 8 are not cosmetics: CPU vectorized routines and the matrix
+    units of phones work in blocks, and a stray channel forces padding. It is
+    the same rounding YOLOX uses.
     """
     scaled = max(1, int(channels * width))
     return max(8, (scaled + 4) // 8 * 8)
 
 
 class BaseConv(nn.Module):
-    """Conv + BatchNorm + SiLU, el ladrillo de toda la red."""
+    """Conv + BatchNorm + SiLU, the brick of the whole network."""
 
     def __init__(
         self,
@@ -47,8 +50,8 @@ class BaseConv(nn.Module):
         bias: bool = False,
     ) -> None:
         super().__init__()
-        # `kernel // 2` mantiene el tamano espacial con stride 1, que es lo que
-        # permite sumar ramas laterales sin recortar.
+        # `kernel // 2` keeps the spatial size with stride 1, which is what
+        # allows adding lateral branches without cropping.
         self.conv = nn.Conv2d(
             in_channels,
             out_channels,
@@ -66,10 +69,10 @@ class BaseConv(nn.Module):
 
 
 class DWConv(nn.Module):
-    """Convolucion separable: una espacial por canal y una 1x1 que los mezcla.
+    """Separable convolution: one spatial per channel and one 1x1 that mixes them.
 
-    Es el cambio que hace nano pequeno de verdad. Una 3x3 de C a C cuesta 9C^2;
-    separada cuesta 9C + C^2. Con C=64 son 36864 frente a 4672.
+    It is the change that makes nano truly small. A 3x3 from C to C costs 9C^2;
+    separated it costs 9C + C^2. With C=64 that is 36864 against 4672.
     """
 
     def __init__(
@@ -111,10 +114,10 @@ class Bottleneck(nn.Module):
 
 
 class CSPLayer(nn.Module):
-    """Cross-Stage Partial: parte los canales, procesa una mitad y reconcatena.
+    """Cross-Stage Partial: split the channels, process one half, concatenate.
 
-    La gracia es que solo la mitad pasa por los bottlenecks, asi que el coste
-    baja sin perder el camino de gradiente completo.
+    The point is that only half goes through the bottlenecks, so the cost drops
+    without losing the full gradient path.
     """
 
     def __init__(
@@ -143,11 +146,11 @@ class CSPLayer(nn.Module):
 
 
 class SPPBottleneck(nn.Module):
-    """Spatial Pyramid Pooling: mezcla contexto a varias escalas sin coste.
+    """Spatial Pyramid Pooling: mixes context at several scales at no cost.
 
-    Tres max-pool de 5, 9 y 13 en paralelo. Para un billete grande en primer
-    plano, el de 13 le da al detector campo receptivo suficiente sin anadir
-    parametros.
+    Three max-pools of 5, 9 and 13 in parallel. For a large banknote in the
+    foreground, the 13 gives the detector enough receptive field without
+    adding parameters.
     """
 
     def __init__(
@@ -170,11 +173,11 @@ class SPPBottleneck(nn.Module):
 
 
 class Focus(nn.Module):
-    """Submuestrea 2x reordenando pixeles en canales, sin perder informacion.
+    """Downsample 2x by rearranging pixels into channels, losing nothing.
 
-    Coge uno de cada dos pixeles en las dos direcciones y apila los cuatro
-    mosaicos como canales. A diferencia de una conv con stride 2, aqui no se
-    descarta nada: la informacion cambia de sitio, no desaparece.
+    Takes every other pixel in both directions and stacks the four mosaics as
+    channels. Unlike a stride-2 conv, nothing is discarded here: the
+    information changes place, it does not disappear.
     """
 
     def __init__(

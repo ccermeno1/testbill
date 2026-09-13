@@ -1,17 +1,17 @@
-"""Adaptador de Ultralytics YOLO-OBB. Linea base de rendimiento, NO produccion.
+"""Ultralytics YOLO-OBB adapter. Performance baseline, NOT production.
 
 AGPL-3.0
 --------
-`production_ready = False`, y no como formalidad: la AGPL contamina un producto
-cerrado. Este candidato existe para tener un numero de referencia rapido -- sin
-el no se sabe si los demas van bien o mal -- y `compare` marca su fila como no
-apta para que nadie la confunda con un candidato.
+`production_ready = False`, and not as a formality: the AGPL contaminates a
+closed product. This candidate exists to have a quick reference number --
+without it there is no knowing whether the others do well or badly -- and
+`compare` marks its row as unfit so nobody mistakes it for a candidate.
 
-ESTE ES EL UNICO MODULO DEL PROYECTO QUE PUEDE IMPORTAR `ultralytics`.
-`tests/test_detectors.py::test_aislamiento_de_ultralytics` lo verifica sobre el
-arbol de fuentes. Ademas el import es PEREZOSO, dentro de los metodos, para que
-`import testbank` funcione sin tener el paquete instalado: va en el grupo
-opcional `ultralytics` del pyproject, no en las dependencias base.
+THIS IS THE ONLY MODULE IN THE PROJECT THAT MAY IMPORT `ultralytics`.
+`tests/test_detectors.py::test_ultralytics_isolation` verifies it over the
+source tree. Moreover the import is LAZY, inside the methods, so that
+`import testbank` works without the package installed: it is in the optional
+`ultralytics` group of the pyproject, not in the base dependencies.
 """
 
 from __future__ import annotations
@@ -31,8 +31,8 @@ from testbank.detectors.base import (
 from testbank.geometry.quad import Quad, canonicalize
 from testbank.metrics.core import Prediction
 
-#: Variante nano por defecto: el despliegue es movil y la especificacion pide
-#: priorizar nano/small.
+#: Nano variant by default: the deployment is mobile and the specification
+#: asks to prioritize nano/small.
 DEFAULT_MODEL = "yolo26n-obb.pt"
 
 
@@ -41,8 +41,8 @@ def _import_ultralytics():
         from ultralytics import YOLO
     except ImportError as exc:
         raise DetectorError(
-            "ultralytics no esta instalado. Va en un grupo opcional a proposito, "
-            "porque es AGPL-3.0 y no puede entrar en el conjunto base: "
+            "ultralytics is not installed. It is in an optional group on purpose, "
+            "because it is AGPL-3.0 and cannot enter the base set: "
             "`uv pip install -e \".[ultralytics]\"`"
         ) from exc
     return YOLO
@@ -54,22 +54,22 @@ class UltralyticsObb(BaseDetector):
     license = "AGPL-3.0"
     production_ready = False
     _NOTE = (
-        "Referencia de rendimiento, no candidato: AGPL-3.0 contamina un "
-        "producto cerrado."
+        "Performance reference, not a candidate: AGPL-3.0 contaminates a "
+        "closed product."
     )
     notes = (_NOTE,)
 
     def __init__(self, model: str = DEFAULT_MODEL) -> None:
         self.model = model
 
-    # --- entrenamiento ----------------------------------------------------
+    # --- training ---------------------------------------------------------
 
     def train(self, samples_by_split, config: Config, *, output_dir: Path) -> TrainResult:
-        """`samples_by_split` es `{"train": [...], "valid": [...]}` de SplitLoader.
+        """`samples_by_split` is `{"train": [...], "valid": [...]}` from SplitLoader.
 
-        Se materializa una vista con las etiquetas YA FILTRADAS: entrenar contra
-        la verdad sin filtrar y medir contra la filtrada haria que las cifras no
-        significaran nada. Ver `detectors/dataset.py`.
+        A view is materialized with the labels ALREADY FILTERED: training
+        against the unfiltered truth and measuring against the filtered one
+        would make the figures mean nothing. See `detectors/dataset.py`.
         """
         YOLO = _import_ultralytics()
         view = dataset_view.materialize(samples_by_split, config)
@@ -82,11 +82,10 @@ class UltralyticsObb(BaseDetector):
             batch=config.detector.batch_size,
             seed=config.metrics.seed,
             deterministic=True,
-            # ABSOLUTO a proposito. Con una ruta relativa, Ultralytics la
-            # interpreta respecto a su propio `runs_dir` de settings y acaba
-            # escribiendo en `runs/obb/<lo que le pasaste>`, fuera de nuestra
-            # ejecucion. Medido: dejaba los pesos en
-            # `runs/obb/runs/<timestamp>_<nombre>/_train`.
+            # ABSOLUTE on purpose. With a relative path, Ultralytics interprets
+            # it relative to its own settings `runs_dir` and ends up writing to
+            # `runs/obb/<what you passed>`, outside our run. Measured: it left
+            # the weights in `runs/obb/runs/<timestamp>_<name>/_train`.
             project=str(output_dir.resolve()),
             name="train",
             exist_ok=True,
@@ -99,15 +98,16 @@ class UltralyticsObb(BaseDetector):
             notes=(view.describe(),),
         )
 
-    # --- inferencia -------------------------------------------------------
+    # --- inference --------------------------------------------------------
 
     def predict(self, samples, *, weights: Path, config: Config) -> dict:
-        """Devuelve `sample_id -> [Prediction]` en coordenadas NORMALIZADAS.
+        """Returns `sample_id -> [Prediction]` in NORMALIZED coordinates.
 
-        Ultralytics da los quads en pixeles (`obb.xyxyxyxy`), asi que se
-        normalizan aqui, en la frontera del adaptador. Dentro de testbank todo
-        quad es normalizado y todo calculo metrico es en pixeles; mezclarlo en
-        medio del pipeline es el error que ya nos ha mordido dos veces.
+        Ultralytics gives the quads in pixels (`obb.xyxyxyxy`), so they are
+        normalized here, at the adapter boundary. Inside testbank every quad
+        is normalized and every metric computation is in pixels; mixing that
+        in the middle of the pipeline is the mistake that has already bitten
+        us twice.
         """
         YOLO = _import_ultralytics()
         samples = list(samples)
@@ -128,9 +128,10 @@ class UltralyticsObb(BaseDetector):
                 image_path = sample.image_path
 
                 if padded:
-                    # El modelo se entreno sobre imagenes padeadas: si aqui se le
-                    # da la original, ve un encuadre distinto del que aprendio.
-                    # Que este `if` exista es el coste real de la politica `pad`.
+                    # The model was trained on padded images: if it is given
+                    # the original here, it sees a different framing from the
+                    # one it learned. That this `if` exists is the real cost
+                    # of the `pad` policy.
                     image_path = Path(scratch) / sample.image_path.name
                     dataset_view.pad_image(sample.image_path, image_path, fraction)
 
@@ -154,7 +155,7 @@ class UltralyticsObb(BaseDetector):
 
 
 def _target_size(width: int, height: int, fraction: float) -> tuple[int, int]:
-    """Tamano sobre el que normalizar. Con padding, el de la imagen padeada."""
+    """Size to normalize over. With padding, that of the padded image."""
     if fraction <= 0.0:
         return width, height
     return (
@@ -164,18 +165,19 @@ def _target_size(width: int, height: int, fraction: float) -> tuple[int, int]:
 
 
 def _unpad(prediction: Prediction, fraction: float) -> Prediction:
-    """Devuelve una prediccion del espacio padeado al de la imagen original.
+    """Takes a prediction from the padded space back to the original image's.
 
-    Inversa exacta de `dataset.pad_quad`: si aquella hace
-    `x' = x/(1+2f) + f/(1+2f)`, esta hace `x = x'*(1+2f) - f`.
+    Exact inverse of `dataset.pad_quad`: if that one does
+    `x' = x/(1+2f) + f/(1+2f)`, this one does `x = x'*(1+2f) - f`.
 
-    El resultado puede caer fuera de [0,1], y debe: si el modelo predice que el
-    billete sigue mas alla del encuadre, esa es justo la informacion que la
-    politica `pad` existe para conservar. El rango tolerante del quad lo admite.
+    The result can fall outside [0,1], and it should: if the model predicts
+    that the banknote continues beyond the framing, that is precisely the
+    information the `pad` policy exists to preserve. The quad's tolerant range
+    admits it.
     """
     scale = 1.0 + 2.0 * fraction
     if prediction.quad is None:
-        return prediction  # sin geometria: nada que desplazar
+        return prediction  # no geometry: nothing to shift
     return Prediction(
         quad=canonicalize(
             Quad.from_xy(
@@ -189,11 +191,11 @@ def _unpad(prediction: Prediction, fraction: float) -> Prediction:
 
 
 def _locate_weights(model, output_dir: Path) -> Path:
-    """Pregunta al entrenador donde guardo, en vez de reconstruir la ruta.
+    """Asks the trainer where it saved, instead of rebuilding the path.
 
-    Reconstruirla es adivinar el convenio de una libreria que no controlamos, y
-    ya fallo una vez. `trainer.save_dir` es lo que Ultralytics uso de verdad;
-    la ruta esperada queda solo como respaldo.
+    Rebuilding it is guessing the convention of a library we do not control,
+    and it already failed once. `trainer.save_dir` is what Ultralytics really
+    used; the expected path remains only as a fallback.
     """
     candidates: list[Path] = []
     save_dir = getattr(getattr(model, "trainer", None), "save_dir", None)
@@ -205,13 +207,13 @@ def _locate_weights(model, output_dir: Path) -> Path:
         if candidate.exists():
             return candidate
     raise DetectorError(
-        "el entrenamiento no dejo pesos; se buscaron: "
+        "training left no weights; looked in: "
         + ", ".join(str(c) for c in candidates)
     )
 
 
 def _to_predictions(result, width: int, height: int, *, aspect: float):
-    """Traduce el `obb` de Ultralytics a nuestros quads canonicos."""
+    """Translates Ultralytics' `obb` into our canonical quads."""
     obb = getattr(result, "obb", None)
     if obb is None or obb.xyxyxyxy is None:
         return

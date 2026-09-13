@@ -1,24 +1,25 @@
-"""De la salida cruda de la cabeza a quads canonicos, con NMS rotado.
+"""From the raw head output to canonical quads, with rotated NMS.
 
-Aqui SI se usa shapely, al reves que en el entrenamiento. No es incoherencia:
-son dos regimenes distintos. En el bucle de entrenamiento habria que intersectar
-poligonos en cada iteracion durante horas; en inferencia se hace una vez por
-imagen sobre las pocas cajas que sobreviven al umbral de confianza. La
-especificacion pide NMS rotado con shapely y en inferencia el coste es asumible.
+Here shapely IS used, unlike in training. It is not an inconsistency: they are
+two different regimes. In the training loop polygons would have to be
+intersected on every iteration for hours; in inference it is done once per
+image over the few boxes that survive the confidence threshold. The
+specification asks for rotated NMS with shapely and in inference the cost is
+affordable.
 
-Por que el NMS tiene que ser rotado
------------------------------------
-Es el motivo de que todo el proyecto sea OBB. Dos billetes en abanico, alargados
-y en angulos distintos, tienen envolventes alineadas que se solapan casi por
-completo: un NMS estandar suprimiria una deteccion verdadera. El rotado ve que
-los rectangulos apenas se tocan y conserva las dos.
+Why the NMS has to be rotated
+-----------------------------
+It is the reason the whole project is OBB. Two fanned banknotes, elongated and
+at different angles, have axis-aligned envelopes that overlap almost entirely:
+a standard NMS would suppress a true detection. The rotated one sees that the
+rectangles barely touch and keeps both.
 
-El marco de las distancias
+The frame of the distances
 --------------------------
-`l, t, r, b` se predicen en el sistema de referencia de la CAJA, no en el de la
-imagen. Tienen que serlo: si fueran ejes de imagen, `w = l + r` no seria el
-ancho del billete sino el de su envolvente, y el angulo no querria decir nada.
-Asi que el desplazamiento del centro se gira por theta antes de sumarlo.
+`l, t, r, b` are predicted in the reference frame of the BOX, not of the image.
+They have to be: if they were image axes, `w = l + r` would not be the width of
+the banknote but of its envelope, and the angle would mean nothing. So the
+center offset is rotated by theta before being added.
 """
 
 from __future__ import annotations
@@ -42,23 +43,23 @@ from testbank.metrics.core import Prediction
 from testbank.models.assign import AnchorGrid, build_anchor_grid
 from testbank.models.yolox_obb import decode_angle
 
-#: Por debajo de esto no se emite deteccion. Bajo a proposito: la curva
-#: precision-recall necesita la cola. Ver `MetricsConfig.report_confidence`.
+#: Below this no detection is emitted. Low on purpose: the precision-recall
+#: curve needs the tail. See `MetricsConfig.report_confidence`.
 DEFAULT_CONF = 0.01
 
-#: IoU rotado por encima del cual dos detecciones se consideran la misma.
+#: Rotated IoU above which two detections are considered the same one.
 DEFAULT_NMS_IOU = 0.5
 
-#: Tope de detecciones por imagen tras el NMS. Con uno o dos billetes por foto,
-#: 300 es holgadisimo; existe para que una red sin entrenar no cuelgue el NMS.
+#: Cap on detections per image after NMS. With one or two banknotes per photo,
+#: 300 is very generous; it exists so an untrained network does not hang the NMS.
 MAX_DETECTIONS = 300
 
 
 def decode_level(output, grid_slice: AnchorGrid) -> tuple[torch.Tensor, torch.Tensor]:
-    """Un nivel -> `(cajas (N,5) en pixeles, puntuaciones (N,))`."""
+    """One level -> `(boxes (N,5) in pixels, scores (N,))`."""
     batch = output.distances.shape[0]
     if batch != 1:
-        raise ValueError("decode_level espera una imagen; usa decode_outputs")
+        raise ValueError("decode_level expects one image; use decode_outputs")
 
     # (1, C, H, W) -> (N, C)
     def flat(tensor: torch.Tensor) -> torch.Tensor:
@@ -67,25 +68,25 @@ def decode_level(output, grid_slice: AnchorGrid) -> tuple[torch.Tensor, torch.Te
     distances = flat(output.distances) * output.stride
     angle = flat(output.angle)
     classes = torch.sigmoid(flat(output.classes))
-    # Sin rama de objectness (cabeza al estilo v8), la clase lleva la presencia
-    # dentro: su objetivo de entrenamiento ya es la calidad de la localizacion.
+    # Without an objectness branch (v8-style head), the class carries presence
+    # inside: its training target is already the localization quality.
     objectness = (
         torch.sigmoid(flat(output.objectness))[:, 0]
         if output.objectness is not None
         else torch.ones(classes.shape[0], device=classes.device)
     )
 
-    # `decode_angle` indexa la dim 1, asi que un (N, 2) le vale igual que el
-    # (B, 2, H, W) de la cabeza. Una sola implementacion para los dos usos.
+    # `decode_angle` indexes dim 1, so an (N, 2) works for it just like the
+    # (B, 2, H, W) of the head. A single implementation for both uses.
     theta = decode_angle(angle, output.angle_mode)
     centers = grid_slice.centers
 
     if output.regression == "yolox":
-        # El original de YOLOX, que usa el port de DDGRCF: `(dx, dy)` en
-        # celdas desde la esquina de la celda y `(log w, log h)` en strides.
-        # `distances` ya viene multiplicado por el stride arriba, asi que
-        # `dx * stride` es el desplazamiento en pixeles; el centro de celda de
-        # nuestra rejilla esta medio stride mas alla de la esquina.
+        # The YOLOX original, used by the DDGRCF port: `(dx, dy)` in cells from
+        # the cell corner and `(log w, log h)` in strides. `distances` already
+        # comes multiplied by the stride above, so `dx * stride` is the offset
+        # in pixels; the cell center of our grid is half a stride past the
+        # corner.
         raw = flat(output.distances)
         stride = output.stride
         cx = centers[:, 0] - stride / 2 + raw[:, 0] * stride
@@ -96,8 +97,8 @@ def decode_level(output, grid_slice: AnchorGrid) -> tuple[torch.Tensor, torch.Te
         left, top, right, bottom = distances.unbind(dim=-1)
         width = left + right
         height = top + bottom
-        # El desplazamiento del centro va en el marco de la CAJA, asi que se
-        # gira antes de sumarlo al centro de la celda.
+        # The center offset lives in the frame of the BOX, so it is rotated
+        # before being added to the cell center.
         local_x = (right - left) / 2
         local_y = (bottom - top) / 2
         cos_t, sin_t = torch.cos(theta), torch.sin(theta)
@@ -105,14 +106,14 @@ def decode_level(output, grid_slice: AnchorGrid) -> tuple[torch.Tensor, torch.Te
         cy = centers[:, 1] + local_x * sin_t + local_y * cos_t
 
     boxes = torch.stack((cx, cy, width, height, theta), dim=-1)
-    # La puntuacion combina "hay algo" con "es un billete": una celda segura de
-    # que hay objeto pero insegura de la clase no debe puntuar alto.
+    # The score combines "there is something" with "it is a banknote": a cell
+    # sure there is an object but unsure of the class must not score high.
     scores = objectness * classes.max(dim=-1).values
     return boxes, scores
 
 
 def decode_outputs(outputs, size: ImageSize) -> tuple[torch.Tensor, torch.Tensor]:
-    """Todos los niveles juntos, en pixeles de la imagen."""
+    """All levels together, in image pixels."""
     sizes = [tuple(o.distances.shape[-2:]) for o in outputs]
     strides = tuple(o.stride for o in outputs)
     grid = build_anchor_grid(sizes, strides, device=outputs[0].distances.device)
@@ -131,7 +132,7 @@ def decode_outputs(outputs, size: ImageSize) -> tuple[torch.Tensor, torch.Tensor
 
 
 def box_to_polygon(box: torch.Tensor) -> Polygon:
-    """`cx, cy, w, h, theta` -> poligono en pixeles."""
+    """`cx, cy, w, h, theta` -> polygon in pixels."""
     cx, cy, w, h, theta = (float(v) for v in box)
     cos_t, sin_t = math.cos(theta), math.sin(theta)
     corners = [(-w / 2, -h / 2), (w / 2, -h / 2), (w / 2, h / 2), (-w / 2, h / 2)]
@@ -150,10 +151,10 @@ def rotated_nms(
     iou_threshold: float = DEFAULT_NMS_IOU,
     max_detections: int = MAX_DETECTIONS,
 ) -> list[int]:
-    """Supresion por IoU ROTADO. Devuelve los indices que sobreviven.
+    """Suppression by ROTATED IoU. Returns the surviving indices.
 
-    El orden es por confianza descendente, como manda: la deteccion mas segura
-    se queda y suprime a las que se le parecen.
+    The order is by descending confidence, as it should be: the most confident
+    detection stays and suppresses the ones that resemble it.
     """
     if boxes.numel() == 0:
         return []
@@ -189,23 +190,23 @@ def rotated_nms(
 
 
 def boxes_to_quads(boxes: torch.Tensor, size: ImageSize) -> list[Quad | None]:
-    """Pixeles -> quads NORMALIZADOS y canonicos, que es lo que consume todo.
+    """Pixels -> NORMALIZED, canonical quads, which is what everything consumes.
 
-    La canonicalizacion se hace con el aspecto de la imagen: sin el, el "lado
-    mas largo" que ancla el orden no es el geometrico. Es el mismo error que ha
-    mordido dos veces en este proyecto.
+    Canonicalization is done with the image aspect: without it, the "longest
+    side" that anchors the order is not the geometric one. It is the same
+    mistake that has bitten twice in this project.
     """
     aspect = size.width / size.height
     quads = []
-    # Los avisos de `quad.py` existen para juzgar ANOTACIONES: un vertice fuera
-    # del marco o un ancla inestable son cosas que mirar y quizas corregir en
-    # Roboflow. Una prediccion no es una anotacion. Un modelo a medio entrenar
-    # emite miles de cajas casi cuadradas y fuera de la imagen, y dejarlas
-    # avisar convertiria cada inferencia en un muro de texto -- y con la
-    # configuracion de pytest, en un error.
+    # The warnings in `quad.py` exist to judge ANNOTATIONS: a vertex outside
+    # the frame or an unstable anchor are things to look at and maybe fix in
+    # Roboflow. A prediction is not an annotation. A half-trained model emits
+    # thousands of nearly square boxes outside the image, and letting them warn
+    # would turn every inference into a wall of text -- and with the pytest
+    # configuration, into an error.
     #
-    # No se pierde la senal: para predicciones el equivalente es la distancia
-    # por vertice del informe de metricas, que ya sale como diagnostico.
+    # The signal is not lost: for predictions the equivalent is the per-vertex
+    # distance of the metrics report, which already comes out as a diagnostic.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", QuadShapeWarning)
         warnings.simplefilter("ignore", CoordinateRangeWarning)
@@ -215,14 +216,14 @@ def boxes_to_quads(boxes: torch.Tensor, size: ImageSize) -> list[Quad | None]:
                 (x / size.width, y / size.height)
                 for x, y in list(polygon.exterior.coords)[:4]
             ]
-            # `Quad` admite vertices hasta medio marco fuera de la imagen, que
-            # es lo que puede tener una ANOTACION de un billete que cruza el
-            # borde. Una prediccion puede irse mucho mas lejos -- una red con
-            # el backbone recien cargado y la cabeza sin entrenar lo hace -- y
-            # antes eso reventaba la evaluacion entera con un QuadError. Se
-            # devuelve None y la prediccion sigue existiendo SIN geometria: la
-            # metrica la cuenta como falso positivo, que es lo que es. Los
-            # frameworks de referencia hacen lo equivalente: no descartan.
+            # `Quad` admits vertices up to half a frame outside the image, which
+            # is what an ANNOTATION of a banknote crossing the border can have.
+            # A prediction can go much further -- a network with the backbone
+            # freshly loaded and the head untrained does -- and before that blew
+            # up the whole evaluation with a QuadError. None is returned and the
+            # prediction keeps existing WITHOUT geometry: the metric counts it
+            # as a false positive, which is what it is. The reference frameworks
+            # do the equivalent: they do not discard.
             if not all(COORD_MIN <= v <= COORD_MAX for xy in points for v in xy):
                 quads.append(None)
                 continue
@@ -238,7 +239,7 @@ def detections(
     iou_threshold: float = DEFAULT_NMS_IOU,
     max_detections: int = MAX_DETECTIONS,
 ) -> list[Prediction]:
-    """Salida de la cabeza -> `Prediction` listas para las metricas."""
+    """Head output -> `Prediction`s ready for the metrics."""
     boxes, scores = decode_outputs(outputs, size)
     keep_mask = scores >= confidence
     boxes, scores = boxes[keep_mask], scores[keep_mask]
@@ -255,8 +256,8 @@ def detections(
         return []
     selected = boxes[kept]
     quads = boxes_to_quads(selected, size)
-    # Un quad None (caja mas de medio marco fuera de la imagen) se emite igual:
-    # es un falso positivo que el modelo cometio y la metrica lo cuenta.
+    # A None quad (box more than half a frame outside the image) is emitted
+    # anyway: it is a false positive the model committed and the metric counts it.
     return [
         Prediction(quad=quad, score=float(scores[index]), class_id=0)
         for quad, index in zip(quads, kept)

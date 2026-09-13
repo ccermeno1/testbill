@@ -1,32 +1,24 @@
-"""Exportadores de dataset, registrados por decorador.
+"""Dataset exporters, registered by decorator.
 
-Los conversores de `formats.py` traducen UNA anotacion. Esto escribe el arbol de
-ficheros que cada entrenador espera encontrar: donde van las imagenes, donde las
-etiquetas, y con que nombres.
+The converters in `formats.py` translate ONE annotation. This writes the file
+tree each trainer expects to find: where the images go, where the labels, and
+under which names.
 
-Que lee cada quien:
+Who reads what:
 
-    dota            RTMDet-R: un .txt por imagen en labelTxt/
-    yolox_obb_voc   buzhidaoshenme/YOLOX-OBB: VOCdevkit con <angle> en el bndbox
-    voc_xml         VOC con <robndbox> de roLabelImg: hoy no lo consume nadie
-    coco            diagnostico y terceros: un solo annotations.json
+    dota   RTMDet-R (and BboxToolkit): one .txt per image in labelTxt/
+    coco   diagnostics and third-party tools: a single annotations.json
 
-Todos pasan por `dataio/prepare.prepare`, asi que comparten filtro de area y
-politica de borde con la vista de Ultralytics. Es lo que evita que dos
-candidatos entrenen con verdades distintas y la tabla los compare como iguales.
+Both go through `dataio/prepare.prepare`, so they share the area filter and
+the border policy with the Ultralytics view. That is what keeps two candidates
+from training on different truths while the table compares them as equals.
 
-Por que hay DOS exportadores VOC y no uno
------------------------------------------
-Parecen el mismo formato y no lo son. `voc_xml` escribe el `<robndbox>` de
-roLabelImg -- cx/cy/w/h/angle en elementos propios -- que es el convenio VOC-OBB
-mas extendido. El fork de YOLOX-OBB no lee eso: mete un `<angle>` DENTRO de un
-`<bndbox>` normal cuyos xmin/xmax son en realidad w y h colocados alrededor del
-centro. Unificarlos habria significado escribir una mentira para uno de los dos.
-
-`voc_xml` **no lo consume ningun candidato actual**. Se escribio contra una
-suposicion sobre el fork que resulto falsa, y se conserva solo porque el formato
-es comun y el conversor esta probado. Antes de enchufarlo a una herramienta
-concreta hay que leer SU parser: es exactamente la leccion que costo escribirlo.
+There used to be two more (`voc_xml` and the VOC variant of the YOLOX-OBB fork);
+they left in the refactor with the candidates that consumed them. The lesson
+they left: two things can look like the same VOC format and not be -- one puts
+`<robndbox>` elements, the other an `<angle>` INSIDE a plain `<bndbox>` whose
+xmin/xmax are really w and h around the center. Before plugging an exporter
+into a concrete tool, read ITS parser.
 """
 
 from __future__ import annotations
@@ -49,7 +41,7 @@ from testbank.dataio.prepare import (
 
 
 class ExportError(ValueError):
-    """No se pudo escribir la vista pedida."""
+    """The requested view could not be written."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +49,7 @@ class ExportResult:
     name: str
     root: Path
     report: PreparationReport
-    #: Lo que hay que pasarle al entrenador: un yaml, un json o un directorio.
+    #: What to hand the trainer: a yaml, a json or a directory.
     entry_point: Path
 
     def describe(self) -> str:
@@ -67,7 +59,7 @@ class ExportResult:
 @runtime_checkable
 class Exporter(Protocol):
     name: ClassVar[str]
-    #: Formato de `formats.py` con el que se serializa cada anotacion.
+    #: Format from `formats.py` used to serialize each annotation.
     annotation_format: ClassVar[str]
 
     def write(
@@ -84,7 +76,7 @@ REGISTRY: dict[str, Exporter] = {}
 
 def register(cls: type) -> type:
     if cls.name in REGISTRY:
-        raise ExportError(f"exportador duplicado en el registro: {cls.name!r}")
+        raise ExportError(f"duplicate exporter in the registry: {cls.name!r}")
     REGISTRY[cls.name] = cls()
     return cls
 
@@ -94,7 +86,7 @@ def get(name: str) -> Exporter:
         return REGISTRY[name]
     except KeyError:
         raise ExportError(
-            f"exportador desconocido: {name!r}; registrados: {sorted(REGISTRY)}"
+            f"unknown exporter: {name!r}; registered: {sorted(REGISTRY)}"
         ) from None
 
 
@@ -102,12 +94,12 @@ def exporters() -> list[str]:
     return sorted(REGISTRY)
 
 
-# --- formatos --------------------------------------------------------------
+# --- formats ---------------------------------------------------------------
 
 
 @register
 class DotaExporter:
-    """`images/` + `labelTxt/`, un .txt por imagen. El convenio de DOTA."""
+    """`images/` + `labelTxt/`, one .txt per image. The DOTA convention."""
 
     name = "dota"
     annotation_format = "dota"
@@ -134,12 +126,11 @@ class DotaExporter:
 
 @register
 class CocoExporter:
-    """Un `annotations.json` por particion. LOSSY: pierde la orientacion.
+    """One `annotations.json` per split. LOSSY: it loses the orientation.
 
-    Se exporta igualmente porque es lo que comen muchas herramientas de
-    inspeccion, pero un candidato entrenado desde aqui no puede predecir cajas
-    giradas: `bbox_coco` esta marcado `lossy` en el registro de formatos por
-    este motivo exacto.
+    Exported anyway because it is what many inspection tools consume, but a
+    candidate trained from here cannot predict rotated boxes: `bbox_coco` is
+    marked `lossy` in the format registry for exactly this reason.
     """
 
     name = "coco"
@@ -152,10 +143,10 @@ class CocoExporter:
             images_dir = root / split / "images"
             payload = {
                 "info": {
-                    "description": "Exportado por testbank",
+                    "description": "Exported by testbank",
                     "note": (
-                        "bbox_coco pierde la orientacion: las cajas son la "
-                        "envolvente alineada al eje del billete."
+                        "bbox_coco loses the orientation: the boxes are the "
+                        "axis-aligned envelope of the banknote."
                     ),
                 },
                 "categories": [
@@ -195,7 +186,6 @@ class CocoExporter:
         return entry_point
 
 
-
 def export(
     name: str,
     samples_by_split: dict[str, list],
@@ -205,7 +195,7 @@ def export(
     class_names: tuple[str, ...] = DEFAULT_CLASS_NAMES,
     overwrite: bool = True,
 ) -> ExportResult:
-    """Escribe la vista completa en el formato pedido."""
+    """Write the full view in the requested format."""
     config = config or Config()
     exporter = get(name)
     root = Path(out_dir or (config.data.derived_dir / name))

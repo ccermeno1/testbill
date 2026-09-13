@@ -1,64 +1,64 @@
-"""La puerta unica entre las anotaciones en disco y lo que ve cualquier entrenador.
+"""The single gate between the annotations on disk and what any trainer sees.
 
-Dos pasos, en este orden, iguales para TODOS los formatos y candidatos:
+Two steps, in this order, the same for EVERY format and candidate:
 
-1. **Cargar y filtrar** (`load_samples`): leer las etiquetas y aplicar el filtro
-   de area relativa. Lo que el filtro descarta no se borra: queda como
-   `dropped`, con su indice original, para poder senalarlo en Roboflow.
-2. **Preparar la vista** (`prepare`): aplicar la politica de borde (`clip`,
-   `pad`, `keep`) y fijar el tamano de imagen que los formatos en pixeles
-   necesitan.
+1. **Load and filter** (`load_samples`): read the labels and apply the relative
+   area filter. What the filter drops is not deleted: it stays as `dropped`,
+   with its original index, so it can be pointed at in Roboflow.
+2. **Prepare the view** (`prepare`): apply the border policy (`clip`, `pad`,
+   `keep`) and fix the image size that pixel-based formats need.
 
-Estaban en dos modulos (`prepare.py` y `prepare.py`) y se juntaron en el refactor:
-son la misma idea -- que dos candidatos no puedan entrenar con verdades
-distintas -- y separarlos obligaba a leer dos sitios para entender una cosa.
+They used to be two modules (`loader.py` and `view.py`) and were merged in the
+refactor: they are the same idea -- that two candidates cannot train on
+different truths -- and keeping them apart meant reading two places to
+understand one thing.
 
-=== Carga y filtro ===
-Unica puerta de acceso a las anotaciones de una muestra.
+=== Loading and filtering ===
+Single entry point to a sample's annotations.
 
-`read_label_file` lee un fichero y valida su formato. Aqui se compone con el
-aspecto de la imagen y con el filtro de area relativa, y es lo que consumen la
-visualizacion, los chequeos y todo lo que venga despues. Un solo sitio decide
-que anotaciones estan vigentes, igual que `splits.py` es el unico que decide a
-que particion pertenece una muestra.
+`read_label_file` reads a file and validates its format. Here it is composed
+with the image aspect and with the relative area filter, and it is what the
+visualisation, the checks and everything downstream consume. One place decides
+which annotations are in force, just as `splits.py` is the only one deciding
+which split a sample belongs to.
 
-Filtro de area relativa
------------------------
-En cada imagen se conserva el billete de delante: se descarta toda anotacion
-cuya area sea menor que `min_relative_area` veces el area de la mayor anotacion
-de esa misma imagen.
+Relative area filter
+--------------------
+In every image the banknote in front is kept: every annotation whose area is
+smaller than `min_relative_area` times the area of the largest annotation in
+that same image is dropped.
 
-Cubre las dos situaciones sin tener que distinguirlas. En un abanico, la franja
-visible de un billete tapado es mucho menor que el billete de delante y cae. En
-una foto de dos o tres billetes juntos, todos tienen un tamano parecido y se
-conservan todos.
+It covers both situations without having to tell them apart. In a fan, the
+visible strip of a covered banknote is much smaller than the one in front and
+falls out. In a photo of two or three banknotes side by side, all have a
+similar size and all are kept.
 
-Es un FILTRO EN CARGA, no un borrado: los ficheros de anotacion no se tocan
-nunca, y lo descartado se reporta con imagen, indice y porcentaje de area
-relativa para poder revisarlo y corregirlo en el origen.
+It is a FILTER ON LOAD, not a deletion: the annotation files are never touched,
+and what is dropped is reported with image, index and relative area percentage
+so it can be reviewed and fixed at the source.
 
-Por que no hace falta el tamano de la imagen
---------------------------------------------
-El criterio es un cociente de areas dentro de una misma imagen. Pasar de
-coordenadas normalizadas a pixeles multiplica ambas areas por el mismo W*H, asi
-que el cociente no cambia. El aspecto se sigue pidiendo, pero solo para que el
-orden canonico de los quads sea el correcto, no para el filtro.
+Why the image size is not needed
+--------------------------------
+The criterion is a ratio of areas within one image. Going from normalized
+coordinates to pixels multiplies both areas by the same W*H, so the ratio does
+not change. The aspect is still requested, but only so the canonical order of
+the quads is right, not for the filter.
 
-=== Politica de borde y vista ===
-Preparacion comun de las muestras antes de escribirlas en cualquier formato.
+=== Border policy and view ===
+Common preparation of the samples before writing them in any format.
 
-Entre el fichero de origen y lo que ve un entrenador hay tres pasos que TIENEN
-que ser los mismos para todos los formatos:
+Between the source file and what a trainer sees there are three steps that
+HAVE to be the same for all formats:
 
-1. El filtro de area relativa (`dataio/prepare.py`).
-2. La politica de billetes que cruzan el borde (`clip`, `pad` o `keep`).
-3. El tamano de imagen, que los formatos en pixeles necesitan.
+1. The relative area filter (above).
+2. The policy for banknotes crossing the border (`clip`, `pad` or `keep`).
+3. The image size, which pixel-based formats need.
 
-Estaban dentro de `detectors/dataset.py`, que escribe la vista de Ultralytics.
-Al anadir los exportadores de DOTA, VOC y COCO habria hecho falta repetirlos, y
-una divergencia ahi seria silenciosa: dos candidatos entrenando con verdades
-distintas y una tabla comparandolos como si fueran lo mismo. Asi que viven aqui
-y los dos sitios llaman a lo mismo.
+They used to live inside `detectors/dataset.py`, which writes the Ultralytics
+view. Adding the DOTA and COCO exporters would have meant repeating them, and a
+divergence there would be silent: two candidates training on different truths
+and a table comparing them as if they were the same. So they live here and
+both places call the same thing.
 """
 
 from __future__ import annotations
@@ -77,48 +77,48 @@ from testbank.dataio.obb_yolo import Annotation, LabelFormatError, read_label_fi
 from testbank.geometry.quad import DEFAULT_ASPECT, Quad, canonicalize
 
 # --------------------------------------------------------------------------
-# Carga y filtro de area
+# Loading and area filter
 # --------------------------------------------------------------------------
 
-#: Fraccion del area de la mayor anotacion por debajo de la cual se descarta.
-#: Aproximacion a la politica de visibilidad del 25%, no una medida de oclusion.
+#: Fraction of the largest annotation's area below which one is dropped. An
+#: approximation to the 25% visibility policy, not a measure of occlusion.
 DEFAULT_MIN_RELATIVE_AREA = 0.25
 
 
 @dataclass(frozen=True, slots=True)
 class DroppedAnnotation:
-    """Una anotacion que el filtro deja fuera. Sigue en el fichero de origen."""
+    """An annotation the filter leaves out. It is still in the source file."""
 
     sample_id: str
-    #: Indice de la anotacion dentro de su imagen, contando desde 0, en el mismo
-    #: orden en que aparece en el fichero. Es el indice que usa el informe de
-    #: visibilidad, para poder cruzar los dos informes.
+    #: Index of the annotation within its image, counting from 0, in the same
+    #: order it appears in the file. It is the index the visibility report
+    #: uses, so the two reports can be cross-referenced.
     index: int
-    #: area / area de la mayor anotacion de la imagen, en [0, 1).
+    #: area / area of the largest annotation in the image, in [0, 1).
     relative_area: float
     label_path: Path
     quad: Quad
 
     def describe(self) -> str:
         return (
-            f"{self.sample_id}: anotacion #{self.index} descartada, "
-            f"area relativa {self.relative_area:.1%}"
+            f"{self.sample_id}: annotation #{self.index} dropped, "
+            f"relative area {self.relative_area:.1%}"
         )
 
 
 @dataclass(frozen=True, slots=True)
 class LoadedSample:
-    """Anotaciones vigentes de una muestra, mas lo que se dejo fuera y por que."""
+    """A sample's annotations in force, plus what was left out and why."""
 
     sample_id: str
     label_path: Path
     aspect: float
     annotations: tuple[Annotation, ...]
-    #: Posicion original de cada anotacion conservada dentro de su fichero,
-    #: contando desde 0. Filtrar renumera, y un informe que dijera "anotacion
-    #: #2" refiriendose a la posicion ya filtrada apuntaria a la anotacion
-    #: equivocada al abrir el fichero en Roboflow. Todo informe aguas abajo usa
-    #: estos indices, de modo que el del filtro y el de visibilidad se cruzan.
+    #: Original position of each kept annotation within its file, counting
+    #: from 0. Filtering renumbers, and a report saying "annotation #2" about
+    #: the already-filtered position would point at the wrong annotation when
+    #: opening the file in Roboflow. Every downstream report uses these
+    #: indices, so the filter's and the visibility check's cross-reference.
     kept_indices: tuple[int, ...] = ()
     dropped: tuple[DroppedAnnotation, ...] = ()
     warnings: tuple[str, ...] = ()
@@ -130,7 +130,7 @@ class LoadedSample:
 
 @dataclass
 class FilterReport:
-    """Recuento de lo que el filtro deja fuera, para revisarlo en Roboflow."""
+    """Tally of what the filter leaves out, to review it in Roboflow."""
 
     min_relative_area: float = DEFAULT_MIN_RELATIVE_AREA
     images_loaded: int = 0
@@ -154,9 +154,9 @@ class FilterReport:
             "annotations_dropped": len(self.dropped),
             "images_affected": self.images_affected,
             "note": (
-                "Filtro en carga, aproximacion a la politica de visibilidad del "
-                "25%: no mide oclusion. Las anotaciones listadas siguen en el "
-                "dataset de origen, no se ha borrado nada."
+                "Filter on load, an approximation to the 25% visibility "
+                "policy: it does not measure occlusion. The listed annotations "
+                "are still in the source dataset; nothing was deleted."
             ),
             "dropped": [
                 {
@@ -170,20 +170,20 @@ class FilterReport:
         }
 
     def summary_lines(self) -> list[str]:
-        umbral = (
-            f"Filtro de area relativa: umbral {self.min_relative_area:.0%} "
-            f"del billete mas grande de cada imagen"
+        threshold = (
+            f"Relative area filter: threshold {self.min_relative_area:.0%} "
+            f"of the largest banknote in each image"
         )
-        descartadas = (
-            f"Anotaciones descartadas: {len(self.dropped)} "
-            f"en {self.images_affected} imagenes"
+        dropped = (
+            f"Annotations dropped:  {len(self.dropped)} "
+            f"in {self.images_affected} images"
         )
         return [
-            umbral,
-            f"Imagenes cargadas:       {self.images_loaded}",
-            f"Anotaciones leidas:      {self.annotations_read}",
-            f"Anotaciones conservadas: {self.annotations_kept}",
-            descartadas,
+            threshold,
+            f"Images loaded:        {self.images_loaded}",
+            f"Annotations read:     {self.annotations_read}",
+            f"Annotations kept:     {self.annotations_kept}",
+            dropped,
         ]
 
 
@@ -192,21 +192,21 @@ def filter_by_relative_area(
     *,
     min_relative_area: float = DEFAULT_MIN_RELATIVE_AREA,
 ) -> tuple[tuple[tuple[int, Annotation], ...], tuple[tuple[int, float], ...]]:
-    """Conserva el billete de delante y lo que se le parezca en tamano.
+    """Keep the banknote in front and whatever is close to it in size.
 
-    Devuelve `(conservadas, descartadas)`, donde `conservadas` son pares
-    `(indice original, anotacion)` y `descartadas` son pares `(indice original,
-    area relativa)`. Los indices son siempre la posicion dentro del fichero, no
-    la posicion tras filtrar, para que cualquier informe apunte a la anotacion
-    que de verdad hay que abrir en Roboflow.
+    Returns `(kept, dropped)`, where `kept` are `(original index, annotation)`
+    pairs and `dropped` are `(original index, relative area)` pairs. The
+    indices are always the position within the file, not the position after
+    filtering, so that any report points at the annotation one actually has
+    to open in Roboflow.
 
-    La mayor anotacion tiene area relativa 1.0 y por tanto nunca se descarta,
-    ni siquiera con `min_relative_area = 1.0`: la comparacion es estricta, de
-    modo que el umbral 1.0 conserva la mayor y sus empates exactos.
+    The largest annotation has relative area 1.0 and is therefore never
+    dropped, not even with `min_relative_area = 1.0`: the comparison is strict,
+    so threshold 1.0 keeps the largest and its exact ties.
     """
     if not 0.0 <= min_relative_area <= 1.0:
         raise ValueError(
-            f"min_relative_area debe estar en [0, 1], se recibio {min_relative_area}"
+            f"min_relative_area must be in [0, 1], got {min_relative_area}"
         )
     annotations = tuple(annotations)
     if not annotations:
@@ -214,7 +214,7 @@ def filter_by_relative_area(
 
     areas = [abs(a.quad.signed_area()) for a in annotations]
     largest = max(areas)
-    if largest <= 0.0:  # pragma: no cover - el lector ya rechaza area nula
+    if largest <= 0.0:  # pragma: no cover - the reader already rejects zero area
         return tuple(enumerate(annotations)), ()
 
     kept: list[tuple[int, Annotation]] = []
@@ -234,7 +234,7 @@ def load_sample(
     aspect: float = DEFAULT_ASPECT,
     min_relative_area: float = DEFAULT_MIN_RELATIVE_AREA,
 ) -> LoadedSample:
-    """Lee las anotaciones de una muestra y les aplica el filtro de area."""
+    """Read a sample's annotations and apply the area filter."""
     label = read_label_file(sample.label_path, aspect=aspect)
     kept, dropped = filter_by_relative_area(
         label.annotations, min_relative_area=min_relative_area
@@ -265,10 +265,11 @@ def load_samples(
     sizes=None,
     min_relative_area: float = DEFAULT_MIN_RELATIVE_AREA,
 ) -> tuple[tuple[LoadedSample, ...], FilterReport]:
-    """Carga un conjunto de muestras y acumula el informe del filtro.
+    """Load a set of samples and accumulate the filter report.
 
-    `sizes` es un `SizeIndex`; sin el, el orden canonico se calcula en el
-    espacio normalizado, que no es el geometrico. Pasalo siempre que lo tengas.
+    `sizes` is a `SizeIndex`; without it the canonical order is computed in
+    normalized space, which is not the geometric one. Pass it whenever you
+    have it.
     """
     report = FilterReport(min_relative_area=min_relative_area)
     loaded: list[LoadedSample] = []
@@ -280,9 +281,9 @@ def load_samples(
                 sample, aspect=aspect, min_relative_area=min_relative_area
             )
         except LabelFormatError as exc:
-            # Igual que dentro de un fichero: se recorren todos y se falla al
-            # final con la lista completa. Con 500 etiquetas, enterarse de un
-            # error por ejecucion convierte la limpieza en un bucle.
+            # Same as within a file: walk all of them and fail at the end with
+            # the full list. With 500 labels, learning about one error per run
+            # turns the cleanup into a loop.
             problems.extend(exc.problems)
             continue
         loaded.append(item)
@@ -291,18 +292,16 @@ def load_samples(
         report.dropped.extend(item.dropped)
 
     if problems:
-        raise LabelFormatError.combine(
-            problems, "anotaciones invalidas en el dataset"
-        )
+        raise LabelFormatError.combine(problems, "invalid annotations in the dataset")
 
     return tuple(loaded), report
 
 
 # --------------------------------------------------------------------------
-# Politica de borde y vista preparada
+# Border policy and prepared view
 # --------------------------------------------------------------------------
 
-#: Ordenes en los que se recorren los extremos. Ver `_fit_extents`.
+#: Orders in which the extents are visited. See `_fit_extents`.
 _TRIM_ORDERS = (
     ("u1", "u0", "v1", "v0"),
     ("v1", "v0", "u1", "u0"),
@@ -312,21 +311,21 @@ _TRIM_ORDERS = (
 
 
 def _trim(u0, u1, v0, v1, axes, aspect, order, passes):
-    """Gauss-Seidel sobre los cuatro extremos, en un orden dado.
+    """Gauss-Seidel over the four extents, in a given order.
 
-    La regla de oro: **un extremo nunca cruza a su opuesto**. Si la cota que le
-    toca lo exigiese, se deja como esta y que lo absorba el otro eje en la pasada
-    siguiente. Sin esa guarda, el extremo se pinzaba contra su opuesto, la
-    dimension colapsaba a cero y como el ajuste solo encoge, ya no habia vuelta:
-    salia un quad degenerado en lugar de un rectangulo pequeno.
+    The golden rule: **an extent never crosses its opposite**. If the bound it
+    gets would demand it, it is left as is and the other axis absorbs it on the
+    next pass. Without that guard the extent was pinched against its opposite,
+    the dimension collapsed to zero and, since the fit only shrinks, there was
+    no way back: a degenerate quad came out instead of a small rectangle.
     """
     (ux, uy), (vx, vy) = axes
-    # (coef_u, coef_v, tope) de cada restriccion del marco.
+    # (coef_u, coef_v, cap) of each frame constraint.
     limits = ((ux, vx, aspect), (uy, vy, 1.0))
 
     for index in range(passes):
-        # Solo la ULTIMA pasada deja que cualquier eje absorba cualquier
-        # restriccion. Antes manda la alineacion (ver `_fit_extents`).
+        # Only the LAST pass lets any axis absorb any constraint. Before that,
+        # alignment rules (see `_fit_extents`).
         cheapest_only = index < passes - 1
         for which in order:
             on_u = which[0] == "u"
@@ -369,34 +368,35 @@ def _inside(u0, u1, v0, v1, axes, aspect, tolerance=1e-9):
 
 
 def _fit_extents(u0, u1, v0, v1, axes, aspect, *, passes=6):
-    """Encoge los extremos de la caja hasta que sus cuatro esquinas caben.
+    """Shrink the box extents until its four corners fit.
 
-    Con el angulo fijo, cada esquina es una funcion LINEAL de los cuatro
-    extremos, asi que cada restriccion del marco (`0 <= x <= aspect`,
-    `0 <= y <= 1`) se despeja como una cota sobre el extremo que se ajusta.
+    With the angle fixed, each corner is a LINEAR function of the four extents,
+    so each frame constraint (`0 <= x <= aspect`, `0 <= y <= 1`) solves as a
+    bound on the extent being adjusted.
 
-    Dos cosas que hacen falta, y las dos salieron de medir, no de razonar
+    Two things are needed, and both came from measuring, not reasoning
     ------------------------------------------------------------------
-    **Cada restriccion va al eje MAS ALINEADO con ella.** Sin eso el ajuste es
-    valido y aun asi desastroso. Caso real (`Multiple_Euro_154`): un billete casi
-    horizontal que se sale 0.029 por arriba. Como el eje largo tiene
-    `uy = 0.0315`, la restriccion `y >= 0` tambien se puede satisfacer encogiendo
-    el lado LARGO... de 0.890 a 0.064. Cumplia todo y conservaba el 8% del
-    billete.
+    **Each constraint goes to the axis MOST ALIGNED with it.** Without that the
+    fit is valid and still disastrous. Real case (`Multiple_Euro_154`): a nearly
+    horizontal banknote sticking out 0.029 at the top. Since the long axis has
+    `uy = 0.0315`, the constraint `y >= 0` can also be satisfied by shrinking
+    the LONG side... from 0.890 to 0.064. It met everything and kept 8% of the
+    banknote.
 
-    **Se prueban varios ordenes y gana el de mayor area.** Con un solo orden, el
-    ascenso por coordenadas se atasca en angulos proximos a 45 grados, donde los
-    dos ejes pesan casi igual en las dos restricciones, y llega a colapsar una
-    dimension a cero. Cuatro ordenes cuestan nada y quitan el problema.
+    **Several orders are tried and the largest area wins.** With a single order,
+    coordinate ascent gets stuck at angles near 45 degrees, where both axes
+    weigh almost the same in both constraints, and can collapse a dimension to
+    zero. Four orders cost nothing and remove the problem.
 
-    Sigue sin ser el rectangulo inscrito de area maxima: eso pediria un LP, otra
-    dependencia para afinar algo que ya esta dentro del ruido del recorte.
+    It is still not the maximum-area inscribed rectangle: that would need an
+    LP, one more dependency to refine something already within the noise of
+    the clipping itself.
     """
     best = None
     for order in _TRIM_ORDERS:
         candidate = _trim(u0, u1, v0, v1, axes, aspect, order, passes)
-        # Un candidato que no cabe no vale por mucha area que tenga: la guarda
-        # anti-colapso de `_trim` puede dejar una restriccion sin satisfacer.
+        # A candidate that does not fit is worthless however large: the
+        # anti-collapse guard in `_trim` may leave a constraint unsatisfied.
         if not _inside(*candidate, axes, aspect):
             continue
         a0, a1, b0, b1 = candidate
@@ -407,17 +407,17 @@ def _fit_extents(u0, u1, v0, v1, axes, aspect, *, passes=6):
 
 
 def _visible_bounds(points, aspect):
-    """Envolvente ALINEADA de la parte visible. El ultimo recurso de `clip_quad`.
+    """AXIS-ALIGNED envelope of the visible part. `clip_quad`'s last resort.
 
-    Pierde el angulo, y por eso es el ultimo recurso y no la regla. A cambio es
-    rectangulo y cabe en el marco por construccion, siempre.
+    It loses the angle, which is why it is the last resort and not the rule.
+    In exchange it is a rectangle and fits the frame by construction, always.
     """
     from shapely.geometry import Polygon, box
 
     visible = Polygon(points).intersection(box(0.0, 0.0, aspect, 1.0))
     if visible.is_empty or visible.area <= 0.0:
-        # Fuera del todo. Se pinza y que el resto del proyecto decida: el filtro
-        # de area o la propia validacion del quad.
+        # Entirely outside. Pinch and let the rest of the project decide: the
+        # area filter or the quad's own validation.
         return canonicalize(
             Quad.from_xy(
                 [
@@ -442,43 +442,43 @@ def _visible_bounds(points, aspect):
 
 
 def clip_quad(quad: Quad, *, aspect: float = 1.0) -> Quad:
-    """Recorta al marco conservando el ANGULO, y devuelve un RECTANGULO.
+    """Clip to the frame keeping the ANGLE, and return a RECTANGLE.
 
-    Antes esto pinzaba cada vertice a [0,1] por separado. Es rapido y mantiene
-    cuatro vertices, pero un rectangulo GIRADO cortado contra un marco recto no
-    da un rectangulo mas pequeno: da un trapecio. Medido sobre los datos reales,
-    **82 de 679 anotaciones (12%) dejaban de ser rectangulos**, y el unico run
-    registrado entreno asi.
+    This used to pinch each vertex to [0,1] separately. It is fast and keeps
+    four vertices, but a ROTATED rectangle cut against a straight frame does
+    not give a smaller rectangle: it gives a trapezoid. Measured on the real
+    data, **82 of 679 annotations (12%) stopped being rectangles**, and the
+    only recorded run trained like that.
 
-    Eso es un objetivo que el modelo no puede alcanzar: predice
-    `(cx, cy, w, h, angulo)`, o sea rectangulos. Un trapecio como verdad de
-    referencia solo se puede aprender como el rectangulo que menos mal le pega.
+    That is a target the model cannot reach: it predicts `(cx, cy, w, h,
+    angle)`, i.e. rectangles. A trapezoid as ground truth can only be learned
+    as the rectangle that fits it least badly.
 
-    Que hace ahora, en los ejes de la propia caja (el lado largo y su
+    What it does now, in the box's own axes (the long side and its
     perpendicular):
 
-    1. Parte de la caja original.
-    2. Encoge sus cuatro extremos hasta que las cuatro esquinas caben en el
-       marco, con el angulo intacto.
+    1. Start from the original box.
+    2. Shrink its four extents until the four corners fit the frame, with the
+       angle intact.
 
-    Por que NO se envuelve "lo visible"
-    -----------------------------------
-    El primer intento fue cruzar el poligono con el marco y tomar su envolvente
-    en esos mismos ejes. **No sirve, y de un modo silencioso**: cortar una
-    ESQUINA deja intactas las otras tres, que son las que fijan la envolvente.
-    Medido, las 99 anotaciones fuera de marco seguian fuera, hasta un 23% del
-    lado. Queda escrito porque el fallo no se ve leyendo el codigo, solo
-    midiendo.
+    Why "the visible part" is NOT enveloped
+    ---------------------------------------
+    The first attempt was to intersect the polygon with the frame and take its
+    envelope in those same axes. **It does not work, and silently so**: cutting
+    a CORNER leaves the other three intact, and those fix the envelope.
+    Measured, the 99 out-of-frame annotations were still out, by up to 23% of
+    the side. It is written down because the failure cannot be seen by reading
+    the code, only by measuring.
 
-    Por que se conserva el angulo
-    -----------------------------
-    El angulo de la anotacion es dato; el de un trapecio recortado es un
-    artefacto del corte. Recalcularlo con una caja de area minima meteria ruido
-    en la unica magnitud que medimos aparte del IoU.
+    Why the angle is kept
+    ---------------------
+    The annotation's angle is data; a clipped trapezoid's is an artifact of the
+    cut. Recomputing it with a minimum-area box would add noise to the only
+    quantity we measure besides IoU.
 
-    El `aspect` no es opcional de verdad: en coordenadas normalizadas un
-    rectangulo girado es un paralelogramo, asi que "ser un rectangulo" solo
-    significa algo en pixeles.
+    `aspect` is not truly optional: in normalized coordinates a rotated
+    rectangle is a parallelogram, so "being a rectangle" only means something
+    in pixels.
     """
     points = [(x * aspect, y) for x, y in quad.points]
     (x0, y0), (x1, y1) = points[0], points[1]
@@ -486,7 +486,7 @@ def clip_quad(quad: Quad, *, aspect: float = 1.0) -> Quad:
     if length <= 0.0:
         return canonicalize(Quad.from_xy(quad.points), aspect=aspect)
 
-    # El orden canonico ancla p0->p1 en el lado mas largo: esos son los ejes.
+    # The canonical order anchors p0->p1 on the longest side: those are the axes.
     ux, uy = (x1 - x0) / length, (y1 - y0) / length
     vx, vy = -uy, ux
     us = [px * ux + py * uy for px, py in points]
@@ -496,14 +496,14 @@ def clip_quad(quad: Quad, *, aspect: float = 1.0) -> Quad:
         min(us), max(us), min(vs), max(vs), ((ux, uy), (vx, vy)), aspect
     )
     if extents is None:
-        # Ningun rectangulo con ESE angulo cabe en el marco. Pasa cuando el
-        # billete esta casi entero fuera, y entonces conservar el angulo ya no
-        # es lo importante: se devuelve la envolvente alineada de lo visible,
-        # que es rectangulo y cabe por construccion.
+        # No rectangle with THAT angle fits the frame. It happens when the
+        # banknote is almost entirely outside, and then keeping the angle is no
+        # longer what matters: return the axis-aligned envelope of the visible
+        # part, which is a rectangle and fits by construction.
         #
-        # Estos casos son los que `pad` resuelve bien y `clip` no puede: en los
-        # datos reales no aparece ninguno, y el filtro de area relativa se lleva
-        # por delante los billetes asi de tapados.
+        # These are the cases `pad` handles well and `clip` cannot: none appear
+        # in the real data, and the relative area filter takes out banknotes
+        # that covered.
         return _visible_bounds(points, aspect)
 
     u0, u1, v0, v1 = extents
@@ -513,8 +513,8 @@ def clip_quad(quad: Quad, *, aspect: float = 1.0) -> Quad:
     ]
     return canonicalize(
         Quad.from_xy(
-            # El pinzado final es contra el error de redondeo, no contra la
-            # geometria: sin el, un 1.0000000002 dispara la validacion del quad.
+            # The final pinch is against rounding error, not geometry: without
+            # it a 1.0000000002 trips the quad validation.
             [(min(max(x / aspect, 0.0), 1.0), min(max(y, 0.0), 1.0))
              for x, y in rectangle]
         ),
@@ -523,17 +523,17 @@ def clip_quad(quad: Quad, *, aspect: float = 1.0) -> Quad:
 
 
 def pad_geometry(fraction: float) -> tuple[float, float]:
-    """Escala y desplazamiento al normalizar sobre la imagen padeada.
+    """Scale and offset when normalizing over the padded image.
 
-    Con un borde de `fraction` en cada lado, el lado total se multiplica por
-    `1 + 2f`, y el origen de la imagen original queda en `f` del nuevo.
+    With a border of `fraction` on each side, the total side is multiplied by
+    `1 + 2f`, and the original image's origin lands at `f` of the new one.
     """
     scale = 1.0 + 2.0 * fraction
     return 1.0 / scale, fraction / scale
 
 
 def pad_quad(quad: Quad, fraction: float) -> Quad:
-    """Recoloca un quad en coordenadas de la imagen ya padeada."""
+    """Re-place a quad in the coordinates of the already padded image."""
     scale, offset = pad_geometry(fraction)
     return canonicalize(
         Quad.from_xy([(x * scale + offset, y * scale + offset) for x, y in quad.points])
@@ -541,13 +541,14 @@ def pad_quad(quad: Quad, fraction: float) -> Quad:
 
 
 def pad_image(source: Path, target: Path, fraction: float) -> None:
-    """Borde negro. Constante y no reflejado a proposito: el borde es contenido
-    inventado y tiene que PARECERLO, no imitar textura que no se fotografio."""
+    """Black border. Constant and not reflected on purpose: the border is
+    invented content and has to LOOK like it, not mimic texture that was never
+    photographed."""
     import cv2
 
     image = cv2.imread(str(source), cv2.IMREAD_COLOR)
     if image is None:
-        raise OSError(f"no se pudo leer {source}")
+        raise OSError(f"could not read {source}")
     height, width = image.shape[:2]
     top = bottom = round(height * fraction)
     left = right = round(width * fraction)
@@ -564,20 +565,21 @@ def out_of_bounds(quad: Quad) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class PreparedSample:
-    """Una muestra lista para escribir, en el formato que sea."""
+    """A sample ready to be written, in whatever format."""
 
     sample: Sample
-    #: Tamano de la imagen QUE SE ESCRIBE. Con `pad` es el padeado, no el
-    #: original: los formatos en pixeles tienen que coincidir con la imagen.
+    #: Size of the image THAT GETS WRITTEN. With `pad` it is the padded one, not
+    #: the original: pixel-based formats have to match the image.
     size: ImageSize
     quads: tuple[Quad, ...]
     class_ids: tuple[int, ...]
-    #: Si la imagen hay que reescribirla (padding) o basta con enlazarla.
+    #: Whether the image must be rewritten (padding) or linking is enough.
     needs_rewrite: bool = False
-    #: Cuanto padding lleva. Va AQUI y no como argumento de quien escribe: cada
-    #: exportador tendria que acordarse de pasarlo, y olvidarlo con politica
-    #: `pad` escribiria la imagen sin borde mientras las etiquetas si lo
-    #: asumen. La muestra sabe lo que es; quien la escribe no tiene que saberlo.
+    #: How much padding it carries. It lives HERE and not as an argument of
+    #: whoever writes: every exporter would have to remember to pass it, and
+    #: forgetting it with policy `pad` would write the image without a border
+    #: while the labels assume one. The sample knows what it is; the writer
+    #: does not have to.
     pad_fraction: float = 0.0
 
     @property
@@ -589,11 +591,11 @@ class PreparedSample:
 class PreparationReport:
     policy: str
     pad_fraction: float = 0.0
-    #: Anotaciones que el filtro de area dejo fuera.
+    #: Annotations the area filter left out.
     dropped: int = 0
-    #: Anotaciones que cruzaban el borde.
+    #: Annotations that crossed the border.
     adjusted: int = 0
-    #: Solo con `pad`: las que seguian fuera despues de padear.
+    #: Only with `pad`: the ones still outside after padding.
     clipped_after_pad: int = 0
     counts: dict[str, int] = field(default_factory=dict)
 
@@ -603,11 +605,11 @@ class PreparationReport:
         if self.policy == OutOfBoundsPolicy.PAD.value:
             extra = (
                 f", pad={self.pad_fraction:.0%}, "
-                f"{self.clipped_after_pad} recortadas aun asi"
+                f"{self.clipped_after_pad} clipped anyway"
             )
         return (
-            f"{counts}; {self.dropped} anotaciones filtradas; "
-            f"borde={self.policy}, {self.adjusted} fuera del marco{extra}"
+            f"{counts}; {self.dropped} annotations filtered; "
+            f"border={self.policy}, {self.adjusted} out of frame{extra}"
         )
 
 
@@ -615,11 +617,11 @@ def prepare(
     samples_by_split: dict[str, list],
     config: Config | None = None,
 ) -> tuple[dict[str, list[PreparedSample]], PreparationReport]:
-    """Filtro de area + politica de borde, igual para todos los formatos."""
+    """Area filter + border policy, the same for every format."""
     config = config or Config()
-    # Coercion deliberada: `Config.model_copy(update=...)` NO valida, asi que un
-    # `out_of_bounds="clip"` puesto por ahi llega como str y revienta mas tarde
-    # con un AttributeError sin relacion aparente.
+    # Deliberate coercion: `Config.model_copy(update=...)` does NOT validate, so
+    # an `out_of_bounds="clip"` set somewhere arrives as a str and blows up
+    # later with an unrelated-looking AttributeError.
     policy = OutOfBoundsPolicy(config.detector.out_of_bounds)
     fraction = config.detector.pad_fraction
     report = PreparationReport(
@@ -644,9 +646,9 @@ def prepare(
         prepared: list[PreparedSample] = []
         for item in loaded:
             width, height = sizes.size(item.sample_id)
-            # El aspecto va a `clip_quad`: en normalizadas un rectangulo girado
-            # es un paralelogramo, y "recortar a un rectangulo" sin esto lo
-            # haria en el espacio equivocado.
+            # The aspect goes to `clip_quad`: in normalized coordinates a
+            # rotated rectangle is a parallelogram, and "clipping to a
+            # rectangle" without it would happen in the wrong space.
             aspect = width / height
             quads: list[Quad] = []
             for annotation in item.annotations:
@@ -656,17 +658,18 @@ def prepare(
                     if policy is OutOfBoundsPolicy.CLIP:
                         quad = clip_quad(quad, aspect=aspect)
                 if policy is OutOfBoundsPolicy.PAD:
-                    # TODOS se recolocan, se salieran o no: la imagen cambio de
-                    # tamano y el sistema de coordenadas con ella.
+                    # ALL of them are re-placed, whether they stuck out or not:
+                    # the image changed size and the coordinate system with it.
                     quad = pad_quad(quad, fraction)
                     if out_of_bounds(quad):
-                        # El borde no daba para tanto. Se recorta en vez de
-                        # dejarlo fuera, porque dejarlo fuera hace que el
-                        # entrenador descarte la imagen ENTERA.
+                        # The border was not enough. Clip instead of leaving
+                        # it out, because leaving it out makes the trainer
+                        # drop the WHOLE image.
                         report.clipped_after_pad += 1
-                        # Con padding la imagen ya es otra: el aspecto no cambia
-                        # (el borde es proporcional en los dos lados), pero se
-                        # pasa explicito para que no dependa de recordarlo.
+                        # With padding the image is a different one: the aspect
+                        # does not change (the border is proportional on both
+                        # sides), but it is passed explicitly so it does not
+                        # depend on remembering that.
                         quad = clip_quad(quad, aspect=aspect)
                 quads.append(quad)
 
@@ -690,10 +693,10 @@ def prepare(
 
 
 def place_image(item: PreparedSample, target: Path) -> None:
-    """Padea si la muestra lo pide; si no, enlace duro y si no se puede, copia.
+    """Pad if the sample asks for it; otherwise hard link, and if that fails, copy.
 
-    El enlace simbolico seria mejor pero en Windows necesita permisos que no
-    siempre hay, y fallar por eso al empezar a entrenar seria absurdo.
+    A symlink would be better but on Windows it needs permissions that are not
+    always there, and failing for that when starting to train would be absurd.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
     if item.needs_rewrite:
@@ -704,8 +707,25 @@ def place_image(item: PreparedSample, target: Path) -> None:
     try:
         os.link(item.sample.image_path, target)
     except OSError:
-        # Volumen distinto, sistema de ficheros sin enlaces duros, o permisos.
+        # Different volume, filesystem without hard links, or permissions.
         shutil.copy2(item.sample.image_path, target)
 
 
-__all__ = []
+__all__ = [
+    "DEFAULT_MIN_RELATIVE_AREA",
+    "DroppedAnnotation",
+    "FilterReport",
+    "LoadedSample",
+    "PreparationReport",
+    "PreparedSample",
+    "clip_quad",
+    "filter_by_relative_area",
+    "load_sample",
+    "load_samples",
+    "out_of_bounds",
+    "pad_geometry",
+    "pad_image",
+    "pad_quad",
+    "place_image",
+    "prepare",
+]

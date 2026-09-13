@@ -1,53 +1,43 @@
-"""Conversores de formato, registrados por decorador.
+"""Format converters, registered by decorator.
 
-N formatos son 2N conversores, no N^2: todo pasa por el quad canonico. Anadir un
-formato es escribir `to_quad` / `from_quad` en una clase y decorarla con
-`@register`. Aqui no hay ni un `if formato ==`.
+N formats mean 2N converters, not N^2: everything goes through the canonical
+quad. Adding a format is writing `to_quad` / `from_quad` in a class and
+decorating it with `@register`. There is not a single `if format ==` here.
 
-Sobre el tamano de la imagen
-----------------------------
-La tabla de la especificacion marcaba `requires_image_size` solo en `bbox_coco`.
-Medido contra los formatos reales, hacen falta tres: **dota**, **voc_xml** y
-**bbox_coco** trabajan en pixeles absolutos, no en coordenadas normalizadas. Solo
-`obb_yolo` y `bbox_yolo` son normalizados y se libran.
+About the image size
+--------------------
+The specification's table flagged `requires_image_size` only for `bbox_coco`.
+Measured against the real formats, **dota** and **bbox_coco** both work in
+absolute pixels, not normalized coordinates. Only `obb_yolo` is normalized and
+gets away without it.
 
-El indice de tamanos ya existe (`dataio/image_sizes.py`, solo cabeceras con
-Pillow) porque el orden canonico tambien lo necesitaba, asi que no cuesta nada:
-`convert` lo exige cuando el conversor lo declara y falla claro si no llega.
+The size index already exists (`dataio/image_sizes.py`, headers only, via
+Pillow) because the canonical order needed it too, so it costs nothing:
+`convert` demands it when the converter declares it and fails clearly otherwise.
 
-Sobre `voc_xml` y la perdida
----------------------------
-El `<robndbox>` de roLabelImg guarda `cx cy w h angle`: cinco grados de libertad.
-Un cuadrilatero libre tiene ocho, asi que en general la conversion perderia
-informacion. No aqui: **los quads de este dataset son rectangulos exactos** --
-medido sobre las 762 anotaciones del export, los lados opuestos coinciden hasta
-la precision de la maquina y las 3048 esquinas dan 90.0000 grados. Un rectangulo
-girado tiene exactamente cinco grados de libertad, asi que la conversion es
-biyectiva y `lossy = False`.
-
-Eso deja de ser cierto en cuanto entre un quad que no sea rectangulo, y entonces
-seria una perdida silenciosa. Por eso el conversor lo comprueba y falla en vez de
-redondear a la callada.
+Formats that were here and left
+-------------------------------
+`voc_xml` (roLabelImg's `<robndbox>`), `bbox_yolo` and the VOC variant of the
+YOLOX-OBB fork were removed in the refactor: no candidate consumed them. Their
+lesson stays: a five-degree-of-freedom format only represents rectangles, and
+this dataset's quads ARE exact rectangles (measured over the 762 annotations:
+opposite sides match to machine precision, all 3048 corners give 90.0000
+degrees), but a converter must check that instead of rounding silently.
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from testbank.geometry.quad import Quad, canonicalize
 
-#: Nombre de clase por defecto, el del `data.yaml` del export.
+#: Default class name, the one in the export's `data.yaml`.
 DEFAULT_CLASS_NAMES: tuple[str, ...] = ("euro_banknote",)
-
-#: Tolerancia relativa para aceptar un quad como rectangulo. Holgada respecto a
-#: lo medido (desviacion 0.0) para no fallar por el ajuste a la rejilla diadica.
-RECTANGLE_TOL = 1e-3
 
 
 class FormatError(ValueError):
-    """El registro no se puede convertir a/desde el formato pedido."""
+    """The record cannot be converted to/from the requested format."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,11 +52,11 @@ class ImageSize:
 
 @dataclass(frozen=True, slots=True)
 class Record:
-    """Una anotacion en un formato concreto, mas la clase a la que pertenece.
+    """One annotation in a concrete format, plus the class it belongs to.
 
-    `payload` es la representacion natural del formato: una linea de texto en los
-    formatos de linea, un `<object>` en voc_xml, un dict en bbox_coco. Forzar a
-    todos una representacion comun solo anadiria una traduccion mas.
+    `payload` is the format's natural representation: a text line in line
+    formats, a dict in bbox_coco. Forcing a common representation on all of
+    them would only add one more translation.
     """
 
     class_id: int
@@ -77,8 +67,8 @@ class Record:
 class Converter(Protocol):
     name: ClassVar[str]
     lossy: ClassVar[bool]
-    #: Que se pierde, en una linea. Obligatorio: sin esto, un formato lossy
-    #: nuevo saldria avisando de lo que pierde OTRO.
+    #: What gets lost, in one line. Mandatory: without it, a new lossy format
+    #: would come out warning about what ANOTHER one loses.
     lossy_reason: ClassVar[str]
     requires_image_size: ClassVar[bool]
 
@@ -98,9 +88,9 @@ REGISTRY: dict[str, Converter] = {}
 
 
 def register(cls: type) -> type:
-    """Decorador de registro. Un nombre duplicado es error de programacion."""
+    """Registration decorator. A duplicate name is a programming error."""
     if cls.name in REGISTRY:
-        raise FormatError(f"formato duplicado en el registro: {cls.name!r}")
+        raise FormatError(f"duplicate format in the registry: {cls.name!r}")
     REGISTRY[cls.name] = cls()
     return cls
 
@@ -110,7 +100,7 @@ def get(name: str) -> Converter:
         return REGISTRY[name]
     except KeyError:
         raise FormatError(
-            f"formato desconocido: {name!r}; registrados: {sorted(REGISTRY)}"
+            f"unknown format: {name!r}; registered: {sorted(REGISTRY)}"
         ) from None
 
 
@@ -118,14 +108,14 @@ def formats() -> list[str]:
     return sorted(REGISTRY)
 
 
-# --- utilidades compartidas ------------------------------------------------
+# --- shared helpers --------------------------------------------------------
 
 
 def _require_size(converter: Converter, size: ImageSize | None) -> ImageSize:
     if size is None:
         raise FormatError(
-            f"el formato {converter.name!r} trabaja en pixeles absolutos y "
-            f"necesita el tamano de la imagen; pasalo con size= o genera "
+            f"format {converter.name!r} works in absolute pixels and needs the "
+            f"image size; pass it with size= or generate "
             f"data/derived/image_sizes.json"
         )
     return size
@@ -144,7 +134,7 @@ def _class_name(class_id: int, class_names: tuple[str, ...]) -> str:
         return class_names[class_id]
     except IndexError:
         raise FormatError(
-            f"id de clase {class_id} fuera de {list(class_names)}"
+            f"class id {class_id} outside {list(class_names)}"
         ) from None
 
 
@@ -153,7 +143,7 @@ def _class_id(name: str, class_names: tuple[str, ...]) -> int:
         return class_names.index(name)
     except ValueError:
         raise FormatError(
-            f"clase desconocida {name!r}; esperadas {list(class_names)}"
+            f"unknown class {name!r}; expected {list(class_names)}"
         ) from None
 
 
@@ -163,24 +153,24 @@ def _axis_aligned_bounds(points) -> tuple[float, float, float, float]:
     return min(xs), min(ys), max(xs), max(ys)
 
 
-# --- formatos --------------------------------------------------------------
+# --- formats ---------------------------------------------------------------
 
 
 @register
 class ObbYolo:
-    """`class x1 y1 x2 y2 x3 y3 x4 y4`, normalizado. El canonico, el del export."""
+    """`class x1 y1 x2 y2 x3 y3 x4 y4`, normalized. The canonical one, the export's."""
 
     name = "obb_yolo"
     lossy = False
-    #: Que se pierde exactamente. Vacio si no se pierde nada.
-    lossy_reason = ''
+    #: What exactly gets lost. Empty if nothing does.
+    lossy_reason = ""
     requires_image_size = False
 
     def to_quad(self, record: Record, *, size: ImageSize | None = None) -> Quad:
         tokens = str(record.payload).split()
         if len(tokens) != 8:
             raise FormatError(
-                f"obb_yolo espera 8 coordenadas, se encontraron {len(tokens)}"
+                f"obb_yolo expects 8 coordinates, found {len(tokens)}"
             )
         return canonicalize(Quad.from_xy([float(t) for t in tokens]))
 
@@ -200,16 +190,17 @@ class ObbYolo:
 
 @register
 class Dota:
-    """`x1 y1 x2 y2 x3 y3 x4 y4 categoria dificil`, en PIXELES absolutos.
+    """`x1 y1 x2 y2 x3 y3 x4 y4 category difficult`, in absolute PIXELS.
 
-    Es lo que esperan los forks de YOLOX-OBB. `dificil` va siempre a 0: la
-    politica de anotacion no distingue casos dificiles.
+    It is what RTMDet-R (via BboxToolkit) and the YOLOX-OBB forks expect.
+    `difficult` is always 0: the annotation policy does not single out hard
+    cases.
     """
 
     name = "dota"
     lossy = False
-    #: Que se pierde exactamente. Vacio si no se pierde nada.
-    lossy_reason = ''
+    #: What exactly gets lost. Empty if nothing does.
+    lossy_reason = ""
     requires_image_size = True
 
     def to_quad(self, record: Record, *, size: ImageSize | None = None) -> Quad:
@@ -217,8 +208,8 @@ class Dota:
         tokens = str(record.payload).split()
         if len(tokens) < 9:
             raise FormatError(
-                f"dota espera 8 coordenadas + categoria (+ dificil), "
-                f"se encontraron {len(tokens)} campos"
+                f"dota expects 8 coordinates + category (+ difficult), "
+                f"found {len(tokens)} fields"
             )
         values = [float(t) for t in tokens[:8]]
         points = [(values[i * 2], values[i * 2 + 1]) for i in range(4)]
@@ -244,15 +235,18 @@ class Dota:
 
 @register
 class BboxCoco:
-    """`{"bbox": [x, y, w, h], ...}` en PIXELES, esquina superior izquierda.
+    """`{"bbox": [x, y, w, h], ...}` in PIXELS, top-left corner.
 
-    LOSSY por lo mismo que bbox_yolo, y ademas necesita el tamano de la imagen.
+    LOSSY: it keeps only the axis-aligned envelope, and it needs the image size.
     """
 
     name = "bbox_coco"
     lossy = True
-    #: Que se pierde exactamente. Vacio si no se pierde nada.
-    lossy_reason = 'solo guarda la envolvente alineada al eje: PIERDE LA ORIENTACION, asi que no sirve para entrenar un detector OBB'
+    #: What exactly gets lost. Empty if nothing does.
+    lossy_reason = (
+        "keeps only the axis-aligned envelope: LOSES THE ORIENTATION, so it "
+        "cannot train an OBB detector"
+    )
     requires_image_size = True
 
     def to_quad(self, record: Record, *, size: ImageSize | None = None) -> Quad:
@@ -261,7 +255,7 @@ class BboxCoco:
         try:
             x, y, w, h = (float(v) for v in payload["bbox"])
         except (KeyError, TypeError, ValueError) as exc:
-            raise FormatError(f"bbox_coco espera 'bbox' con 4 numeros: {exc}") from exc
+            raise FormatError(f"bbox_coco expects 'bbox' with 4 numbers: {exc}") from exc
         points = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
         return canonicalize(
             Quad.from_xy(_to_normalized(points, size)), aspect=size.aspect
@@ -289,32 +283,6 @@ class BboxCoco:
         )
 
 
-def _assert_rectangle(points) -> None:
-    """Un `robndbox` solo representa rectangulos. Fallar antes que redondear."""
-    sides = [math.dist(points[i], points[(i + 1) % 4]) for i in range(4)]
-    longest = max(sides)
-    if longest <= 0:
-        raise FormatError("quad degenerado")
-    if (
-        abs(sides[0] - sides[2]) / longest > RECTANGLE_TOL
-        or abs(sides[1] - sides[3]) / longest > RECTANGLE_TOL
-    ):
-        raise FormatError(
-            "voc_xml usa <robndbox> (cx cy w h angle), que solo representa "
-            "rectangulos; este quad tiene los lados opuestos desiguales y la "
-            "conversion perderia informacion en silencio"
-        )
-    for i in range(4):
-        ax, ay = points[(i - 1) % 4][0] - points[i][0], points[(i - 1) % 4][1] - points[i][1]
-        bx, by = points[(i + 1) % 4][0] - points[i][0], points[(i + 1) % 4][1] - points[i][1]
-        norm = math.hypot(ax, ay) * math.hypot(bx, by)
-        if norm > 0 and abs(ax * bx + ay * by) / norm > RECTANGLE_TOL:
-            raise FormatError(
-                "voc_xml usa <robndbox>, que solo representa rectangulos; este "
-                "quad tiene esquinas que no son de 90 grados"
-            )
-
-
 def convert(
     record: Record,
     *,
@@ -323,10 +291,8 @@ def convert(
     size: ImageSize | None = None,
     class_names: tuple[str, ...] = DEFAULT_CLASS_NAMES,
 ) -> Record:
-    """Convierte pasando por el quad canonico. No hay rutas directas."""
+    """Convert through the canonical quad. There are no direct routes."""
     quad = get(source).to_quad(record, size=size)
     return get(target).from_quad(
         quad, class_id=record.class_id, size=size, class_names=class_names
     )
-
-

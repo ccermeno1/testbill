@@ -11,6 +11,7 @@ from testbank.data.splits import (
     SealedTestSetError,
     SplitError,
     SplitLoader,
+    list_versions,
     materialize_splits,
     record_test_access,
 )
@@ -21,7 +22,7 @@ LINE = "0 0.1 0.1 0.5 0.1 0.5 0.3 0.1 0.3\n"
 def make_sample(directory, stem):
     (directory / "images").mkdir(parents=True, exist_ok=True)
     (directory / "labels").mkdir(parents=True, exist_ok=True)
-    # JPEG minimo valido no hace falta: discover solo mira la extension.
+    # A minimal valid JPEG is not needed: discover only looks at the extension.
     (directory / "images" / f"{stem}.jpg").write_bytes(b"\xff\xd8\xff\xd9")
     (directory / "labels" / f"{stem}.txt").write_text(LINE, encoding="utf-8")
 
@@ -43,23 +44,23 @@ def flat_root(tmp_path, count=10):
     return root
 
 
-# -- deteccion --------------------------------------------------------------
+# -- detection --------------------------------------------------------------
 
 
-def test_detecta_modo_adoptar(tmp_path):
+def test_detects_adopt_mode(tmp_path):
     layout = detect_layout(roboflow_root(tmp_path))
     assert layout.mode is LayoutMode.ADOPT
     assert len(layout.groups["train"]) == 6
 
 
-def test_detecta_modo_crear(tmp_path):
+def test_detects_create_mode(tmp_path):
     layout = detect_layout(flat_root(tmp_path))
     assert layout.mode is LayoutMode.CREATE
     assert len(layout.all_samples) == 10
 
 
-def test_acepta_val_como_alias_pero_deja_constancia(tmp_path):
-    """Roboflow usa 'valid'. 'val' aparece en exports retocados a mano."""
+def test_accepts_val_as_alias_but_records_it(tmp_path):
+    """Roboflow uses 'valid'. 'val' appears in hand-edited exports."""
     root = roboflow_root(tmp_path)
     (root / "valid").rename(root / "val")
     layout = detect_layout(root)
@@ -67,70 +68,115 @@ def test_acepta_val_como_alias_pero_deja_constancia(tmp_path):
     assert any("val" in note for note in layout.notes)
 
 
-def test_valid_y_val_a_la_vez_es_ambiguo(tmp_path):
+def test_valid_and_val_at_the_same_time_is_ambiguous(tmp_path):
     root = roboflow_root(tmp_path)
-    make_sample(root / "val", "otro_000")
-    with pytest.raises(LayoutError, match="ambiguo"):
+    make_sample(root / "val", "other_000")
+    with pytest.raises(LayoutError, match="ambiguous"):
         detect_layout(root)
 
 
-def test_imagen_sin_etiqueta_es_fatal(tmp_path):
-    """Tratarla como 'imagen sin billetes' envenena el entrenamiento en silencio."""
+def test_image_without_label_is_fatal(tmp_path):
+    """Treating it as 'image without banknotes' silently poisons training."""
     root = roboflow_root(tmp_path)
-    (root / "train" / "images" / "huerfana.jpg").write_bytes(b"\xff\xd8\xff\xd9")
-    with pytest.raises(LayoutError, match="sin fichero de etiquetas"):
+    (root / "train" / "images" / "orphan.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+    with pytest.raises(LayoutError, match="without a label file"):
         detect_layout(root)
 
 
-def test_etiqueta_sin_imagen_es_fatal(tmp_path):
+def test_label_without_image_is_fatal(tmp_path):
     root = roboflow_root(tmp_path)
-    (root / "train" / "labels" / "huerfana.txt").write_text(LINE, encoding="utf-8")
-    with pytest.raises(LayoutError, match="sin imagen"):
+    (root / "train" / "labels" / "orphan.txt").write_text(LINE, encoding="utf-8")
+    with pytest.raises(LayoutError, match="without an image"):
         detect_layout(root)
 
 
-def test_estructura_a_medias_es_fatal(tmp_path):
+def test_half_built_structure_is_fatal(tmp_path):
     root = tmp_path / "data"
     make_sample(root / "train", "img_000")
-    with pytest.raises(LayoutError, match="a medias"):
+    with pytest.raises(LayoutError, match="half-built"):
         detect_layout(root)
 
 
-# -- modo adoptar -----------------------------------------------------------
+# -- adopt mode -------------------------------------------------------------
 
 
-def test_adoptar_congela_la_particion_del_export(tmp_path):
+def test_adopt_freezes_the_export_split(tmp_path):
     root = roboflow_root(tmp_path)
     splits = tmp_path / "splits"
     manifest = materialize_splits(root, splits)
     assert manifest["mode"] == "adopt"
     assert manifest["counts"] == {"train": 6, "valid": 3, "test": 2}
-    assert (splits / "valid.txt").is_file()
+    assert manifest["version"] == "v1"
+    assert (splits / "v1" / "valid.txt").is_file()
 
 
-def test_adoptar_no_exige_confirmar_independencia(tmp_path):
-    """En modo adoptar no elegimos el reparto, solo lo congelamos."""
+def test_adopt_does_not_require_confirming_independence(tmp_path):
+    """In adopt mode we do not choose the split, we only freeze it."""
     materialize_splits(roboflow_root(tmp_path), tmp_path / "splits")
 
 
-def test_se_niega_a_sobrescribir_una_particion_existente(tmp_path):
+def test_each_make_splits_writes_the_next_version_and_keeps_the_previous(tmp_path):
+    """Versions are immutable: redoing the split never destroys the export's."""
+    root = roboflow_root(tmp_path)
+    splits = tmp_path / "splits"
+    first = materialize_splits(root, splits)
+    second = materialize_splits(root, splits)
+    assert (first["version"], second["version"]) == ("v1", "v2")
+    assert list_versions(splits) == ["v1", "v2"]
+    assert (splits / "v1" / "train.txt").is_file() and (splits / "v2" / "train.txt").is_file()
+
+
+def test_refuses_to_overwrite_an_existing_version(tmp_path):
     root = roboflow_root(tmp_path)
     splits = tmp_path / "splits"
     materialize_splits(root, splits)
-    with pytest.raises(SplitError, match="Se niega a"):
-        materialize_splits(root, splits)
-    materialize_splits(root, splits, overwrite=True)
+    with pytest.raises(SplitError, match="immutable"):
+        materialize_splits(root, splits, version="v1")
+    materialize_splits(root, splits, version="v1", overwrite=True)
+    with pytest.raises(SplitError, match="named vN"):
+        materialize_splits(root, splits, version="latest")
 
 
-# -- modo crear -------------------------------------------------------------
+def test_versions_sort_numerically_not_lexicographically(tmp_path):
+    root = roboflow_root(tmp_path)
+    splits = tmp_path / "splits"
+    for name in ("v1", "v9", "v10"):
+        materialize_splits(root, splits, version=name)
+    assert list_versions(splits) == ["v1", "v9", "v10"]
+    assert SplitLoader(splits, root).version == "v10"
 
 
-def test_crear_exige_confirmar_independencia(tmp_path):
+def test_the_loader_reads_the_latest_by_default_and_a_pinned_one_on_request(tmp_path):
+    root = roboflow_root(tmp_path)
+    splits = tmp_path / "splits"
+    materialize_splits(root, splits)
+    materialize_splits(
+        root, splits, repartition=True, ratios=(0.5, 0.25, 0.25), seed=3,
+        groups=GroupConfig(independence_confirmed=True),
+    )
+    latest = SplitLoader(splits, root)
+    pinned = SplitLoader(splits, root, version="v1")
+    assert latest.version == "v2" and latest.describe()["mode"] == "repartition"
+    assert pinned.version == "v1" and pinned.describe()["mode"] == "adopt"
+    assert latest.describe()["digest"] != pinned.describe()["digest"]
+    with pytest.raises(SplitError, match="does not exist"):
+        SplitLoader(splits, root, version="v7")
+
+
+def test_without_any_version_the_loader_says_so(tmp_path):
+    with pytest.raises(SplitError, match="make-splits"):
+        SplitLoader(tmp_path / "empty", roboflow_root(tmp_path))
+
+
+# -- create mode ------------------------------------------------------------
+
+
+def test_create_requires_confirming_independence(tmp_path):
     with pytest.raises(SplitError, match="i-confirm-independence"):
         materialize_splits(flat_root(tmp_path), tmp_path / "splits")
 
 
-def test_crear_con_confirmacion(tmp_path):
+def test_create_with_confirmation(tmp_path):
     manifest = materialize_splits(
         flat_root(tmp_path),
         tmp_path / "splits",
@@ -142,7 +188,7 @@ def test_crear_con_confirmacion(tmp_path):
     assert sum(manifest["counts"].values()) == 10
 
 
-def test_crear_es_determinista_con_la_misma_semilla(tmp_path):
+def test_create_is_deterministic_with_the_same_seed(tmp_path):
     root = flat_root(tmp_path)
     groups = GroupConfig(independence_confirmed=True)
     a = materialize_splits(root, tmp_path / "a", groups=groups, seed=99)
@@ -152,7 +198,7 @@ def test_crear_es_determinista_con_la_misma_semilla(tmp_path):
     assert a["digest"] != c["digest"]
 
 
-def test_filename_prefix_exige_regex(tmp_path):
+def test_filename_prefix_requires_regex(tmp_path):
     with pytest.raises(SplitError, match="group-regex"):
         materialize_splits(
             flat_root(tmp_path),
@@ -161,8 +207,8 @@ def test_filename_prefix_exige_regex(tmp_path):
         )
 
 
-def test_un_grupo_no_se_reparte_entre_particiones(tmp_path):
-    """Varias tomas del mismo billete fisico caen juntas."""
+def test_a_group_is_not_split_across_partitions(tmp_path):
+    """Several shots of the same physical banknote fall together."""
     root = tmp_path / "flat"
     for physical in range(4):
         for take in range(3):
@@ -177,7 +223,7 @@ def test_un_grupo_no_se_reparte_entre_particiones(tmp_path):
         seed=3,
     )
     assignment = {
-        name: (tmp_path / "splits" / f"{name}.txt").read_text(encoding="utf-8")
+        name: (tmp_path / "splits" / "v1" / f"{name}.txt").read_text(encoding="utf-8")
         for name in ("train", "valid", "test")
     }
     for physical in range(4):
@@ -186,46 +232,46 @@ def test_un_grupo_no_se_reparte_entre_particiones(tmp_path):
             for name, text in assignment.items()
             if f"bill{physical:02d}_" in text
         ]
-        assert len(homes) == 1, f"el grupo bill{physical:02d} se repartio: {homes}"
+        assert len(homes) == 1, f"group bill{physical:02d} was split: {homes}"
     assert manifest["group_strategy"] == "filename-prefix"
 
 
-# -- integridad y sellado ---------------------------------------------------
+# -- integrity and sealing --------------------------------------------------
 
 
-def test_una_muestra_en_dos_particiones_es_fatal(tmp_path):
+def test_a_sample_in_two_splits_is_fatal(tmp_path):
     root = roboflow_root(tmp_path)
     splits = tmp_path / "splits"
     materialize_splits(root, splits)
-    with (splits / "valid.txt").open("a", encoding="utf-8") as handle:
-        handle.write("img_000\n")  # ya esta en train
+    with (splits / "v1" / "valid.txt").open("a", encoding="utf-8") as handle:
+        handle.write("img_000\n")  # already in train
     with pytest.raises(SplitError, match="img_000"):
         SplitLoader(splits, root)
 
 
-def test_muestra_de_la_particion_que_falta_en_disco_es_fatal(tmp_path):
+def test_split_sample_missing_from_disk_is_fatal(tmp_path):
     root = roboflow_root(tmp_path)
     splits = tmp_path / "splits"
     materialize_splits(root, splits)
     (root / "train" / "images" / "img_000.jpg").unlink()
     (root / "train" / "labels" / "img_000.txt").unlink()
-    with pytest.raises(SplitError, match="no estan en"):
+    with pytest.raises(SplitError, match="are not in"):
         SplitLoader(splits, root)
 
 
-def test_test_esta_sellado(tmp_path):
+def test_test_is_sealed(tmp_path):
     root = roboflow_root(tmp_path)
     splits = tmp_path / "splits"
     materialize_splits(root, splits)
     loader = SplitLoader(splits, root)
-    with pytest.raises(SealedTestSetError, match="sellado"):
+    with pytest.raises(SealedTestSetError, match="sealed"):
         loader.load("test")
     assert len(loader.load("test", allow_test=True)) == 2
 
 
-def test_cada_acceso_a_test_queda_registrado(tmp_path):
+def test_every_access_to_test_is_recorded(tmp_path):
     log = tmp_path / "test_evaluations.jsonl"
-    record_test_access("evaluacion final", "run_a", log_path=log)
-    record_test_access("segunda mirada", "run_b", log_path=log)
+    record_test_access("final evaluation", "run_a", log_path=log)
+    record_test_access("second look", "run_b", log_path=log)
     entries = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
     assert [e["run"] for e in entries] == ["run_a", "run_b"]

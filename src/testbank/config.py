@@ -1,4 +1,4 @@
-"""Configuracion validada con pydantic. Cada ejecucion guarda la config resuelta."""
+"""Configuration validated with pydantic. Every run stores the resolved config."""
 
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 class StrictModel(BaseModel):
-    """Config inmutable y sin campos de mas.
+    """Immutable config with no extra fields.
 
-    Aviso sobre `model_copy(update=...)`: pydantic v2 NO valida lo que se le
-    pasa ahi. Un `update={"out_of_bounds": "pad"}` deja un `str` donde deberia
-    haber un enum, y el `config.yaml` congelado de la ejecucion lo serializa
-    tal cual. Para sobrescribir, construye el tipo correcto -- es lo que hace
-    el CLI -- y donde el valor pueda venir de fuera, coercionalo al usarlo.
+    Warning about `model_copy(update=...)`: pydantic v2 does NOT validate what
+    is passed there. An `update={"out_of_bounds": "pad"}` leaves a `str` where
+    an enum should be, and the frozen `config.yaml` of the run serializes it as
+    is. To override, build the correct type -- which is what the CLI does -- and
+    wherever the value may come from outside, coerce it at the point of use.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -25,12 +25,17 @@ class StrictModel(BaseModel):
 
 class DataConfig(StrictModel):
     root: Path = Path("data/raw")
+    #: Container of split versions (`splits/v1`, `splits/v2`, ...).
     splits_dir: Path = Path("splits")
+    #: Which version to read: `vN`, or None for the latest. Whatever gets
+    #: resolved is written into the run record, so "latest" never stays
+    #: ambiguous in a `run.json`.
+    split_version: str | None = None
     derived_dir: Path = Path("data/derived")
 
 
 class SplitConfig(StrictModel):
-    """Solo se usa en modo crear. En modo adoptar la particion ya viene dada."""
+    """Only used in create mode. In adopt mode the partition is already given."""
 
     train: float = 0.70
     valid: float = 0.15
@@ -45,7 +50,7 @@ class SplitConfig(StrictModel):
     def _ratios_sum_to_one(self) -> SplitConfig:
         total = self.train + self.valid + self.test
         if abs(total - 1.0) > 1e-9:
-            raise ValueError(f"los porcentajes de particion deben sumar 1, suman {total}")
+            raise ValueError(f"split ratios must sum to 1, they sum to {total}")
         return self
 
     @property
@@ -54,72 +59,72 @@ class SplitConfig(StrictModel):
 
 
 class AnnotationPolicyConfig(StrictModel):
-    """Umbral de visibilidad de la politica de anotacion.
+    """Visibility threshold of the annotation policy.
 
-    Se aplica de verdad al anotar, no aqui: el codigo solo puede senalar
-    anotaciones que la contradicen. Documentado en el README como guia.
+    It is actually applied when annotating, not here: the code can only flag
+    annotations that contradict it. Documented in the README as a guide.
     """
 
     visibility_threshold: float = Field(default=0.25, gt=0.0, lt=1.0)
-    #: Filtro EN CARGA: se descarta toda anotacion cuya area sea menor que esta
-    #: fraccion del area de la mayor anotacion de su misma imagen, de modo que
-    #: en cada imagen se conserva el billete de delante. Es una aproximacion a
-    #: `visibility_threshold`, no una medida de oclusion, y no borra nada: los
-    #: ficheros de origen quedan intactos y lo descartado se reporta.
-    #: Subirlo o bajarlo no requiere reexportar el dataset.
+    #: Filter ON LOAD: every annotation whose area is smaller than this fraction
+    #: of the largest annotation in the same image is dropped, so that in every
+    #: image the banknote in front is kept. It approximates
+    #: `visibility_threshold`; it is not a measure of occlusion, and it deletes
+    #: nothing: the source files stay intact and what is dropped is reported.
+    #: Raising or lowering it does not require re-exporting the dataset.
     min_relative_area: float = Field(default=0.25, ge=0.0, le=1.0)
 
 
 class CropConfig(StrictModel):
-    """El margen decide cobertura y contaminacion, asi que va en la config.
+    """The margin decides coverage and contamination, so it lives in the config.
 
-    Sin fijarlo y registrarlo, dos ejecuciones no son comparables: el margen
-    intercambia una metrica por la otra directamente.
+    Without fixing and recording it, two runs are not comparable: the margin
+    trades one metric for the other directly.
     """
 
     margin: float = Field(default=0.05, ge=0.0, le=1.0)
-    #: Barrido con el que se reporta, para que el intercambio quede a la vista.
+    #: Sweep reported alongside, so that the trade-off stays visible.
     margin_sweep: tuple[float, ...] = (0.0, 0.05, 0.10)
 
 
 class ContaminationConfig(StrictModel):
-    """Dos umbrales, porque la distribucion es bimodal, no continua.
+    """Two thresholds, because the distribution is bimodal, not continuous.
 
-    Medido con un detector PERFECTO (prediccion = verdad) sobre train+valid del
-    export actual, a margen 0.05, con `contamination_floor`:
+    Measured with a PERFECT detector (prediction = truth) on train+valid of the
+    current export, at margin 0.05, with `contamination_floor`:
 
-        un billete   n=301   p95 = 0.0000
-        abanico      n=378   p95 = 0.8906
+        single banknote   n=301   p95 = 0.0000
+        fan               n=378   p95 = 0.8906
 
-    Un umbral unico seria inutil en los dos sentidos a la vez: exigente de mas
-    para los abanicos, donde ni un detector perfecto puede bajar del 0.89 --
-    si un billete esta parcialmente tapado, su caja contiene por fuerza pixeles
-    del que lo tapa -- y flojo de mas para las imagenes de un solo billete,
-    donde el suelo es cero exacto y cualquier contaminacion es un error real.
+    A single threshold would be useless in both directions at once: too strict
+    for fans, where not even a perfect detector can go below 0.89 -- if a
+    banknote is partially covered, its box necessarily contains pixels of the
+    one covering it -- and too lax for single-banknote images, where the floor
+    is exactly zero and any contamination is a real error.
 
-    Aviso al leer el umbral de abanico: entre el suelo (0.89) y el techo (1.0)
-    quedan 11 puntos, asi que discrimina poco. Para comparar candidatos en
-    abanicos mira la MEDIANA, que el detector perfecto deja en 0.023 y tiene
-    recorrido de sobra.
+    Warning when reading the fan threshold: between the floor (0.89) and the
+    ceiling (1.0) there are 11 points, so it discriminates little. To compare
+    candidates on fans look at the MEDIAN, which the perfect detector leaves at
+    0.023 and has plenty of headroom.
 
-    Los dos numeros salen de los datos, asi que hay que rederivarlos cuando
-    cambie el export: `contamination_floor` en `metrics/crop.py` los recalcula.
+    Both numbers come from the data, so they must be re-derived when the export
+    changes: `contamination_floor` in `metrics/crop.py` recomputes them.
     """
 
-    #: Suelo medido: 0.0000. Cualquier contaminacion aqui es un error real.
+    #: Measured floor: 0.0000. Any contamination here is a real error.
     single_max: float = Field(default=0.01, ge=0.0, le=1.0)
-    #: Suelo medido: 0.8906. Deja ~3 puntos de holgura, un cuarto del recorrido
-    #: que queda hasta 1.0.
+    #: Measured floor: 0.8906. Leaves ~3 points of headroom, a quarter of the
+    #: range that remains up to 1.0.
     fan_max: float = Field(default=0.92, ge=0.0, le=1.0)
-    #: Percentil sobre el que se aplican los dos umbrales.
+    #: Percentile the two thresholds are applied to.
     percentile: float = Field(default=95.0, ge=0.0, le=100.0)
 
     @model_validator(mode="after")
     def _fan_is_not_stricter_than_single(self) -> ContaminationConfig:
         if self.fan_max < self.single_max:
             raise ValueError(
-                "fan_max no puede ser menor que single_max: un abanico nunca "
-                "puede salir mas limpio que una imagen de un solo billete"
+                "fan_max cannot be lower than single_max: a fan can never come "
+                "out cleaner than a single-banknote image"
             )
         return self
 
@@ -129,23 +134,25 @@ class MetricsConfig(StrictModel):
     coverage_target: float = Field(default=0.98, gt=0.0, le=1.0)
     coverage_percentile: float = Field(default=5.0, ge=0.0, le=100.0)
     contamination: ContaminationConfig = ContaminationConfig()
-    #: Confianza a la que se REPORTAN los recuentos de aciertos y falsos
-    #: positivos. Distinta de `detector.confidence_threshold` (0.01), que es la
-    #: de inferencia y esta baja a proposito para que la curva precision-recall
-    #: tenga su cola: el AP la necesita entera.
+    #: Confidence at which the counts of hits and false positives are REPORTED.
+    #: Different from `detector.confidence_threshold` (0.01), which is the
+    #: inference one and is deliberately low so that the precision-recall
+    #: curve keeps its tail: AP needs all of it.
     #:
-    #: Con ese 0.01, el recuento crudo da 1099 falsos positivos frente a 116
-    #: aciertos, y no porque el modelo dispare a todo -- son detecciones de
-    #: confianza 0.02 que el AP ya penaliza. El numero mide cuantas cajas dejo
-    #: pasar el NMS, no calidad, y no mejora al entrenar mas.
+    #: With that 0.01, the raw count gives 1099 false positives against 116
+    #: hits, and not because the model fires at everything -- they are
+    #: detections of confidence 0.02 that AP already penalizes. The number
+    #: measures how many boxes the NMS let through, not quality, and it does
+    #: not improve with more training.
     #:
-    #: Este umbral responde la otra pregunta, la que se lee: cuantos falsos
-    #: positivos habria AL DESPLEGAR. Las dos cifras se reportan, etiquetadas.
+    #: This threshold answers the other question, the one people read: how
+    #: many false positives there would be AT DEPLOYMENT. Both figures are
+    #: reported, labelled.
     report_confidence: float = Field(default=0.25, gt=0.0, lt=1.0)
     bootstrap_samples: int = 2000
-    #: La unidad de remuestreo es la imagen, no la deteccion: varios billetes de
-    #: una misma imagen estan correlacionados y remuestrear detecciones estrecha
-    #: los intervalos artificialmente.
+    #: The resampling unit is the image, not the detection: several banknotes
+    #: in the same image are correlated, and resampling detections narrows the
+    #: intervals artificially.
     bootstrap_unit: str = "image"
     seed: int = 20260910
 
@@ -154,72 +161,71 @@ class MetricsConfig(StrictModel):
     def _only_image(cls, value: str) -> str:
         if value != "image":
             raise ValueError(
-                "la unidad de bootstrap tiene que ser 'image': remuestrear "
-                "detecciones ignora la correlacion dentro de cada imagen"
+                "the bootstrap unit has to be 'image': resampling detections "
+                "ignores the correlation within each image"
             )
         return value
 
 
 class OutOfBoundsPolicy(str, Enum):
-    """Que hacer con los billetes que cruzan el borde de la imagen.
+    """What to do with banknotes that cross the image border.
 
-    Nuestro lector los acepta a proposito (rango tolerante [-0.5, 1.5]): un
-    billete a caballo del encuadre tiene vertices fuera de [0,1] legitimamente.
-    Ultralytics considera esas etiquetas corruptas y DESCARTA LA IMAGEN ENTERA.
-    Medido sobre el export actual: 12 imagenes perdidas de 452, y justo las de
-    los casos dificiles.
+    Our reader accepts them on purpose (tolerant range [-0.5, 1.5]): a banknote
+    straddling the frame legitimately has vertices outside [0,1]. Ultralytics
+    considers those labels corrupt and DROPS THE WHOLE IMAGE. Measured on the
+    current export: 12 images lost out of 452, and precisely the hard cases.
 
-    Medido tambien cuanto billete se sale de verdad:
+    Also measured, how much banknote actually sticks out:
 
-        99 anotaciones de 679, en 82 imagenes de 452
-        area fuera del encuadre: mediana 0.4%, p90 5.8%, max 16.5%
-        el 86% tiene menos del 5% de area fuera
+        99 annotations out of 679, in 82 images out of 452
+        area outside the frame: median 0.4%, p90 5.8%, max 16.5%
+        86% have less than 5% of their area outside
     """
 
-    #: Recorta los quads al marco. Ninguna imagen se pierde y no se inventa un
-    #: solo pixel. La caja pasa a ser la parte VISIBLE del billete, que es lo
-    #: unico que un recorte puede contener de todos modos.
+    #: Clips the quads to the frame. No image is lost and not a single pixel
+    #: is invented. The box becomes the VISIBLE part of the banknote, which is
+    #: all a crop can contain anyway.
     CLIP = "clip"
-    #: Anade un borde para que quepa la extension completa. Ojo: el padding
-    #: tiene que ser UNIFORME Y SIEMPRE ACTIVO, tambien en inferencia -- ahi no
-    #: hay anotacion con la que calcular cuanto hace falta. Para que entre todo
-    #: se necesita un 23% por lado, o sea el 53% de cada imagen inventado, a
-    #: cambio de recuperar una mediana del 0.4% de billete.
+    #: Adds a border so the full extent fits. Beware: the padding has to be
+    #: UNIFORM AND ALWAYS ON, at inference too -- there is no annotation there
+    #: to compute how much is needed. Fitting everything needs 23% per side,
+    #: i.e. 53% of every image invented, in exchange for recovering a median
+    #: of 0.4% of banknote.
     PAD = "pad"
-    #: No tocar nada. Ultralytics descartara esas imagenes; queda registrado
-    #: cuantas, en vez de perderse en silencio.
+    #: Touch nothing. Ultralytics will drop those images; how many is recorded
+    #: instead of lost silently.
     KEEP = "keep"
 
 
 class AngleWeightConfig(StrictModel):
-    """Atenua la perdida de angulo en cajas casi cuadradas.
+    """Attenuates the angle loss on nearly square boxes.
 
-    El problema: la representacion `(cx, cy, w, h, theta)` es ambigua cuando
-    `w ~ h`. La caja `(w, h, t)` y la caja `(h, w, t+90)` son el MISMO
-    rectangulo, pero `(sin 2t, cos 2t)` las manda a puntos opuestos del circulo.
-    El modelo recibiria dos objetivos contradictorios para la misma caja.
+    The problem: the `(cx, cy, w, h, theta)` representation is ambiguous when
+    `w ~ h`. The box `(w, h, t)` and the box `(h, w, t+90)` are the SAME
+    rectangle, but `(sin 2t, cos 2t)` sends them to opposite points of the
+    circle. The model would receive two contradictory targets for one box.
 
-    No es teorico: 145 de 762 anotaciones del export (19%) tienen ratio < 1.1.
-    Es el mismo 19% que dispara el aviso de ancla inestable.
+    Not theoretical: 145 of the 762 annotations in the export (19%) have ratio
+    < 1.1. It is the same 19% that triggers the unstable-anchor warning.
 
-    La solucion aqui es barata y encaja con la politica de anotacion: si el
-    rectangulo es casi cuadrado, el angulo apenas cambia el recorte, asi que no
-    tiene sentido castigar al modelo por no acertarlo. Se le baja el peso.
+    The fix here is cheap and fits the annotation policy: if the rectangle is
+    nearly square, the angle barely changes the crop, so there is no point in
+    punishing the model for missing it. Its weight is lowered.
 
-    Va en la config y no clavado en el codigo PARA PODER MEDIRLO: con
-    `enabled=False` se entrena sin atenuador y se compara. Es un experimento,
-    no una constante enterrada.
+    It lives in the config and not hard-coded SO THAT IT CAN BE MEASURED: with
+    `enabled=False` the model trains without the attenuator and is compared.
+    It is an experiment, not a buried constant.
 
-    OJO al interpretar: ese 19% es sospechoso de ser artefacto del
-    redimensionado a 416x416, no del dominio. Ver el README.
+    BEWARE when interpreting: that 19% is suspected to be an artifact of the
+    resize to 416x416, not of the domain. See the README.
     """
 
     enabled: bool = True
-    #: Por encima de este ratio el peso es 1: el angulo esta bien definido.
+    #: Above this ratio the weight is 1: the angle is well defined.
     ratio_threshold: float = Field(default=1.1, gt=1.0)
-    #: Peso en el cuadrado perfecto (ratio 1). Cero lo ignora del todo.
+    #: Weight at the perfect square (ratio 1). Zero ignores it entirely.
     min_weight: float = Field(default=0.0, ge=0.0, le=1.0)
-    #: Como sube el peso entre el cuadrado y el umbral. Ver `DECAYS`.
+    #: How the weight rises between the square and the threshold. See `DECAYS`.
     decay: str = "smoothstep"
 
     @field_validator("decay")
@@ -228,36 +234,34 @@ class AngleWeightConfig(StrictModel):
         from testbank.models.losses import DECAYS
 
         if value not in DECAYS:
-            raise ValueError(
-                f"forma de decaimiento desconocida {value!r}; hay {sorted(DECAYS)}"
-            )
+            raise ValueError(f"unknown decay shape {value!r}; available: {sorted(DECAYS)}")
         return value
 
 
 class ForkRecipeConfig(StrictModel):
-    """La receta de `buzhidaoshenme/YOLOX-OBB`, con SUS valores por defecto.
+    """The `buzhidaoshenme/YOLOX-OBB` recipe, with ITS defaults.
 
-    Se copian de su `yolo_head_obb_kld.py` (Apache-2.0): `reg_weight = 5.0`,
-    `taf = 1.0`, y el L1 que se enciende en las ultimas `no_aug_epochs = 15`.
-    Cambiarlos aqui es legitimo -- son config -- pero entonces ya no es "la
-    receta del fork" y la tabla lo tiene que decir.
+    Copied from its `yolo_head_obb_kld.py` (Apache-2.0): `reg_weight = 5.0`,
+    `taf = 1.0`, and the L1 that switches on during the last
+    `no_aug_epochs = 15`. Changing them here is legitimate -- they are config
+    -- but then it is no longer "the fork's recipe" and the table has to say so.
     """
 
     box_gain: float = Field(default=5.0, ge=0.0)
     tau: float = Field(default=1.0, gt=0.0)
-    #: El fork enciende una L1 sobre la regresion cruda en las ultimas epocas
-    #: (las que van sin mosaico). Aqui: las ultimas `l1_last_epochs`.
+    #: The fork switches on an L1 over the raw regression during the last epochs
+    #: (the ones without mosaic). Here: the last `l1_last_epochs`.
     l1_last_epochs: int = Field(default=15, ge=0)
 
 
 class UltralyticsRecipeConfig(StrictModel):
-    """La receta de Ultralytics YOLO-OBB, con los valores que DOCUMENTA.
+    """The Ultralytics YOLO-OBB recipe, with the values it DOCUMENTS.
 
-    Ganancias `box=7.5, cls=0.5, dfl=1.5`, `reg_max=16`, y el asignador TAL con
-    `topk=10, alpha=0.5, beta=6.0`. Salen de su documentacion publica, no de su
-    codigo, que es AGPL y no se ha leido. Las perdidas en si se implementan
-    desde los papers: ProbIoU (Llerena 2021) y DFL (Li 2020); TAL desde TOOD
-    (Feng 2021).
+    Gains `box=7.5, cls=0.5, dfl=1.5`, `reg_max=16`, and the TAL assigner with
+    `topk=10, alpha=0.5, beta=6.0`. They come from its public documentation,
+    not from its code, which is AGPL and has not been read. The losses
+    themselves are implemented from the papers: ProbIoU (Llerena 2021) and DFL
+    (Li 2020); TAL from TOOD (Feng 2021).
     """
 
     box_gain: float = Field(default=7.5, ge=0.0)
@@ -270,13 +274,13 @@ class UltralyticsRecipeConfig(StrictModel):
 
 
 class DdgrcfRecipeConfig(StrictModel):
-    """La receta de `DDGRCF/YOLOX_OBB`, con los valores de SU yaml de perdidas.
+    """The `DDGRCF/YOLOX_OBB` recipe, with the values of ITS losses yaml.
 
-    `configs/losses/yolox_losses_obb.yaml` (Apache-2.0): PolyIoU lineal x5, obj y
-    cls BCE x1 sumadas y normalizadas por positivos, y una L1 "extra" que su
-    trainer enciende en las ultimas `no_aug_epochs = 3` epocas (la del exp de
-    DOTA es 2). El IoU es EXACTO, de poligonos: aqui en torch puro
-    (`models/polygon.py`) en vez de su operador compilado.
+    `configs/losses/yolox_losses_obb.yaml` (Apache-2.0): linear PolyIoU x5, obj
+    and cls BCE x1 summed and normalized by positives, and an "extra" L1 that
+    its trainer switches on during the last `no_aug_epochs = 3` epochs (the
+    DOTA exp uses 2). The IoU is EXACT, polygon-based: here in pure torch
+    (`models/overlap.py`) instead of its compiled operator.
     """
 
     box_gain: float = Field(default=5.0, ge=0.0)
@@ -284,19 +288,19 @@ class DdgrcfRecipeConfig(StrictModel):
 
 
 class LossConfig(StrictModel):
-    """Que receta de perdida entrena la cabeza propia. Se registra con la ejecucion.
+    """Which loss recipe trains the in-house head. Recorded with the run.
 
-    Cuatro recetas, cada una ENTERA y sin mezclar con las otras:
+    Four recipes, each one WHOLE and never mixed with the others:
 
-        own              la propia: IoU alineada + angulo atenuado + BCE, SimOTA
-        yolox_obb_fork   KLD x5 + obj + cls por IoU + L1 tardia, SimOTA con KLD
-        ultralytics_obb  ProbIoU x7.5 + DFL x1.5 + cls x0.5 suave, TAL, sin obj
-        ddgrcf           PolyIoU EXACTO x5 + obj + cls por IoU + L1 tardia, SimOTA
+        own              ours: aligned IoU + attenuated angle + BCE, SimOTA
+        yolox_obb_fork   KLD x5 + obj + IoU-weighted cls + late L1, SimOTA with KLD
+        ultralytics_obb  ProbIoU x7.5 + DFL x1.5 + soft cls x0.5, TAL, no obj
+        ddgrcf           EXACT PolyIoU x5 + obj + IoU-weighted cls + late L1, SimOTA
 
-    La receta fija tambien la CABEZA (`models/yolox_obb.HeadSpec`): Ultralytics
-    exige regresion distribucional y angulo escalar, y no lleva objectness. Y
-    `ddgrcf` fija ademas la RED entera: es el port de su yaml, para poder cargar
-    sus pesos de DOTA (`models/ddgrcf.py`).
+    The recipe also fixes the HEAD (`models/yolox_obb.HeadSpec`): Ultralytics
+    requires distributional regression and a scalar angle, and has no
+    objectness. And `ddgrcf` fixes the whole NETWORK as well: it is the port of
+    its yaml, so that its DOTA weights can be loaded (`models/ddgrcf.py`).
     """
 
     recipe: Literal["own", "yolox_obb_fork", "ultralytics_obb", "ddgrcf"] = "own"
@@ -307,55 +311,55 @@ class LossConfig(StrictModel):
 
 
 class DetectorConfig(StrictModel):
-    """Lo que se le pasa al entrenador de turno. Va en la config y se registra:
-    dos ejecuciones con epochs distintos no son comparables."""
+    """What gets handed to whichever trainer. It lives in the config and is
+    recorded: two runs with different epochs are not comparable."""
 
-    #: El despliegue es movil, asi que se priorizan nano/small.
+    #: Deployment is mobile, so nano/small are prioritized.
     variant: str = "nano"
     epochs: int = Field(default=100, gt=0)
     image_size: int = Field(default=640, gt=0)
     batch_size: int = Field(default=8, gt=0)
-    #: Checkpoint ajeno con el que arrancar, o None para entrenar de cero.
-    #: Para la cabeza propia, un `yolox_*.pth.tar` de Megvii (COCO; carga
-    #: backbone y cuello, descarta su cabeza). Para el port de DDGRCF, su
-    #: checkpoint de DOTA. Va en la config para que quede congelado en la
-    #: ejecucion: dos runs con y sin preentreno no son comparables.
+    #: Foreign checkpoint to start from, or None to train from scratch. For the
+    #: in-house head, a Megvii `yolox_*.pth.tar` (COCO; loads backbone and neck,
+    #: discards its head). For the DDGRCF port, its DOTA checkpoint. It lives
+    #: in the config so it is frozen with the run: two runs with and without
+    #: pretraining are not comparable.
     pretrained: Path | None = None
-    #: Umbral de confianza en INFERENCIA. Bajo a proposito: las metricas de
-    #: deteccion necesitan la cola de baja confianza para trazar la curva
-    #: precision-recall; recortarla arriba infla el AP artificialmente.
+    #: Confidence threshold at INFERENCE. Deliberately low: detection metrics
+    #: need the low-confidence tail to trace the precision-recall curve;
+    #: cutting it higher inflates AP artificially.
     confidence_threshold: float = Field(default=0.01, gt=0.0, lt=1.0)
-    #: IoU del NMS rotado.
+    #: IoU of the rotated NMS.
     nms_iou: float = Field(default=0.5, gt=0.0, lt=1.0)
     loss: LossConfig = LossConfig()
     out_of_bounds: OutOfBoundsPolicy = OutOfBoundsPolicy.CLIP
-    #: Solo con `out_of_bounds = pad`. Fraccion del lado anadida en CADA borde.
-    #: 0.25 cubre el desbordamiento maximo medido (0.231).
+    #: Only with `out_of_bounds = pad`. Fraction of the side added on EACH
+    #: border. 0.25 covers the maximum measured overflow (0.231).
     pad_fraction: float = Field(default=0.25, gt=0.0, le=1.0)
-    #: Si el padding se aplica tambien al INFERIR. Por defecto NO: la decision
-    #: es deliberada y queda pendiente.
+    #: Whether padding is also applied when INFERRING. By default NO: the
+    #: decision is deliberate and remains open.
     #:
-    #: Con False, el modelo se entrena sobre imagenes padeadas y luego ve
-    #: imagenes sin padear. Es un DESAJUSTE REAL: tras el redimensionado a
-    #: `image_size`, un billete ocupa mas pixeles al inferir que al entrenar,
-    #: porque en entrenamiento competia con un borde que anadia un 53% de area.
+    #: With False, the model trains on padded images and then sees unpadded
+    #: ones. It is a REAL MISMATCH: after the resize to `image_size`, a
+    #: banknote occupies more pixels at inference than in training, because in
+    #: training it competed with a border that added 53% of area.
     #:
-    #: Lo que hay que tener presente al leer los numeros: una ejecucion con
-    #: `pad` y sin padding en inferencia mide el pipeline DESAJUSTADO. Si sale
-    #: mal, no demuestra que el padding no sirva; demuestra que entrenar y
-    #: predecir con encuadres distintos no funciona, que ya se sabia. Para
-    #: juzgar el padding en si, hay que poner esto a True.
+    #: What to keep in mind when reading the numbers: a run with `pad` and no
+    #: padding at inference measures the MISMATCHED pipeline. If it does badly,
+    #: it does not show that padding is useless; it shows that training and
+    #: predicting with different framings does not work, which was already
+    #: known. To judge padding itself, set this to True.
     pad_at_inference: bool = False
 
 
 class VizConfig(StrictModel):
-    #: Muestra fija de validacion, siempre la misma, para comparar a ojo.
+    #: Fixed validation sample, always the same, to compare by eye.
     sample_count: int = 12
-    #: Confianza minima para DIBUJAR una prediccion. Distinta de la de
-    #: inferencia (0.01), que es baja a proposito para que la curva
-    #: precision-recall tenga su cola. Dibujar esa cola llena la imagen de
-    #: cajas de confianza 0.01 y la vuelve ilegible: medido, 11-19 cajas por
-    #: imagen tapando el billete. Aqui se mira, no se mide.
+    #: Minimum confidence to DRAW a prediction. Different from the inference
+    #: one (0.01), which is deliberately low so the precision-recall curve
+    #: keeps its tail. Drawing that tail fills the image with confidence-0.01
+    #: boxes and makes it unreadable: measured, 11-19 boxes per image covering
+    #: the banknote. Here one looks, one does not measure.
     confidence_threshold: float = Field(default=0.25, ge=0.0, lt=1.0)
     seed: int = 20260910
     output_dir: Path = Path("runs/_inspection")
