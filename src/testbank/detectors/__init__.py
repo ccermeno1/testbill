@@ -10,6 +10,7 @@ to appear in the table.
 """
 
 from testbank.detectors import (
+    ppyoloe_r,  # noqa: F401  (registers)
     rtmdet_r,  # noqa: F401  (registers)
     ultralytics_obb,  # noqa: F401  (registers)
     yolox_obb,  # noqa: F401  (registers)

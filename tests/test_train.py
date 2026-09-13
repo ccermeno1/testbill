@@ -254,6 +254,17 @@ def test_the_candidate_variant_overrides_the_config(setup, tmp_path):
     assert load_model(result.weights).variant == "tiny"
 
 
+def test_the_parameter_table_matches_the_real_models():
+    """The registry reads a table so importing it does not need torch; the
+    table has to say what the networks say, for every variant."""
+    from testbank.detectors.yolox_obb import PARAMETER_COUNTS
+    from testbank.models.yolox_obb import VARIANTS, YoloxObb
+
+    assert set(PARAMETER_COUNTS) == set(VARIANTS)
+    for variant, params in PARAMETER_COUNTS.items():
+        assert YoloxObb(variant, num_classes=1).parameter_count() == params
+
+
 def test_each_variant_declares_its_parameters():
     from testbank.detectors import get as get_detector
 

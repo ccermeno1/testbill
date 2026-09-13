@@ -172,6 +172,32 @@ def test_coco_warns_that_it_loses_the_orientation(tmp_path, config, samples):
     assert get_format("bbox_coco").lossy is True
 
 
+def test_coco_carries_the_oriented_quad_as_segmentation(tmp_path, config, samples):
+    """`bbox` is the envelope; `segmentation` is what PaddleDetection's rotated
+    configs read, so the orientation survives for readers that look there."""
+    from testbank.geometry.quad import canonicalize
+
+    data = json.loads(
+        (
+            export("coco", samples, config, out_dir=tmp_path / "out").root
+            / "train"
+            / "annotations.json"
+        ).read_text()
+    )
+    original = _quad(0.3, 0.5, theta=0.4)
+    polygon = data["annotations"][0]["segmentation"][0]
+    assert len(polygon) == 8
+    back = canonicalize(
+        Quad.from_xy([(x / SIZE[0], y / SIZE[1]) for x, y in zip(polygon[0::2], polygon[1::2])]),
+        aspect=SIZE[0] / SIZE[1],
+    )
+    error = max(
+        math.dist((a[0] * SIZE[0], a[1] * SIZE[1]), (b[0] * SIZE[0], b[1] * SIZE[1]))
+        for a, b in zip(original.points, back.points)
+    )
+    assert error < 1e-3
+
+
 # --- what is shared -------------------------------------------------------
 
 

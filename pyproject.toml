@@ -56,6 +56,12 @@ rtmdet = [
     "mmrotate @ git+https://github.com/open-mmlab/mmrotate@dev-1.x",
 ]
 
+# PP-YOLOE-R. PaddlePaddle is a second framework; PaddleDetection is cloned
+# outside the repo and installed editable (README, "PP-YOLOE-R environment").
+# `numpy<2` because their `imgaug` breaks on NumPy 2; `setuptools<70` because
+# `ppdet` imports `pkg_resources`.
+paddle = ["paddlepaddle>=3.0", "numpy<2", "setuptools<70"]
+
 [project.scripts]
 testbank = "testbank.cli:main"
 

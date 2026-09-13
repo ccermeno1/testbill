@@ -120,6 +120,53 @@ def test_ultralytics_isolation():
     )
 
 
+FRAMEWORK_ADAPTERS = {
+    "ultralytics": SRC / "detectors" / "ultralytics_obb.py",
+    "mmrotate": SRC / "detectors" / "rtmdet_r.py",
+    "mmdet": SRC / "detectors" / "rtmdet_r.py",
+    "mmengine": SRC / "detectors" / "rtmdet_r.py",
+    "paddle": SRC / "detectors" / "ppyoloe_r.py",
+    "ppdet": SRC / "detectors" / "ppyoloe_r.py",
+}
+
+
+def _imports_package(path: Path, package: str) -> bool:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(a.name.split(".")[0] == package for a in node.names):
+                return True
+        elif isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == package:
+            return True
+    return False
+
+
+@pytest.mark.parametrize("package", sorted(FRAMEWORK_ADAPTERS))
+def test_every_foreign_framework_stays_behind_its_adapter(package):
+    """Same rule as for ultralytics: torch is the base; every other framework
+    is imported by exactly one adapter and nothing else."""
+    adapter = FRAMEWORK_ADAPTERS[package]
+    offenders = [
+        path.relative_to(SRC).as_posix()
+        for path in sorted(SRC.rglob("*.py"))
+        if path != adapter and _imports_package(path, package)
+    ]
+    assert offenders == [], f"{package} imported outside {adapter.name}: {offenders}"
+    assert _imports_package(adapter, package), "guard of the guard"
+
+
+def test_importing_the_registry_does_not_need_torch():
+    """The Paddle environment has no torch. Registering the own variants used
+    to build three networks at import time; now it reads a table."""
+    code = (
+        "import sys; sys.modules['torch'] = None; "
+        "import testbank.detectors as d; print(len(d.detectors()))"
+    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
+    assert out.returncode == 0, out.stderr[-800:]
+    assert int(out.stdout.strip()) >= 7
+
+
 def test_the_adapter_does_import_it():
     """Guard of the guard: if the adapter stopped importing it, the isolation
     test would pass vacuously and would not be checking anything."""

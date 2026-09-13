@@ -56,3 +56,4 @@ runs/detect/
 # `*.pt`/`*.pth` anywhere else (runs/, the working tree) stay out.
 !/weights/*.pth
 !/weights/*.pth.tar
+!/weights/*.pdparams

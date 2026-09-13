@@ -259,20 +259,27 @@ class YoloxObbDdgrcfPortDetector(YoloxObbDetector):
         )
 
 
-__all__ = ["YoloxObbDdgrcfPortDetector", "YoloxObbDetector"]
+__all__ = ["PARAMETER_COUNTS", "YoloxObbDdgrcfPortDetector", "YoloxObbDetector"]
+
+
+#: Parameters of each variant with one class. A TABLE and not a call to
+#: `YoloxObb(...).parameter_count()`: registration happens at import, and
+#: building three networks there would make `import testbank.detectors`
+#: require torch -- which the Paddle environment does not have. A test pins
+#: the table against the real models, so it cannot drift.
+PARAMETER_COUNTS = {"nano": 856_680, "tiny": 4_366_808, "small": 7_754_696}
 
 
 def _register_variants() -> dict[str, type]:
     """One registered candidate per variant, with the name derived from it.
 
     Generated instead of written by hand so they cannot drift out of sync:
-    adding a variant to `VARIANTS` puts it here on its own.
+    adding a variant to `PARAMETER_COUNTS` (and `VARIANTS`) puts it here on
+    its own, and the test that pins the table catches a variant in one table
+    and not the other.
     """
-    from testbank.models.yolox_obb import VARIANTS, YoloxObb
-
     made = {}
-    for variant in VARIANTS:
-        params = YoloxObb(variant, num_classes=1).parameter_count()
+    for variant, params in PARAMETER_COUNTS.items():
         cls = type(
             f"YoloxObb{variant.capitalize()}Detector",
             (YoloxObbDetector,),

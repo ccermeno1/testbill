@@ -126,11 +126,14 @@ class DotaExporter:
 
 @register
 class CocoExporter:
-    """One `annotations.json` per split. LOSSY: it loses the orientation.
+    """One `annotations.json` per split.
 
-    Exported anyway because it is what many inspection tools consume, but a
-    candidate trained from here cannot predict rotated boxes: `bbox_coco` is
-    marked `lossy` in the format registry for exactly this reason.
+    `bbox` is the axis-aligned envelope -- LOSSY, and `bbox_coco` is marked so
+    in the format registry -- but every annotation also carries the oriented
+    quad as `segmentation` (`[[x1, y1, ..., x4, y4]]` in pixels). That is the
+    convention PaddleDetection's rotated configs read (`gt_poly`), and what
+    its own DOTA-to-COCO tool writes: a reader that only looks at `bbox` gets
+    the envelope, one that reads `segmentation` gets the orientation.
     """
 
     name = "coco"
@@ -146,7 +149,8 @@ class CocoExporter:
                     "description": "Exported by testbank",
                     "note": (
                         "bbox_coco loses the orientation: the boxes are the "
-                        "axis-aligned envelope of the banknote."
+                        "axis-aligned envelope of the banknote. The oriented "
+                        "quad is in `segmentation`, in pixels."
                     ),
                 },
                 "categories": [
@@ -171,6 +175,13 @@ class CocoExporter:
                         quad, class_id=class_id, size=item.size, class_names=class_names
                     )
                     entry = dict(record.payload)
+                    entry["segmentation"] = [
+                        [
+                            round(v, 4)
+                            for x, y in quad.points
+                            for v in (x * item.size.width, y * item.size.height)
+                        ]
+                    ]
                     entry["id"] = annotation_id
                     entry["image_id"] = image_id
                     payload["annotations"].append(entry)

@@ -208,6 +208,9 @@ in that same environment. → *Usage*
 
 - **RTMDet-R has trained one smoke epoch on CPU** (§ *RTMDet-R environment*),
   nothing longer. mAP 0 after one epoch, as with every other smoke run.
+- **PP-YOLOE-R has never trained.** Inference through the adapter is
+  verified; training needs `ppdet/ext_op` compiled, pending on the Mac
+  (§ *PP-YOLOE-R environment*).
 - **The redone split has not been used for training.** `--repartition` is
   measured on the real export (zero pairs crossing, all eight types on each
   side) but the only materialized version, `splits/v1`, is still the export's.
@@ -950,6 +953,73 @@ difference is visible in `compare`, but it is still a comparison across
 environments two years of PyTorch apart. It is worth saying when reading the
 numbers.
 
+## PP-YOLOE-R environment
+
+`ppyoloe-r-s` is PaddleDetection's PP-YOLOE-R-s, Apache-2.0, trained on DOTA
+(73.82 mAP, 8.09M parameters). PaddlePaddle is a **second framework**, not
+torch, so it gets its own environment, `.venv-paddle`, and its own adapter
+(`detectors/ppyoloe_r.py`, the only module that may import `paddle`/`ppdet`;
+a test enforces it). Why try it at all: a third DOTA-pretrained reference,
+Apache, with a direct-download checkpoint.
+
+### What runs where
+
+- **Inference needs nothing compiled**: the head's NMS is a core Paddle op.
+  Verified on the Windows PC: `predict` through the adapter, DOTA weights,
+  5 images at 416 in 6 s, boxes returned as `[class, score, x1..y4]` in
+  pixels of the original image.
+- **Training needs `ppdet/ext_op`** (`rbox_iou`, `nms_rotated`): the
+  task-aligned assigner computes rotated IoU with it. C++ extension built per
+  machine with `python setup.py install`; on Windows it needs MSVC
+  (`Microsoft Visual C++ 14.0 or greater is required` -- the DDGRCF wall
+  again), on macOS clang. The loss (ProbIoU) and everything else are pure
+  Paddle. **Not yet built anywhere**: the training smoke is pending on the
+  Mac.
+
+### Recipe
+
+```bash
+uv venv .venv-paddle --python 3.11
+VIRTUAL_ENV=.venv-paddle uv pip install paddlepaddle "setuptools<70" "numpy<2"
+cd .. && git clone --depth 1 https://github.com/PaddlePaddle/PaddleDetection.git && cd PaddleDetection
+VIRTUAL_ENV=../testbank/.venv-paddle uv pip install -r requirements.txt   # pins numpy<2, opencv<=4.6
+VIRTUAL_ENV=../testbank/.venv-paddle uv pip install --no-deps -e .
+cd ppdet/ext_op && ../../../testbank/.venv-paddle/bin/python setup.py install   # training only
+cd ../../../testbank && VIRTUAL_ENV=.venv-paddle uv pip install -e . "numpy<2" "setuptools<70"
+```
+
+The clone lives OUTSIDE the repo and is installed editable: the adapter finds
+`configs/` next to `ppdet`. Two fragilities, both seen while setting it up:
+`imgaug` (in their requirements) breaks on NumPy 2 and `uv` bumps numpy
+unless re-pinned; `setuptools>=70` removed `pkg_resources`, which `ppdet`
+imports. Re-pin both after any install in that environment.
+
+Weights: `weights/ppyoloe_r_crn_s_3x_dota.pdparams` (Git LFS; direct download
+from the PaddleDetection model zoo otherwise).
+
+### What the adapter changes in the published config
+
+Same surgery as RTMDet-R, in `build_config`: CPU and one class; every reader
+`target_size` at `detector.image_size`; `worker_num = 0`; batch and epochs
+from our config with the schedule rescaled (theirs is pinned to 36 epochs:
+cosine over 44, 1000 warmup iterations); NMS thresholds from
+`confidence_threshold`/`nms_iou`; datasets pointed at our `coco` export,
+whose `segmentation` carries the oriented quad (`gt_poly`), so this candidate
+shares the area filter and the border policy with every other one.
+
+```bash
+.venv-paddle/bin/testbank train ppyoloe-r-s --epochs 1 --image-size 416 --name ppyoloe_smoke
+```
+
+### Two things it surfaced
+
+- `import testbank.detectors` **required torch**: registering the own
+  variants built three networks at import time to count parameters. Now it
+  reads a pinned table (`PARAMETER_COUNTS`, checked against the real models
+  by a test), and the registry imports in an environment without torch.
+- The `coco` exporter now writes the oriented quad as `segmentation` next to
+  the envelope `bbox`: what PaddleDetection's own DOTA-to-COCO tool writes.
+
 ## Licenses
 
 No AGPL or GPL code in production. The registry distinguishes **two
@@ -977,7 +1047,7 @@ chain is.
 
 ## Usage: environments and how to launch each candidate
 
-There are **three environments**, not one, and the reason is always the same:
+There are **four environments**, not one, and the reason is always the same:
 dependencies that do not fit together. Each candidate says which one it needs.
 
 ### Main environment — `.venv`
@@ -1004,6 +1074,7 @@ environment*.
 | `ultralytics-yolo-obb` | main + `[ultralytics]` | `testbank train ultralytics-yolo-obb --name ul_ref` |
 | `yolox-obb-ddgrcf-port` (8.05M) | main | `testbank train yolox-obb-ddgrcf-port --pretrained <DOTA.pth>` |
 | `rtmdet-r-tiny` | separate `.venv-rtmdet` | see below |
+| `ppyoloe-r-s` (8.09M) | separate `.venv-paddle` | `testbank train ppyoloe-r-s --image-size 416` (§ *PP-YOLOE-R environment*) |
 
 `train` trains, evaluates on `valid` with testbank's metrics and leaves the
 run in `runs/<date>_<name>/` with the frozen config. **The test is not
@@ -1111,8 +1182,9 @@ variants (857k / 4.37M / 7.75M parameters), deterministic training, angle
 attenuator by ratio. Adapters: Ultralytics (reference,
 `production_ready=False`), RTMDet-R, the three own variants, and
 DDGRCF/YOLOX_OBB **as a pure-torch port** (`yolox-obb-ddgrcf-port`, trains on
-CPU/MPS, loads its DOTA weights). Six registered candidates; the two YOLOX-OBB
-clones were removed in the refactor (§ *Discarded*). The own head loads
+CPU/MPS, loads its DOTA weights). Seven registered candidates (PP-YOLOE-R-s in its
+own Paddle environment, inference verified, training pending `ext_op`); the
+two YOLOX-OBB clones were removed in the refactor (§ *Discarded*). The own head loads
 **Megvii's COCO** (`--pretrained`). The own head trains with **three complete
 loss recipes** (`--loss-recipe own | yolox_obb_fork | ultralytics_obb`), each
 the one of a concrete network, on the same backbone; the port trains with its
