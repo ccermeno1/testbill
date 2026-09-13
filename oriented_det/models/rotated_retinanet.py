@@ -274,6 +274,34 @@ def _compute_retinanet_reg_loss_from_positives(
     return reg_loss
 
 
+def _as_boxes_tensor(
+    boxes: Union[torch.Tensor, Sequence[float]],
+    device: torch.device,
+    dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
+    if isinstance(boxes, torch.Tensor):
+        return boxes.to(device=device, dtype=dtype).detach()
+    return torch.tensor(boxes, dtype=dtype, device=device, requires_grad=False)
+
+
+def _as_labels_tensor(
+    labels: Union[torch.Tensor, Sequence[int]],
+    device: torch.device,
+) -> torch.Tensor:
+    if isinstance(labels, torch.Tensor):
+        return labels.to(device=device, dtype=torch.int64).detach()
+    return torch.tensor(labels, dtype=torch.int64, device=device, requires_grad=False)
+
+
+def _split_by_level_counts(tensor: torch.Tensor, counts: Sequence[int]) -> List[torch.Tensor]:
+    parts: List[torch.Tensor] = []
+    offset = 0
+    for n in counts:
+        parts.append(tensor[offset : offset + n])
+        offset += n
+    return parts
+
+
 def compute_oriented_retinanet_loss(
     classification_logits: List[torch.Tensor],
     bbox_regression: List[torch.Tensor],
@@ -306,9 +334,9 @@ def compute_oriented_retinanet_loss(
     class_weights: Optional[torch.Tensor] = None,
 ) -> Dict[str, torch.Tensor]:
     """Compute Rotated RetinaNet losses for oriented object detection.
-    
-    This function processes anchors per-level to avoid memory issues from concatenating
-    millions of anchors. Each level is processed independently, and losses are accumulated.
+
+    MaxIoU assignment concatenates all FPN levels (MMRotate ``get_targets``), then
+    classification/regression still accumulate per-level to keep feature maps small.
     
     Args:
         classification_logits: List of classification logits from Rotated RetinaNet head
@@ -371,7 +399,6 @@ def compute_oriented_retinanet_loss(
         use_global_reg_sampling and main_lt == "smooth_l1" and decoded_aux_w > 0.0
     )
     
-    # Process each level independently (memory-efficient approach).
     # Classification follows MMDet/MMRotate: sum of sigmoid focal loss over all levels/images,
     # normalized once by the total number of positive anchors in the batch (avg_factor).
     cls_loss_sums = []
@@ -387,7 +414,85 @@ def compute_oriented_retinanet_loss(
         {"bbox_pred": [], "anchors": [], "matched_gt": []}
         for _ in range(num_images)
     ]
-    
+
+    img_gt_boxes_dev: List[torch.Tensor] = [
+        _as_boxes_tensor(gt_boxes[i], device) for i in range(num_images)
+    ]
+    img_gt_labels_dev: List[torch.Tensor] = [
+        _as_labels_tensor(gt_labels[i], device) for i in range(num_images)
+    ]
+    img_gt_ignore_dev: List[Optional[torch.Tensor]] = []
+    img_gt_lookalike_dev: List[Optional[torch.Tensor]] = []
+    for img_idx in range(num_images):
+        ign = None
+        if gt_boxes_ignore is not None and img_idx < len(gt_boxes_ignore):
+            ign_raw = gt_boxes_ignore[img_idx]
+            if ign_raw is not None and (
+                ign_raw.numel() > 0 if isinstance(ign_raw, torch.Tensor) else len(ign_raw) > 0
+            ):
+                ign = _as_boxes_tensor(ign_raw, device)
+        img_gt_ignore_dev.append(ign)
+        look = None
+        if gt_boxes_lookalike is not None and img_idx < len(gt_boxes_lookalike):
+            look_raw = gt_boxes_lookalike[img_idx]
+            if look_raw is not None and (
+                look_raw.numel() > 0
+                if isinstance(look_raw, torch.Tensor)
+                else len(look_raw) > 0
+            ):
+                look = _as_boxes_tensor(look_raw, device)
+        img_gt_lookalike_dev.append(look)
+
+    level_anchor_list: List[torch.Tensor] = []
+    level_counts: List[int] = []
+    for level_idx in range(num_levels):
+        level_anchors_raw = anchors[level_idx]
+        if isinstance(level_anchors_raw, torch.Tensor):
+            level_anchors_raw = level_anchors_raw.detach().to(device)
+        else:
+            level_anchors_raw = torch.tensor(
+                level_anchors_raw, dtype=torch.float32, device=device, requires_grad=False
+            )
+        level_anchor_list.append(level_anchors_raw)
+        level_counts.append(int(level_anchors_raw.shape[0]))
+
+    if level_counts and sum(level_counts) > 0:
+        concat_anchors = torch.cat(level_anchor_list, dim=0)
+    else:
+        concat_anchors = torch.zeros((0, 5), dtype=torch.float32, device=device)
+
+    labels_by_level: List[List[torch.Tensor]] = [
+        [torch.empty(0, dtype=torch.long, device=device) for _ in range(num_images)]
+        for _ in range(num_levels)
+    ]
+    matched_by_level: List[List[torch.Tensor]] = [
+        [torch.empty(0, dtype=torch.long, device=device) for _ in range(num_images)]
+        for _ in range(num_levels)
+    ]
+    with torch.no_grad():
+        for img_idx in range(num_images):
+            labels_all, matched_all = match_retinanet_anchors_to_gt(
+                concat_anchors,
+                img_gt_boxes_dev[img_idx],
+                positive_iou_threshold,
+                negative_iou_threshold,
+                device,
+                use_hbb_for_matching=use_hbb_for_matching,
+                # MMRotate RetinaNet MaxIoUAssigner: min_pos_iou=0 so every GT gets
+                # its globally best-overlapping anchor as positive when IoU > 0.
+                min_pos_iou=0.0,
+                match_low_quality=True,
+                gt_boxes_ignore=img_gt_ignore_dev[img_idx],
+                ignore_iou_threshold=positive_iou_threshold,
+                gt_boxes_lookalike=img_gt_lookalike_dev[img_idx],
+                lookalike_iou_threshold=positive_iou_threshold,
+            )
+            split_labels = _split_by_level_counts(labels_all, level_counts)
+            split_matched = _split_by_level_counts(matched_all, level_counts)
+            for level_idx in range(num_levels):
+                labels_by_level[level_idx][img_idx] = split_labels[level_idx]
+                matched_by_level[level_idx][img_idx] = split_matched[level_idx]
+
     for level_idx in range(num_levels):
         # Get shapes for this level
         B, C_cls, H, W = classification_logits[level_idx].shape
@@ -415,116 +520,46 @@ def compute_oriented_retinanet_loss(
         bbox_pred = bbox_regression[level_idx].view(B, num_anchors, 5, H, W)
         bbox_pred = bbox_pred.permute(0, 3, 4, 1, 2).contiguous().view(-1, 5)
         
-        # Process anchors for this level (no gradients needed)
-        with torch.no_grad():
-            level_anchors_raw = anchors[level_idx]
-            if isinstance(level_anchors_raw, torch.Tensor):
-                level_anchors_raw = level_anchors_raw.detach().to(device)
-            else:
-                level_anchors_raw = torch.tensor(
-                    level_anchors_raw, dtype=torch.float32, device=device, requires_grad=False
-                )
-            
-            # Expand anchors to match batch size: [N, 5] -> [B*N, 5]
-            anchors_per_image = len(level_anchors_raw)
-            level_anchors = level_anchors_raw.unsqueeze(0).repeat(B, 1, 1).view(-1, 5).clone()
-            level_anchors = level_anchors.detach()
-            level_anchors.requires_grad_(False)
-        
+        # Per-level anchors already moved to device in the concat-assign pass.
+        level_anchors_raw = level_anchor_list[level_idx]
+        anchors_per_image = level_counts[level_idx]
+        if B > 0 and anchors_per_image > 0:
+            level_anchors = level_anchors_raw.unsqueeze(0).repeat(B, 1, 1).view(-1, 5)
+        else:
+            level_anchors = level_anchors_raw
+
         # Process each image in the batch for this level
         for img_idx in range(B):
-            # Get anchors for this image at this level
             start_idx = img_idx * anchors_per_image
             end_idx = (img_idx + 1) * anchors_per_image
             img_anchors = level_anchors[start_idx:end_idx]
             img_cls_logits = cls_logits[start_idx:end_idx]  # [N, num_classes]
             img_bbox_pred = bbox_pred[start_idx:end_idx]  # [N, 5]
-            
-            # Get ground truth boxes and labels for this image
-            if isinstance(gt_boxes[img_idx], torch.Tensor):
-                img_gt_boxes = gt_boxes[img_idx].to(device).detach()
-            else:
-                img_gt_boxes = torch.tensor(
-                    gt_boxes[img_idx], dtype=torch.float32, device=device, requires_grad=False
-                )
-            
-            if isinstance(gt_labels[img_idx], torch.Tensor):
-                img_gt_labels = gt_labels[img_idx].to(device).detach()
-            else:
-                img_gt_labels = torch.tensor(
-                    gt_labels[img_idx], dtype=torch.int64, device=device, requires_grad=False
-                )
-            
-            # Initialize class_labels and regression_targets
+            img_gt_boxes = img_gt_boxes_dev[img_idx]
+            img_gt_labels = img_gt_labels_dev[img_idx]
+            labels = labels_by_level[level_idx][img_idx]
+            matched_indices = matched_by_level[level_idx][img_idx]
+
             class_labels = torch.zeros(len(img_anchors), dtype=torch.int64, device=device)
             regression_targets = torch.zeros((len(img_anchors), 5), dtype=torch.float32, device=device)
-            
-            if len(img_gt_boxes) == 0:
-                # No semantic GT — still apply ignore/lookalike via matcher.
-                img_gt_ignore = None
-                if gt_boxes_ignore is not None and img_idx < len(gt_boxes_ignore):
-                    img_gt_ignore = gt_boxes_ignore[img_idx].to(device).detach()
-                img_gt_lookalike = None
-                if gt_boxes_lookalike is not None and img_idx < len(gt_boxes_lookalike):
-                    img_gt_lookalike = gt_boxes_lookalike[img_idx].to(device).detach()
-                labels, matched_indices = match_retinanet_anchors_to_gt(
-                    img_anchors,
-                    img_gt_boxes,
-                    positive_iou_threshold,
-                    negative_iou_threshold,
-                    device,
-                    use_hbb_for_matching=use_hbb_for_matching,
-                    min_pos_iou=0.0,
-                    match_low_quality=True,
-                    gt_boxes_ignore=img_gt_ignore,
-                    ignore_iou_threshold=positive_iou_threshold,
-                    gt_boxes_lookalike=img_gt_lookalike,
-                    lookalike_iou_threshold=positive_iou_threshold,
+
+            # Class labels: 0 = background, 1..K = foreground (1-indexed GT labels);
+            # converted to one-hot sigmoid targets (class k -> column k-1) below.
+            positive_mask = labels == 1
+            if positive_mask.any() and img_gt_boxes.shape[0] > 0:
+                matched_gt_labels = img_gt_labels[matched_indices[positive_mask]]
+                class_labels[positive_mask] = matched_gt_labels  # 1-indexed: 1..num_classes
+                matched_gt = img_gt_boxes[matched_indices[positive_mask]]
+                matched_anchors = img_anchors[positive_mask].detach()
+                regression_targets[positive_mask] = encode_oriented_boxes(
+                    matched_anchors,
+                    matched_gt,
+                    target_means=target_means,
+                    target_stds=target_stds,
+                    norm_factor=norm_factor,
+                    edge_swap=edge_swap,
+                    proj_xy=proj_xy,
                 )
-            else:
-                # Match anchors to GT (oriented IoU or HBB IoU when use_hbb_for_matching)
-                img_gt_ignore = None
-                if gt_boxes_ignore is not None and img_idx < len(gt_boxes_ignore):
-                    img_gt_ignore = gt_boxes_ignore[img_idx].to(device).detach()
-                img_gt_lookalike = None
-                if gt_boxes_lookalike is not None and img_idx < len(gt_boxes_lookalike):
-                    img_gt_lookalike = gt_boxes_lookalike[img_idx].to(device).detach()
-                labels, matched_indices = match_retinanet_anchors_to_gt(
-                    img_anchors,
-                    img_gt_boxes,
-                    positive_iou_threshold,
-                    negative_iou_threshold,
-                    device,
-                    use_hbb_for_matching=use_hbb_for_matching,
-                    # MMRotate RetinaNet MaxIoUAssigner: min_pos_iou=0 so every GT gets its
-                    # best-overlapping anchor as positive (low-quality match), even below 0.5.
-                    min_pos_iou=0.0,
-                    match_low_quality=True,
-                    gt_boxes_ignore=img_gt_ignore,
-                    ignore_iou_threshold=positive_iou_threshold,
-                    gt_boxes_lookalike=img_gt_lookalike,
-                    lookalike_iou_threshold=positive_iou_threshold,
-                )
-                
-                # Class labels: 0 = background, 1..K = foreground (1-indexed GT labels);
-                # converted to one-hot sigmoid targets (class k -> column k-1) below.
-                positive_mask = labels == 1
-                if positive_mask.any():
-                    matched_gt_labels = img_gt_labels[matched_indices[positive_mask]]
-                    class_labels[positive_mask] = matched_gt_labels  # 1-indexed: 1..num_classes
-                    
-                    # Compute regression targets for positive anchors
-                    matched_gt = img_gt_boxes[matched_indices[positive_mask]]
-                    matched_anchors = img_anchors[positive_mask].detach()
-                    regression_targets[positive_mask] = encode_oriented_boxes(
-                        matched_anchors,
-                        matched_gt,
-                        target_means=target_means,
-                        target_stds=target_stds,
-                        norm_factor=norm_factor,
-                        edge_swap=edge_swap,
-                        proj_xy=proj_xy,
-                    )
             
             # Compute classification loss (sigmoid focal loss, sum reduction)
             # Only compute on non-ignored anchors (labels != -1)
@@ -1078,7 +1113,7 @@ class RotatedRetinaNet(SigmoidFocalClassWeightsMixin, nn.Module):
                     class_indices_1idx = fg_indices + 1  # [N], values 1..num_classes
                     
                     # Pre-NMS score filter (MMRotate nms_pre). Keeps ~10³ candidates instead of
-                    # ~2×10⁵ decoded anchors per image; eval still applies evaluation.score_threshold.
+                    # ~2×10⁵ decoded anchors per image; eval still applies evaluation.train_val_score_threshold.
                     if self.training:
                         score_thresh = 0.0
                     else:

@@ -102,6 +102,7 @@ def test_create_model_retinanet_passes_pre_nms_score_from_config():
     assert call_kw["pretrained_backbone"] is False
     assert call_kw["trainable_layers"] == 3
     assert call_kw["anchor_angles"] is None
+    assert call_kw["anchor_angles"] is None
     assert call_kw["anchor_scales"] == [4, 8]
     assert call_kw["anchor_ratios"] == [0.5, 2.0]
     assert call_kw["norm_factor"] == pytest.approx(3.0)
@@ -162,6 +163,27 @@ def test_create_model_retinanet_converts_anchor_angles_degrees_to_radians():
     assert angles[2] == pytest.approx(math.pi / 4)
 
 
+def test_retinanet_1x_resume_recipe_pins_failed_run():
+    from pathlib import Path
+
+    from oriented_det.train.config import TrainingExperimentConfig
+
+    root = Path(__file__).resolve().parents[1]
+    cfg = TrainingExperimentConfig.load(
+        root / "configs" / "rotated_retinanet" / "dota_le90_1x_resume.json"
+    )
+    assert Path(cfg.checkpoint.load_from_experiment) == Path(
+        "runs/rotated_retinanet/20260909-120457"
+    )
+    assert cfg.checkpoint.discover_previous_run is False
+    assert cfg.checkpoint.resume_from_checkpoint_epoch is True
+    assert cfg.checkpoint.load_optimizer_state is True
+    assert cfg.checkpoint.load_scheduler_state is True
+    assert cfg.training.num_epochs == 1
+    assert cfg.evaluation.compute_map_every_n_epochs == 1
+    assert cfg.preprocessing.enable_random_rotate is False
+
+
 def test_retinanet_1x_rr_recipe_enables_pm180_rotate():
     from pathlib import Path
 
@@ -180,6 +202,67 @@ def test_retinanet_1x_rr_recipe_enables_pm180_rotate():
     assert rr.preprocessing.random_rotate_angle_range == 180
     assert rr.preprocessing.enable_flip_diagonal is True
     assert rr.model.box_reg_loss_type == "l1"
+
+
+def test_retinanet_1x_obb_recipe_uses_obb_matching():
+    """1× OBB ablation pins RBboxOverlaps2D; Hub 1× stays circum-HBB. Priors stay θ=0."""
+    from pathlib import Path
+
+    from oriented_det.train.config import TrainingExperimentConfig
+
+    root = Path(__file__).resolve().parents[1]
+    hub = TrainingExperimentConfig.load(
+        root / "configs" / "rotated_retinanet" / "dota_le90_1x.json"
+    )
+    obb = TrainingExperimentConfig.load(
+        root / "configs" / "rotated_retinanet" / "dota_le90_1x_obb.json"
+    )
+    assert hub.model.use_hbb_for_matching is True
+    assert obb.model.use_hbb_for_matching is False
+    assert obb.model.anchor_angles is None
+    assert obb.preprocessing.enable_random_rotate is False
+    assert obb.model.box_reg_loss_type == "l1"
+
+
+def test_retinanet_dota_recipes_split_train_val_and_preds_score_floors():
+    """In-train mAP is 0.3; eval-val / Task 1 stay 0.05 (preds resolver)."""
+    from pathlib import Path
+
+    from oriented_det.train.config import (
+        TrainingExperimentConfig,
+        effective_eval_metric_thresholds,
+        resolve_preds_score_threshold,
+    )
+
+    root = Path(__file__).resolve().parents[1]
+    for name in (
+        "dota_le90_1x.json",
+        "dota_le90_3x.json",
+        "dota_le90_1x_rr.json",
+        "dota_le90_1x_obb.json",
+    ):
+        cfg = TrainingExperimentConfig.load(
+            root / "configs" / "rotated_retinanet" / name
+        )
+        train_sc, _, _ = effective_eval_metric_thresholds(cfg)
+        preds_sc, preds_src = resolve_preds_score_threshold(cfg)
+        assert train_sc == pytest.approx(0.3), name
+        assert preds_sc == pytest.approx(0.05), name
+        assert "0.05" in preds_src or "preds_score_threshold" in preds_src
+
+
+def test_retinanet_dota_recipes_use_hbb_matching():
+    """Hub 1× / 3× / RR pin circum-HBB (MMRotate hbb column), not OBB."""
+    from pathlib import Path
+
+    from oriented_det.train.config import TrainingExperimentConfig
+
+    root = Path(__file__).resolve().parents[1]
+    for name in ("dota_le90_1x.json", "dota_le90_3x.json", "dota_le90_1x_rr.json"):
+        cfg = TrainingExperimentConfig.load(
+            root / "configs" / "rotated_retinanet" / name
+        )
+        assert cfg.model.use_hbb_for_matching is True, name
 
 
 def test_create_model_fcos_passes_config_fields():

@@ -95,6 +95,7 @@ Full key lists, types, and defaults: **`configs/config.schema.json`**. Below: be
 | Key | Default | Notes |
 |-----|---------|--------|
 | `format` | `dota` | `dota` → `train_tiles_dir` / `val_tiles_dir`; `airbus_playground` → `annotations_file` + `split_file`; `hrsc2016` → official `FullDataSet` + `ImageSets` under `data_root`; `fair1m` → official / Kaggle FAIR1M under `data_root` (tiled recipes use `dota` after convert) |
+| `format` | `dota` | `dota` → `train_tiles_dir` / `val_tiles_dir`; `airbus_playground` → `annotations_file` + `split_file`; `hrsc2016` → official `FullDataSet` + `ImageSets` under `data_root`; `fair1m` → official / Kaggle FAIR1M under `data_root` (tiled recipes use `dota` after convert) |
 | `train_split` / `val_split` | null | HRSC2016 ImageSets names for the train/val roles. null → `trainval` / `test` |
 | `same_folder` | `false` | If true, images and `.txt` labels live directly under tile dirs |
 | `overlap` | `16` | Tile overlap (px, even); `0` = none. Deploy margin defaults to `overlap/2` when `production.ignore_margin_pixels` is null |
@@ -128,6 +129,8 @@ Class-tile oversampling is off unless `class_tile_oversample_classes` is a non-e
 |-----|----------------|----------------------|-----------|
 | `roi_proj_xy` | Yes (MMRotate parity) | Yes (no-op for horizontal RoIs) | Encode/decode always `proj_xy=True` (MMRotate; no-op at θ=0) |
 | `anchor_angles` | — | — | Degrees; `null` → `[0]`. No Hub recipe other than `[0]` |
+| `roi_proj_xy` | Yes (MMRotate parity) | Yes (no-op for horizontal RoIs) | Encode/decode always `proj_xy=True` (MMRotate; no-op at θ=0) |
+| `anchor_angles` | — | — | Degrees; `null` → `[0]`. No Hub recipe other than `[0]` |
 | `rpn_min_size` | — | Yes | Reuses `rpn_*` for **anchor assign** thresholds (pos/neg IoU, batch size); not an RPN head |
 | `add_gt_as_proposals` | Yes | Yes | N/A |
 | RPN IoU thresholds | Midpoint-offset RPN defaults | Standard oriented RPN | See `rpn_positive_iou_threshold`, `rpn_negative_iou_threshold`, … |
@@ -141,6 +144,7 @@ Class-tile oversampling is off unless `class_tile_oversample_classes` is a non-e
 
 `roi_box_reg_aux_weight` > 0 enables an auxiliary box-reg term that is **not** the primary loss. Set **`roi_box_reg_aux_loss_type`** (`probiou` / `riou` / `kfiou` when main is `smooth_l1`; `smooth_l1` when main is decoded). Optional `roi_box_reg_aux_schedule_epochs` / `roi_box_reg_aux_schedule_values` piecewise-schedule that weight by 0-based epoch. Use `roi_box_reg_kfiou_fun` / `roi_box_reg_probiou_mode` for the decoded metric, whichever side it is on.
 
+For **ProbIoU (or rIoU/KFIoU) as primary** ROI loss on Rotated Faster R-CNN, set `roi_box_reg_main_loss_type` and add encoded Smooth L1 aux with `roi_box_reg_aux_weight` / `roi_box_reg_aux_loss_type: smooth_l1`. Control Smooth L1 scale with `roi_box_reg_norm` (`sampled_all` = MMRotate, `positives_only` = mean over positives). Recipe: [`configs/rotated_faster_rcnn/dota_le90_1x.json`](../../configs/rotated_faster_rcnn/dota_le90_1x.json). Legacy keys `roi_box_reg_iou_weight` / `roi_box_reg_smooth_l1_aux_weight` still load with a deprecation warning.
 For **ProbIoU (or rIoU/KFIoU) as primary** ROI loss on Rotated Faster R-CNN, set `roi_box_reg_main_loss_type` and add encoded Smooth L1 aux with `roi_box_reg_aux_weight` / `roi_box_reg_aux_loss_type: smooth_l1`. Control Smooth L1 scale with `roi_box_reg_norm` (`sampled_all` = MMRotate, `positives_only` = mean over positives). Recipe: [`configs/rotated_faster_rcnn/dota_le90_1x.json`](../../configs/rotated_faster_rcnn/dota_le90_1x.json). Legacy keys `roi_box_reg_iou_weight` / `roi_box_reg_smooth_l1_aux_weight` still load with a deprecation warning.
 
 ### `training`
@@ -165,12 +169,22 @@ For **ProbIoU (or rIoU/KFIoU) as primary** ROI loss on Rotated Faster R-CNN, set
 
 | Context | Score threshold | IoU for mAP | Final detection NMS |
 |---------|-----------------|-------------|---------------------|
-| Training loop | `evaluation.score_threshold` (often **0.3**); `production.score_threshold` overrides when set | `evaluation.iou_threshold` | **`model.final_nms_iou_threshold`** (recipes: **0.1**) — `production` is **not** applied in `train.py` |
-| `odet preds` / `make eval-val` | **`evaluation.preds_score_threshold`** when set, else **0.05** (ignores production/train floors); per-class maps still merge | Always `evaluation.iou_threshold` | **`evaluation.final_nms_iou_threshold`** when set (recipes: **0.1**), else production/model |
-| Deploy / `image_demo` | `production.score_threshold` else `evaluation.score_threshold` | n/a | **`production.final_nms_iou_threshold`** (recipes: **0.1**) via `apply_inference_config_to_model` |
+| Training loop | `evaluation.train_val_score_threshold` only (`production` does **not** override) | `evaluation.iou_threshold` | **`model.final_nms_iou_threshold`** (recipes: **0.1**) — `production` is **not** applied in `train.py` |
+| `odet preds` / `make eval-val` | **`evaluation.preds_score_threshold`** when set, else **0.05** (ignores production/train floors); per-class maps merge evaluation then production | Always `evaluation.iou_threshold` | **`evaluation.final_nms_iou_threshold`** when set (recipes: **0.1**), else production/model |
+| Deploy / `image_demo` | `production.score_threshold` else `evaluation.train_val_score_threshold` | n/a | **`production.final_nms_iou_threshold`** (recipes: **0.1**) via `apply_inference_config_to_model` |
 
-DOTA 1× recipes set `production.score_threshold` to the eval-val global F1 threshold minus **0.05** (Oriented R-CNN **0.55**, Faster R-CNN **0.6**, RetinaNet **0.45**, FCOS **0.2**). 3× inherits those floors except Oriented R-CNN 3×, which pins **0.7** (Hub F1 0.75 − 0.05). HRSC 1× recipes use the same rule (Oriented R-CNN / Faster R-CNN **0.85**, FCOS **0.2**).
+**`evaluation.train_val_score_threshold` vs `evaluation.preds_score_threshold`:**
 
+| Field | Who uses it | Typical value | Purpose |
+|-------|-------------|---------------|---------|
+| `evaluation.train_val_score_threshold` | Training loop val / mAP / `best_mAP` | Often **0.3** (RetinaNet DOTA 1× / 3× / RR) | Confidence floor for **in-train** metrics and checkpoint picking. Raise it to make periodic val faster. Legacy alias: `evaluation.score_threshold` (remapped on load). |
+| `evaluation.preds_score_threshold` | `odet preds` / `make eval-val` only | Usually **null → 0.05** | Optional override for the published offline eval floor. Kept separate so a “fast train-val” floor cannot quietly raise Hub / eval-val mAP. |
+
+Preds resolver: CLI → `preds_score_threshold` if set → **0.05**. It ignores both `evaluation.train_val_score_threshold` and `production.score_threshold`. Deploy still uses `production.score_threshold`.
+
+DOTA 1× recipes set `production.score_threshold` to the eval-val global F1 threshold minus **0.05** (Oriented R-CNN **0.55**, Faster R-CNN **0.6**, RetinaNet **0.35**, FCOS **0.2**). 3× inherits those floors except Oriented R-CNN 3×, which pins **0.7** (Hub F1 0.75 − 0.05). HRSC 1× recipes use the same rule (Oriented R-CNN / Faster R-CNN **0.85**, FCOS **0.2**). On DOTA, that F1 sweep is leaky eval-val; the real test is Task 1. On HRSC, eval-val is held-out ImageSets test.
+
+`production.overlap_pixels` (default 200 when null) and `ignore_margin_pixels` (default `dataset.overlap / 2`) control native sliding-window overlap and the optional **full-image** deploy edge filter for `fixed`/`crop` in `oriented_det.runtime.inference` (`odet preds`, `save_predictions`, deploy). Last tiles flush to the image edge (same as `tile_dota.py`). Per-window stitch margin default is **0** (keep overlap copies, then NMS); pass `--window-margin-pixels` to drop the overlap band. `resize_mode: pad` / `keep_ratio` do not native-tile; they use the training whole-image scale path (`keep_ratio` then `pad_size_divisor`).
 `production.overlap_pixels` (default 200 when null) and `ignore_margin_pixels` (default `dataset.overlap / 2`) control native sliding-window overlap and the optional **full-image** deploy edge filter for `fixed`/`crop` in `oriented_det.runtime.inference` (`odet preds`, `save_predictions`, deploy). Last tiles flush to the image edge (same as `tile_dota.py`). Per-window stitch margin default is **0** (keep overlap copies, then NMS); pass `--window-margin-pixels` to drop the overlap band. `resize_mode: pad` / `keep_ratio` do not native-tile; they use the training whole-image scale path (`keep_ratio` then `pad_size_divisor`).
 
 ### `checkpoint`
@@ -202,7 +216,7 @@ Top-level configs (inherit bases under `configs/_base_/`):
 | `configs/rotated_fcos/hrsc2016_le90_1x.json` | Rotated FCOS | 1× HRSC2016 rIoU |
 | `configs/rotated_fcos/hrsc2016_le90_3x.json` | Rotated FCOS | 3× HRSC2016 rIoU |
 | `configs/oriented_rcnn/fair1m_le90_1x.json` | Oriented R-CNN | 1× FAIR1M tiled (init `hf://oriented_rcnn_dota_le90_1x`) |
-| `configs/rotated_faster_rcnn/fair1m_le90_1x.json` | Rotated Faster R-CNN | 1× FAIR1M tiled (init `hf://rotated_faster_rcnn_dota_le90_1x`) |
+| `configs/rotated_faster_rcnn/fair1m_le90_1x.json` | Rotated Faster R-CNN | 1× FAIR1M tiled (init `hf://rotated_faster_rcnn_dota_le90_1x`; local tiled-val **36.70%**) |
 | `configs/rotated_fcos/fair1m_le90_1x.json` | Rotated FCOS | 1× FAIR1M tiled rIoU (init `hf://rotated_fcos_dota_le90_1x`) |
 
 **Bases (not run directly):** `configs/_base_/datasets/`, `configs/_base_/schedules/{1x,3x,6x}.json`, `fp16`, `preprocessing`, `augmentation`.

@@ -6,29 +6,34 @@ Training and evaluation are driven by **JSON config files** with MMRotate-style 
 
 OrientedDet publishes **DOTA le90 pretrain** checkpoints on Hugging Face Hub. See [pretrained/README.md](../pretrained/README.md) and per-model READMEs below.
 
-**Split protocol (important):**
+**Split protocol (`make eval-val` is not always held-out):**
 
-- **Training: train+val** — `train_tiles_dirs` unions `train` and `val` tile roots (DOTA benchmark pretrain, same idea as MMRotate).
-- **Evaluation: val** — mAP is on the **val** tile set only.
-- This is **not** a fine-tune train/val holdout: val tiles are included in training.
+| Dataset | Train | `make eval-val` | Held-out test |
+|---------|-------|-----------------|---------------|
+| **DOTA v1.0** | train **+ val** tiles (`train_tiles_dirs`; MMRotate pretrain) | **Leaky** — val tiles are also in train | **Official Task 1** (`make dota-submit`; labels not public) |
+| **HRSC2016** | ImageSets **trainval** | ImageSets **test** (453 images) | Same as eval-val — test is **not** in train |
+| **FAIR1M** | official **train** tiles only | official **val** tiles | Gaofen test labels are not public; val is **not** in train |
 
-**mAP in README tables** for Faster R-CNN, FCOS, and Oriented R-CNN 1× DOTA is **official Task 1** (hidden test). Oriented R-CNN 3× / RetinaNet DOTA still quote **`make eval-val`** mAP50 (7,669 val tiles, `filter_empty_gt=false`, rotated IoU ≥ 0.50). Training-time periodic mAP may be higher (non-empty tiles only). Val tiles are in the train union.
+Do **not** call HRSC or FAIR1M `make eval-val` leaky. That word is DOTA-only. Full table: [Data guide — Train / eval splits](../docs/user-guide/data.md#train--eval-splits).
+
+**mAP in README tables** for Faster R-CNN, FCOS, Oriented R-CNN 1×, and **RetinaNet 1×** DOTA is **official Task 1** (the real hidden test). FCOS 3× is also Task 1 (**72.91%**; leaky eval-val 82.32%). Oriented R-CNN 3× / RetinaNet 3× still quote leaky **`make eval-val`** mAP50 (7,669 val tiles, `filter_empty_gt=false`, rotated IoU ≥ 0.50) until those 3× Task 1 scores land. Training-time periodic mAP may be higher (non-empty tiles only).
 
 | Model | Config | Hub slug | mAP50 |
 |-------|--------|----------|----------------|
 | Oriented R-CNN 1× | [oriented_rcnn/dota_le90_1x.json](oriented_rcnn/dota_le90_1x.json) | `oriented_rcnn_dota_le90_1x` | **76.73%** official Task 1 |
-| Oriented R-CNN 3× | [oriented_rcnn/dota_le90_3x.json](oriented_rcnn/dota_le90_3x.json) | `oriented_rcnn_dota_le90_3x` | 79.40% eval-val |
-| Rotated RetinaNet 3× | [rotated_retinanet/dota_le90_3x.json](rotated_retinanet/dota_le90_3x.json) | `rotated_retinanet_dota_le90_3x` | 71.52% eval-val |
+| Oriented R-CNN 3× | [oriented_rcnn/dota_le90_3x.json](oriented_rcnn/dota_le90_3x.json) | `oriented_rcnn_dota_le90_3x` | 79.40% leaky eval-val |
+| Rotated RetinaNet 1× (HBB) | [rotated_retinanet/dota_le90_1x.json](rotated_retinanet/dota_le90_1x.json) | `rotated_retinanet_dota_le90_1x` | **67.87%** official Task 1 |
+| Rotated RetinaNet 3× | [rotated_retinanet/dota_le90_3x.json](rotated_retinanet/dota_le90_3x.json) | `rotated_retinanet_dota_le90_3x` | 71.52% leaky eval-val |
 | Rotated Faster R-CNN 1× | [rotated_faster_rcnn/dota_le90_1x.json](rotated_faster_rcnn/dota_le90_1x.json) | `rotated_faster_rcnn_dota_le90_1x` | **74.42%** official Task 1 |
 | Rotated Faster R-CNN 3× | [rotated_faster_rcnn/dota_le90_3x.json](rotated_faster_rcnn/dota_le90_3x.json) | `rotated_faster_rcnn_dota_le90_3x` | **74.48%** official Task 1 |
 | Rotated FCOS 1× rIoU | [rotated_fcos/dota_le90_1x.json](rotated_fcos/dota_le90_1x.json) | `rotated_fcos_dota_le90_1x` | **73.07%** official Task 1 |
-| Rotated FCOS 3× rIoU | [rotated_fcos/dota_le90_3x.json](rotated_fcos/dota_le90_3x.json) | `rotated_fcos_dota_le90_3x` | 82.32% eval-val |
+| Rotated FCOS 3× rIoU | [rotated_fcos/dota_le90_3x.json](rotated_fcos/dota_le90_3x.json) | `rotated_fcos_dota_le90_3x` | **72.91%** official Task 1 |
 
 ## HRSC2016 pretrained models
 
-**Training: ImageSets trainval.** **Evaluation: ImageSets test** (453 images). Whole-image `keep_ratio` + pad-32. FCOS HRSC 1×/3× and Oriented R-CNN / Faster R-CNN 3× use random rotate p=0.5 ±20°; Oriented R-CNN / Faster R-CNN 1× leave rotate off.
+**Training: ImageSets trainval.** **Evaluation: ImageSets test** (453 images) — **held-out**, not in training. Whole-image `keep_ratio` + pad-32. FCOS HRSC 1×/3× and Oriented R-CNN / Faster R-CNN 3× use random rotate p=0.5 ±20°; Oriented R-CNN / Faster R-CNN 1× leave rotate off.
 
-| Model | Config | Hub slug | eval-val mAP50 |
+| Model | Config | Hub slug | held-out test mAP50 |
 |-------|--------|----------|----------------|
 | Oriented R-CNN 3× | [oriented_rcnn/hrsc2016_le90_3x.json](oriented_rcnn/hrsc2016_le90_3x.json) | `oriented_rcnn_hrsc2016_le90_3x` | 90.41% |
 | Rotated Faster R-CNN 3× | [rotated_faster_rcnn/hrsc2016_le90_3x.json](rotated_faster_rcnn/hrsc2016_le90_3x.json) | `rotated_faster_rcnn_hrsc2016_le90_3x` | 88.77% |
@@ -36,13 +41,15 @@ OrientedDet publishes **DOTA le90 pretrain** checkpoints on Hugging Face Hub. Se
 
 ### FAIR1M le90 (train locally — finetune DOTA 1× Hub; no FAIR1M zoo)
 
-| Recipe | Config |
-|--------|--------|
-| Oriented R-CNN 1× | [oriented_rcnn/fair1m_le90_1x.json](oriented_rcnn/fair1m_le90_1x.json) |
-| Rotated Faster R-CNN 1× | [rotated_faster_rcnn/fair1m_le90_1x.json](rotated_faster_rcnn/fair1m_le90_1x.json) |
-| Rotated FCOS 1× rIoU | [rotated_fcos/fair1m_le90_1x.json](rotated_fcos/fair1m_le90_1x.json) |
+**Training: official train tiles only.** **Evaluation: official val tiles** — **held-out**, not in training (unlike DOTA). Tiled official val, not Gaofen hidden test (labels not public). Mid-30s mAP50 is expected — FAIR1M is 37 fine-grained classes, not DOTA’s 15.
 
-See [Data guide — FAIR1M](../docs/user-guide/data.md#fair1m).
+| Recipe | Config | tiled-val mAP50 |
+|--------|--------|-----------------|
+| Oriented R-CNN 1× | [oriented_rcnn/fair1m_le90_1x.json](oriented_rcnn/fair1m_le90_1x.json) | (not run) |
+| Rotated Faster R-CNN 1× | [rotated_faster_rcnn/fair1m_le90_1x.json](rotated_faster_rcnn/fair1m_le90_1x.json) | **36.70%** (`runs/rotated_faster_rcnn/20260910-072116`) |
+| Rotated FCOS 1× rIoU | [rotated_fcos/fair1m_le90_1x.json](rotated_fcos/fair1m_le90_1x.json) | (not run) |
+
+See [Data guide — FAIR1M](../docs/user-guide/data.md#fair1m) (local 1× story, literature band, class-confusion diagnosis).
 
 Download: `odet pretrained download <slug>` or `"load_from_checkpoint": "hf://<slug>"`. Published eval-val reports: [`docs/eval-reports/`](../docs/eval-reports/) (markdown + analysis JSON; `predictions.json` stays in gitignored [`predictions/`](../predictions/) for the viewer).
 
@@ -102,8 +109,8 @@ All options, types, and defaults: **[config.schema.json](config.schema.json)** (
 | `data_loader` | batch_size, num_workers, shuffle, pin_memory |
 | `model` | backbone, fpn_*, anchor_*, target_means/stds, roi_* (loss, batch, iou, schedule, **roi_proj_xy**), rpn_*, use_hbb_for_matching, add_gt_as_proposals, **rpn_nms_threshold** (proposal NMS), **final_nms_iou_threshold** / **final_nms_iou_schedule_*** (post–ROI-head NMS), **final_nms_use_cpu** (exact polygon final NMS on CPU), nms_class_agnostic, max_detections_per_image, inference_pre_nms_score_threshold |
 | `training` | **lr_scheduler_type** first, then lr_scheduler_*, lr_warmup_steps, lr_scaling_*, use_lr_param_groups, lr_mult_*, then num_epochs, learning_rate, momentum, weight_decay, use_amp, gradient_accumulation_steps, max_grad_norm, loss_weights. See [Training — Learning rate scheduling](../docs/user-guide/training.md#learning-rate-scheduling) and [_base_/schedules/README.md](_base_/schedules/README.md). |
-| `evaluation` | score_threshold (train val), **`preds_score_threshold`** for **`odet preds` / `make eval-val`** (null → **0.05**), iou_threshold, compute_map_*; **`final_nms_iou_threshold`** for eval-val NMS only (DOTA+HRSC: **0.1**, MMRotate test parity) |
-| `production` | Optional overrides: **train val / deploy score** — `score_threshold` overrides `evaluation.score_threshold` when set (`odet preds` ignores it). DOTA 1× recipes set this to eval-val global F1 − **0.05** (Oriented R-CNN **0.55**, Faster R-CNN **0.6**, RetinaNet **0.45**, FCOS **0.2**); 3× inherits those floors except Oriented R-CNN 3×, which pins **0.7**. HRSC 1× recipes do the same (Oriented R-CNN / Faster R-CNN **0.85**, FCOS **0.2**). `per_class_score_threshold` merges on top of `evaluation` (mAP IoU is `evaluation.iou_threshold` only). **Decode (deploy / `image_demo`)** — RPN/NMS/threshold fields patch the loaded model via `apply_inference_config_to_model` (DOTA+HRSC+FAIR1M: final NMS **0.1**). **`odet preds`** prefers `evaluation.final_nms_iou_threshold` when set. Not applied during `tools/train.py` (training uses `model.*`, final NMS **0.1**). **Deploy / tiling** — `overlap_pixels`, `ignore_margin_pixels`, canvas flags (see **config.schema.json**). |
+| `evaluation` | **`train_val_score_threshold`** (in-train val / mAP / `best_mAP`; legacy alias `score_threshold`), **`preds_score_threshold`** for **`odet preds` / `make eval-val`** (null → **0.05**), iou_threshold, compute_map_*; **`final_nms_iou_threshold`** for eval-val NMS only (DOTA+HRSC: **0.1**, MMRotate test parity) |
+| `production` | Optional **deploy / `image_demo`** overrides: `score_threshold` via `resolve_inference_score_threshold` (does **not** override train-val mAP; `odet preds` ignores it). DOTA 1× recipes set this to eval-val global F1 − **0.05** (Oriented R-CNN **0.55**, Faster R-CNN **0.6**, RetinaNet **0.35**, FCOS **0.2**); 3× inherits those floors except Oriented R-CNN 3×, which pins **0.7**. HRSC 1× recipes do the same (Oriented R-CNN / Faster R-CNN **0.85**, FCOS **0.2**). `per_class_score_threshold` merges on top of `evaluation` for preds/deploy only (`merge_per_class_score_thresholds`; mAP IoU is `evaluation.iou_threshold` only). **Decode (deploy / `image_demo`)** — RPN/NMS/threshold fields patch the loaded model via `apply_inference_config_to_model` (DOTA+HRSC+FAIR1M: final NMS **0.1**). **`odet preds`** prefers `evaluation.final_nms_iou_threshold` when set. Not applied during `tools/train.py` (training uses `model.*`, final NMS **0.1**). **Deploy / tiling** — `overlap_pixels`, `ignore_margin_pixels`, canvas flags (see **config.schema.json**). |
 | `checkpoint` | load_from_checkpoint, load_from_experiment, **discover_previous_run**, resume_from_checkpoint_epoch, load_optimizer_state, load_scheduler_state, load_include_prefixes, load_exclude_prefixes, start_epoch, best_metric, higher_is_better |
 | `loss` | loss_type (`focal_weighted` now also scales FCOS/RetinaNet sigmoid focal per class; `background_weight` is ROI-only), class_weight_method, background_weight, focal_alpha, focal_gamma, label_smoothing, **roi_grouped_ce_*** (coarse-to-fine ROI classifier curriculum in one run) |
 | `preprocessing` | resize_mode, target_size, normalize_mean, normalize_std, pad_size_divisor, enable_flip_horizontal, enable_flip_vertical, enable_flip_diagonal, enable_random_rotate, random_rotate_prob, random_rotate_angle_range |

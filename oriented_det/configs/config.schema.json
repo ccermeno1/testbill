@@ -348,12 +348,12 @@
       },
       "additionalProperties": false,
       "properties": {
-        "score_threshold": { "type": "number", "default": 0.5, "description": "Min confidence for train-val mAP and TensorBoard viz (often 0.3 for speed)." },
-        "preds_score_threshold": { "type": ["number", "null"], "default": null, "description": "Global score floor for odet preds / make eval-val only. When null, those tools use 0.05 (published protocol). Ignores production.score_threshold and evaluation.score_threshold. Deploy / image_demo keep production.score_threshold." },
+        "train_val_score_threshold": { "type": "number", "default": 0.3, "description": "Min confidence for in-train val mAP / best_mAP and TensorBoard viz fallback (recipe default 0.3 for speed). Not used by make eval-val / odet preds. Legacy JSON alias evaluation.score_threshold is remapped on load." },
+        "preds_score_threshold": { "type": ["number", "null"], "default": null, "description": "Global score floor for odet preds / make eval-val only. When null, those tools use 0.05 (published protocol). Ignores production.score_threshold and evaluation.train_val_score_threshold. Deploy / image_demo keep production.score_threshold." },
         "per_class_score_threshold": {
           "type": ["object", "null"],
           "additionalProperties": { "type": "number" },
-          "description": "Optional class_name -> min score; classes not listed use score_threshold."
+          "description": "Optional class_name -> min score; classes not listed use train_val_score_threshold."
         },
         "iou_threshold": { "type": "number", "default": 0.5, "description": "IoU threshold for mAP matching (not detection NMS)." },
         "final_nms_iou_threshold": { "type": ["number", "null"], "default": null, "description": "Final detection NMS IoU for odet preds / make eval-val only (MMRotate test parity). When set, overrides production.final_nms_iou_threshold on that path. Deploy / image_demo keep production.*; training val uses model.final_nms_iou_threshold." },
@@ -372,11 +372,11 @@
       },
       "additionalProperties": false,
       "properties": {
-        "score_threshold": { "type": ["number", "null"], "default": null, "description": "When set, overrides evaluation.score_threshold for training val/mAP and deploy / image_demo display (resolve_inference_score_threshold). odet preds / make eval-val ignore this and use evaluation.preds_score_threshold or 0.05." },
+        "score_threshold": { "type": ["number", "null"], "default": null, "description": "When set, deploy / image_demo display floor (resolve_inference_score_threshold). Does not override training val/mAP (evaluation.train_val_score_threshold only). odet preds / make eval-val ignore this and use evaluation.preds_score_threshold or 0.05." },
         "per_class_score_threshold": {
           "type": ["object", "null"],
           "additionalProperties": { "type": "number" },
-          "description": "Per-class floors merged after evaluation.per_class_score_threshold (same keys update/override)."
+          "description": "Per-class floors for preds/deploy only (merge_per_class_score_thresholds: evaluation then production). Does not affect train-val mAP."
         },
         "final_nms_iou_threshold": { "type": ["number", "null"], "default": null, "description": "Deploy / image_demo final detection NMS IoU; when set, patches the live model after checkpoint load. odet preds / make eval-val use evaluation.final_nms_iou_threshold when that field is set." },
         "final_nms_use_cpu": { "type": ["boolean", "null"], "default": null, "description": "When set, patches model.final_nms_use_cpu (exact polygon NMS on CPU)." },
@@ -402,7 +402,7 @@
       "additionalProperties": false,
       "properties": {
         "log_debug_anchors_proposals": { "type": "boolean", "default": false, "description": "Log val/debug_anchors and val/debug_proposals (random val image each epoch with RPN anchors and proposals overlaid). Only applies to RCNN-style models." },
-        "vis_score_threshold": { "type": ["number", "null"], "default": null, "description": "Min score for boxes in TensorBoard prediction images; null = use evaluation.score_threshold." }
+        "vis_score_threshold": { "type": ["number", "null"], "default": null, "description": "Min score for boxes in TensorBoard prediction images; null = use evaluation.train_val_score_threshold." }
       }
     },
     "checkpoint": {

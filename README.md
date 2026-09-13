@@ -24,8 +24,8 @@ cd ~/oriented-det
 uv venv --python 3.12
 source .venv/bin/activate
 
-# Install PyTorch with CUDA 12.1 from PyTorch's index (2.3.0 or a higher version is fine)
-uv pip install "torch>=2.3.0" "torchvision>=0.18.0" --index-url https://download.pytorch.org/whl/cu121
+# Install PyTorch with CUDA 12.1 from PyTorch's index (2.4.0 or a higher version is fine)
+uv pip install "torch>=2.4.0" "torchvision>=0.19.0" --index-url https://download.pytorch.org/whl/cu121
 
 # Install dependencies and the project in editable mode
 uv pip install -r requirements.txt
@@ -118,13 +118,13 @@ Install once: `uv pip install -e .`. Then:
 | Tile DOTA | `odet tile-dota /path/to/dota/train` |
 | HRSC2016 → DOTA (optional) | `odet hrsc-to-dota --data-root /path/to/HRSC2016 --output-dir /path/to/HRSC2016-dota` |
 | Val predictions | `odet preds --experiment-dir runs/oriented_rcnn/<timestamp>` or `make preds` |
-| Offline mAP | `make eval-val` or `make preds` then `make metrics` |
+| Offline mAP | `make eval-val` or `make preds` then `make metrics`. DOTA: leaky val tiles (real test is Task 1). HRSC/FAIR1M: held-out test/val. |
 
 DOTA configs: per-model `dota_le90_1x.json` under [configs/](configs/) (3× where published; Faster R-CNN and FCOS DOTA are 1×). Run `odet --help` for all subcommands. Makefile shortcuts and script-level options: [tools/README.md](tools/README.md). Config reference: [docs/user-guide/configuration.md](docs/user-guide/configuration.md), [configs/config.schema.json](configs/config.schema.json), [configs/README.md](configs/README.md).
 
 ## Pretrained weights and evaluation
 
-- Place exported best checkpoints under **`pretrained/`** or use Hub slugs (`odet pretrained download oriented_rcnn_dota_le90_1x`, `oriented_rcnn_dota_le90_3x`, `rotated_faster_rcnn_dota_le90_1x`, `rotated_faster_rcnn_dota_le90_3x`, `rotated_fcos_dota_le90_1x`, or `oriented_rcnn_hrsc2016_le90_3x` / `rotated_faster_rcnn_hrsc2016_le90_3x` / `rotated_fcos_hrsc2016_le90_3x`). See [pretrained/README.md](pretrained/README.md) and [configs/README.md](configs/README.md#dota-pretrained-models-model-zoo).
+- Place exported best checkpoints under **`pretrained/`** or use Hub slugs (`odet pretrained download oriented_rcnn_dota_le90_3x`, `rotated_faster_rcnn_dota_le90_1x`, `rotated_faster_rcnn_dota_le90_3x`, `rotated_fcos_dota_le90_1x`, or `oriented_rcnn_hrsc2016_le90_3x` / `rotated_faster_rcnn_hrsc2016_le90_3x` / `rotated_fcos_hrsc2016_le90_3x`). See [pretrained/README.md](pretrained/README.md) and [configs/README.md](configs/README.md#dota-pretrained-models-model-zoo).
 - **Tiled validation:** after training, run `make preds` then `make metrics`. Published mAP reports: [`docs/eval-reports/`](docs/eval-reports/) (git). Raw detections for the viewer: gitignored [`predictions/`](predictions/).
 
 ## Important notes

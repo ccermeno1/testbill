@@ -1,5 +1,7 @@
 # Model Analysis Report
 
+Hub slug **`oriented_rcnn_hrsc2016_le90_3x`**. ImageSets **test** mAP50 **90.41%** (`make eval-val`). Train uses ImageSets **trainval** only; test images are not in training. Unlike DOTA, this is not leaky eval-val.
+
 - Generated at: `2026-08-31T01:12:42.938157`
 
 ## Model metadata

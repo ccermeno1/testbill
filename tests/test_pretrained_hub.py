@@ -40,11 +40,20 @@ def test_list_assets():
     assert assets["rotated_faster_rcnn_dota_le90_1x"] == (
         "rotated_faster_rcnn_r50_fpn_dota_le90_1x-1e3dabeb.pth"
     )
+    assert assets["rotated_faster_rcnn_dota_le90_1x"] == (
+        "rotated_faster_rcnn_r50_fpn_dota_le90_1x-1e3dabeb.pth"
+    )
     assert assets["rotated_faster_rcnn_dota_le90_3x"] == (
         "rotated_faster_rcnn_r50_fpn_dota_le90_3x-9951acc6.pth"
     )
+    assert assets["rotated_retinanet_dota_le90_1x"] == (
+        "rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.pth"
+    )
     assert assets["rotated_retinanet_dota_le90_3x"] == (
         "rotated_retinanet_r50_fpn_dota_le90_3x-8decc6f1.pth"
+    )
+    assert assets["rotated_fcos_dota_le90_1x"] == (
+        "rotated_fcos_r50_fpn_dota_le90_1x-a87b6dba.pth"
     )
     assert assets["rotated_fcos_dota_le90_1x"] == (
         "rotated_fcos_r50_fpn_dota_le90_1x-a87b6dba.pth"
@@ -54,7 +63,6 @@ def test_list_assets():
     )
     for dropped in (
         "rotated_faster_rcnn_dota_le90_3x_ce",
-        "rotated_retinanet_dota_le90_1x",
         "rotated_fcos_dota_le90_3x_kfiou_aux",
     ):
         assert dropped not in assets
@@ -216,6 +224,7 @@ def test_manifest_is_valid_json():
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert data["repo_id"]
     assets = data["assets"]
+    assert "rotated_retinanet_dota_le90_1x" in assets
     assert "rotated_retinanet_dota_le90_3x" in assets
     assert "rotated_faster_rcnn_dota_le90_1x" in assets
     assert "rotated_faster_rcnn_dota_le90_3x" in assets
@@ -223,3 +232,24 @@ def test_manifest_is_valid_json():
     for entry in assets.values():
         assert entry["filename"].endswith(".pth")
         assert len(entry["sha256"]) == 64
+
+
+def test_manifest_eval_map50_is_eval_val_not_task1():
+    """DOTA Task 1 scores live in eval_task1_map50; eval_map50 is leaky eval-val."""
+    manifest_path = Path(hub.__file__).parent / "manifest.json"
+    assets = json.loads(manifest_path.read_text(encoding="utf-8"))["assets"]
+    expected = {
+        "oriented_rcnn_dota_le90_1x": (0.7766, 0.7673),
+        "rotated_faster_rcnn_dota_le90_1x": (0.7755, 0.7442),
+        "rotated_faster_rcnn_dota_le90_3x": (0.8346, 0.7448),
+        "rotated_fcos_dota_le90_1x": (0.7513, 0.7307),
+        "rotated_fcos_dota_le90_3x": (0.8232, 0.7291),
+        "rotated_retinanet_dota_le90_1x": (0.6820, 0.6787),
+    }
+    for slug, (eval_val, task1) in expected.items():
+        entry = assets[slug]
+        assert entry["eval_map50"] == eval_val
+        assert entry["eval_task1_map50"] == task1
+        assert entry["eval_map50"] != entry["eval_task1_map50"]
+    assert "eval_task1_map50" not in assets["oriented_rcnn_dota_le90_3x"]
+    assert "eval_task1_map50" not in assets["rotated_retinanet_dota_le90_3x"]

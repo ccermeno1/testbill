@@ -99,6 +99,34 @@ def _normalize_legacy_model_keys(config_dict: Dict[str, Any]) -> None:
         model.pop(key, None)
 
 
+def _normalize_legacy_evaluation_score_threshold(config_dict: Dict[str, Any]) -> None:
+    """Rewrite ``evaluation.score_threshold`` → ``train_val_score_threshold``.
+
+    Older recipes / run ``config.json`` files used ``score_threshold`` for the
+    in-train mAP floor. That name collided with deploy / preds floors.
+    """
+    evaluation = config_dict.get("evaluation")
+    if not isinstance(evaluation, dict) or "score_threshold" not in evaluation:
+        return
+    legacy = evaluation.pop("score_threshold")
+    if "train_val_score_threshold" in evaluation:
+        new_v = evaluation["train_val_score_threshold"]
+        if float(legacy) != float(new_v):
+            raise ValueError(
+                "evaluation.score_threshold and evaluation.train_val_score_threshold "
+                f"both set with different values ({legacy!r} vs {new_v!r}). "
+                "Use train_val_score_threshold only."
+            )
+        return
+    evaluation["train_val_score_threshold"] = legacy
+    warnings.warn(
+        "evaluation.score_threshold is deprecated; use "
+        "evaluation.train_val_score_threshold (in-train mAP / best_mAP floor).",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
+
 def _normalize_legacy_roi_box_reg_keys(config_dict: Dict[str, Any]) -> None:
     """Rewrite pre-rename ROI box-reg aux keys onto ``roi_box_reg_aux_*``.
 
@@ -524,12 +552,13 @@ class TrainingConfig:
 @dataclass
 class EvaluationConfig:
     """Evaluation configuration."""
-    score_threshold: float = 0.5  # Minimum confidence score for detections
-    # Optional class_name -> min score; classes not listed use score_threshold
+    # In-train val / mAP / best_mAP confidence floor (not eval-val / deploy).
+    train_val_score_threshold: float = 0.3
+    # Optional class_name -> min score; classes not listed use train_val_score_threshold
     per_class_score_threshold: Optional[Dict[str, float]] = None
     iou_threshold: float = 0.5  # IoU threshold for mAP calculation
     # Global score floor for ``odet preds`` / ``make eval-val`` only (published protocol 0.05).
-    # When null, those tools use 0.05. Training val uses ``score_threshold`` (often 0.3).
+    # When null, those tools use 0.05. Training val uses ``train_val_score_threshold`` (often 0.3).
     # Deploy / image_demo use ``production.score_threshold`` (may be 0.3).
     preds_score_threshold: Optional[float] = None
     # Final detection NMS IoU for ``odet preds`` / ``make eval-val`` only (MMRotate test parity).
@@ -602,7 +631,7 @@ def resolve_inference_score_threshold(config: "TrainingExperimentConfig") -> flo
         v = getattr(config.production, "score_threshold", None)
         if v is not None:
             return float(v)
-    return float(getattr(config.evaluation, "score_threshold", 0.5))
+    return float(getattr(config.evaluation, "train_val_score_threshold", 0.3))
 
 
 def resolve_preds_score_threshold(
@@ -617,11 +646,11 @@ def resolve_preds_score_threshold(
     2. ``evaluation.preds_score_threshold`` when set
     3. ``0.05`` (published eval-val protocol)
 
-    Ignores ``production.score_threshold`` and ``evaluation.score_threshold`` so
-    deploy display (often 0.3) and fast train-val (often 0.3) cannot raise the
-    published mAP floor. Deploy / ``image_demo`` keep
-    :func:`resolve_inference_score_threshold`. Training val keeps
-    :func:`effective_eval_metric_thresholds`.
+    Ignores ``production.score_threshold`` and
+    ``evaluation.train_val_score_threshold`` so deploy display (often 0.3) and
+    fast train-val (often 0.3) cannot raise the published mAP floor. Deploy /
+    ``image_demo`` keep :func:`resolve_inference_score_threshold`. Training val
+    keeps :func:`effective_eval_metric_thresholds`.
     """
     if cli_score_threshold is not None:
         return float(cli_score_threshold), "CLI --score-threshold"
@@ -680,28 +709,41 @@ def resolve_preds_final_nms_iou_threshold(
 def effective_eval_metric_thresholds(
     config: "TrainingExperimentConfig",
 ) -> Tuple[float, Optional[Dict[str, float]], float]:
-    """Score / per-class / IoU thresholds passed to validation and mAP.
+    """Score / per-class / IoU thresholds for **training** validation and mAP.
 
-    - ``score_threshold``: ``production.score_threshold`` when set, else ``evaluation.score_threshold``.
-    - ``iou_threshold``: always ``evaluation.iou_threshold`` (mAP / val matching).
-    - ``per_class_score_threshold``: start from ``evaluation`` entries, then ``production`` updates keys.
+    Uses ``evaluation`` only. ``production.score_threshold`` is deploy /
+    ``image_demo`` (see :func:`resolve_inference_score_threshold`); it must not
+    select ``best_mAP`` or reshape in-train mAP. ``odet preds`` / eval-val score
+    uses :func:`resolve_preds_score_threshold`. Per-class floors for preds/deploy
+    use :func:`merge_per_class_score_thresholds`.
     """
     ev = config.evaluation
-    sc = float(ev.score_threshold)
+    sc = float(ev.train_val_score_threshold)
     pc: Optional[Dict[str, float]] = None
     if ev.per_class_score_threshold:
         pc = {str(k): float(v) for k, v in ev.per_class_score_threshold.items()}
     iou = float(ev.iou_threshold)
+    return sc, pc, iou
+
+
+def merge_per_class_score_thresholds(
+    config: "TrainingExperimentConfig",
+) -> Optional[Dict[str, float]]:
+    """Per-class score floors for ``odet preds`` / deploy (not train-val mAP).
+
+    Start from ``evaluation.per_class_score_threshold``, then apply
+    ``production.per_class_score_threshold`` key overrides.
+    """
+    ev = config.evaluation
+    pc: Optional[Dict[str, float]] = None
+    if ev.per_class_score_threshold:
+        pc = {str(k): float(v) for k, v in ev.per_class_score_threshold.items()}
     inf = getattr(config, "production", None)
-    if inf is None:
-        return sc, pc, iou
-    if inf.score_threshold is not None:
-        sc = float(inf.score_threshold)
-    if inf.per_class_score_threshold is not None:
+    if inf is not None and inf.per_class_score_threshold is not None:
         merged: Dict[str, float] = dict(pc) if pc else {}
         merged.update({str(k): float(v) for k, v in inf.per_class_score_threshold.items()})
-        pc = merged if merged else None
-    return sc, pc, iou
+        return merged if merged else None
+    return pc
 
 
 def config_use_exact_rotated_iou_for_map(config: "TrainingExperimentConfig") -> bool:
@@ -829,7 +871,7 @@ class LossConfig:
 class TensorboardConfig:
     """TensorBoard and validation logging options."""
     log_debug_anchors_proposals: bool = False  # Log val/debug_anchors and val/debug_proposals
-    vis_score_threshold: Optional[float] = None  # Min score for boxes in TB prediction images; None = use evaluation.score_threshold
+    vis_score_threshold: Optional[float] = None  # Min score for boxes in TB prediction images; None = use evaluation.train_val_score_threshold
 
 
 # Default normalization: MMDetection/MMRotate (on [0,1] scale). Inference must use same as training.
@@ -991,6 +1033,7 @@ class TrainingExperimentConfig:
         _normalize_legacy_model_keys(config_dict)
         _normalize_legacy_roi_box_reg_keys(config_dict)
         _normalize_legacy_cosine_t_max(config_dict)
+        _normalize_legacy_evaluation_score_threshold(config_dict)
 
         # JSON `null` for a section should fall back to dataclass defaults, not be passed
         # as `None` into non-optional sub-configs.
@@ -1169,7 +1212,10 @@ class TrainingExperimentConfig:
         print()
         
         print("Evaluation:")
-        print(f"  Score Threshold (train val): {self.evaluation.score_threshold}")
+        print(
+            f"  train_val_score_threshold: "
+            f"{self.evaluation.train_val_score_threshold}"
+        )
         print(
             f"  preds_score_threshold (odet preds / eval-val): "
             f"{self.evaluation.preds_score_threshold!r}"
@@ -1193,13 +1239,20 @@ class TrainingExperimentConfig:
         print("Production (overrides; null = use evaluation/model/dataset):")
         inf = self.production
         ow_px = resolve_inference_sliding_window_overlap_pixels(self)
-        _eff_sc, _eff_pc, _eff_iou = effective_eval_metric_thresholds(self)
+        _train_sc, _train_pc, _train_iou = effective_eval_metric_thresholds(self)
+        _deploy_sc = resolve_inference_score_threshold(self)
+        _preds_pc = merge_per_class_score_thresholds(self)
         _preds_nms, _preds_nms_src = resolve_preds_final_nms_iou_threshold(self)
         _preds_sc, _preds_sc_src = resolve_preds_score_threshold(self)
-        print(f"  score_threshold: {inf.score_threshold!r} → train/deploy {_eff_sc}")
+        print(f"  score_threshold: {inf.score_threshold!r} → deploy {_deploy_sc}")
+        print(
+            f"  train-val mAP score → {_train_sc} "
+            f"(evaluation.train_val_score_threshold only)"
+        )
         print(f"  odet preds / eval-val score → {_preds_sc} via {_preds_sc_src}")
-        print(f"  per_class_score_threshold: {inf.per_class_score_threshold!r} → effective {_eff_pc!r}")
-        print(f"  (mAP IoU from evaluation.iou_threshold: {self.evaluation.iou_threshold} → effective {_eff_iou})")
+        print(f"  per_class_score_threshold: {inf.per_class_score_threshold!r}")
+        print(f"  → train-val {_train_pc!r}; preds/deploy {_preds_pc!r}")
+        print(f"  (mAP IoU from evaluation.iou_threshold: {_train_iou})")
         print(
             f"  final_nms_iou_threshold: {inf.final_nms_iou_threshold!r} "
             f"(deploy/image_demo); odet preds → {_preds_nms} via {_preds_nms_src}"

@@ -97,7 +97,7 @@ Verified behaviors vs 3× run:
 
 - 5-level FPN (P3–P7), octave anchors, HBB matching (`use_hbb_for_matching: true`)
 - Focal cls via `loss.loss_type: focal` + `model.roi_focal_*` wiring in `train.py`
-- Val mAP at `evaluation.score_threshold: 0.3`, `max_detections_per_image: 300`
+- Val mAP at `evaluation.train_val_score_threshold: 0.3`, `max_detections_per_image: 300`
 - Deploy decode in frozen `production.*`: `inference_pre_nms_score_threshold: 0.05`, `max_detections_per_image: 2000`, `final_nms_use_cpu: true`
 - Periodic mAP uses GPU sampling; final mAP uses exact CPU IoU
 
@@ -132,7 +132,7 @@ Verified behaviors vs 3× run:
 |-------|--------|-----|-------|
 | `training.num_epochs` | 36 | 36 | Yes |
 | `lr_scheduler_milestones` | [24, 33] | [24, 33] | Yes |
-| `evaluation.score_threshold` | 0.3 | 0.3 | Yes |
+| `evaluation.train_val_score_threshold` | 0.3 | 0.3 | Yes |
 | `evaluation.compute_map_final` | true | true | Yes |
 | `evaluation.compute_map_every_n_epochs` | 4 | 4 | Yes |
 | `evaluation.use_exact_rotated_iou` | false | false | Yes |

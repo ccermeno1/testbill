@@ -84,7 +84,7 @@ help:
 	@echo "  make train-help             - Raw python training command examples (fine-tuning, overrides)"
 	@echo ""
 	@echo "=== Tiled val: predictions & offline metrics ==="
-	@echo "  make eval-val               - preds then metrics on newest predictions/<ts>/ (same vars as below)"
+	@echo "  make eval-val               - preds then metrics on recipe val (DOTA: leaky; real test is Task 1 / make dota-submit)"
 	@echo "  make preds                  - Val inference → predictions/<ts>/predictions.json (eval NMS via evaluation.final_nms_iou_threshold; no GPU mAP)"
 	@echo "  make metrics                - Offline mAP/PR on METRICS_PRED_DIR or latest predictions/"
 	@echo "  make train-preds            - Train split + tile_metrics.csv (latest exp; SAVE_TRAIN_PRED_OUT= optional)"
@@ -335,7 +335,7 @@ metrics: check-install
 # Convert existing JSON:
 #   make dota-submit FROM_JSON=predictions/<ts> OUT=work_dirs/Task1_orcnn
 # Hub zoo (sidecar config; unlabeled official test):
-#   make dota-submit CHECKPOINT=hf://oriented_rcnn_dota_le90_3x TEST_DIR=/data/DOTA-v1.0/test OUT=work_dirs/Task1_orcnn
+#   make dota-submit CHECKPOINT=hf://oriented_rcnn_dota_le90_3x TEST_DIR=/path/to/data/DOTA-v1.0/test OUT=work_dirs/Task1_orcnn
 # Or a local training run:
 #   make dota-submit EXPERIMENT=runs/oriented_rcnn/<id> TEST_DIR=/path/to/DOTA/test OUT=work_dirs/Task1_orcnn
 dota-submit: check-install

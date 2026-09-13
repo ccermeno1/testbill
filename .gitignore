@@ -2,13 +2,14 @@
 .DS_Store
 ._.DS_Store
 
-# Personal notebooks and scripts
-notebooks/
+# Personal documents and scripts
 cursor/
 docs/roadmap-detailed.md
 tools/test_*
 .cursor/
 .python-version
+# Personal scripts at the repo root only (e.g. launch_vm.sh, pull_from_remote.sh).
+/*.sh
 # NOTE: keep GitHub workflows tracked (CI).
 # .github/
 

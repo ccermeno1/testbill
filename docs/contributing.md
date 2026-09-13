@@ -94,6 +94,7 @@ oriented_det/
 Aligned with the [Roadmap](roadmap.md):
 
 - **v0.3:** FAIR1M loader + 1× recipes (finetune DOTA 1× Hub; no FAIR1M zoo)
+- **v0.3:** FAIR1M loader + 1× recipes (HRSC2016 Hub zoo already in; FAIR1M has no Hub weights)
 - **v0.4:** RTMDet-R and native YOLO-OBB (clean-room, no Ultralytics)
 - **v0.5+:** Swin-FPN backbone
 - **Docs:** Tutorials, hosted MkDocs, eval reports

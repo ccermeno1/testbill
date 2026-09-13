@@ -1,6 +1,27 @@
 # Model Analysis Report
 
-Hub slug **`oriented_rcnn_dota_le90_1x`**. Official DOTA v1.0 Task 1 **76.73%** (AP75 50.24, COCO mAP 46.59). Deploy `production.score_threshold` **0.55** (this sweep’s best F1 0.60 − 0.05). Val tiles are in the train union; do not quote this report’s mAP50 as held-out accuracy.
+Hub slug **`oriented_rcnn_dota_le90_1x`**. Official DOTA v1.0 Task 1 **76.73%** (AP75 50.24, COCO mAP 46.59). Deploy `production.score_threshold` **0.55** (this sweep’s best F1 0.60 − 0.05). The mAP50 below is leaky eval-val (val tiles are in train), not the published number.
+
+## Official Task 1 (hidden test)
+
+| Class | AP50 |
+| --- | ---: |
+| plane | 0.8955 |
+| baseball-diamond | 0.8260 |
+| bridge | 0.5369 |
+| ground-track-field | 0.7461 |
+| small-vehicle | 0.7870 |
+| large-vehicle | 0.8254 |
+| ship | 0.8848 |
+| tennis-court | 0.9057 |
+| basketball-court | 0.8525 |
+| storage-tank | 0.8500 |
+| soccer-ball-field | 0.6415 |
+| roundabout | 0.6627 |
+| harbor | 0.7333 |
+| swimming-pool | 0.7161 |
+| helicopter | 0.6458 |
+| **mAP50** | **0.7673** |
 
 - Generated at: `2026-09-10T04:58:49.104246`
 

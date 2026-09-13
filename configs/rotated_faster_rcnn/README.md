@@ -167,6 +167,7 @@ Our implementation targets MMRotate semantics:
 ### Training defaults (DOTA-style recipes)
 
 Typical published baselines use **SGD** \(momentum 0.9, weight decay 1e-4\), **batch size 2**, **12 epochs**, **MultiStepLR** with milestones at epochs **8** and **11** (\(\gamma=0.1\)), **lr=0.005**, **1024×1024** tiles, and **horizontal-anchor** matching with **`use_hbb_for_matching: true`**. [`dota_le90_1x.json`](./dota_le90_1x.json) is the advertised DOTA Hub recipe; [`dota_le90_3x.json`](./dota_le90_3x.json) inherits it (36 epochs, milestones 24/33). Both use **FP32**, cross-entropy classification, and **ProbIoU primary** ROI regression with **Smooth L1 aux** (0.1), `roi_box_reg_norm: positives_only`, `roi_box_reg_angle_weight: 1.0`.
+Typical published baselines use **SGD** \(momentum 0.9, weight decay 1e-4\), **batch size 2**, **12 epochs**, **MultiStepLR** with milestones at epochs **8** and **11** (\(\gamma=0.1\)), **lr=0.005**, **1024×1024** tiles, and **horizontal-anchor** matching with **`use_hbb_for_matching: true`**. [`dota_le90_1x.json`](./dota_le90_1x.json) is the advertised DOTA Hub recipe; [`dota_le90_3x.json`](./dota_le90_3x.json) inherits it (36 epochs, milestones 24/33). Both use **FP32**, cross-entropy classification, and **ProbIoU primary** ROI regression with **Smooth L1 aux** (0.1), `roi_box_reg_norm: positives_only`, `roi_box_reg_angle_weight: 1.0`.
 
 ## Config files in this folder
 
@@ -176,6 +177,7 @@ Typical published baselines use **SGD** \(momentum 0.9, weight decay 1e-4\), **b
 | [`dota_le90_3x.json`](./dota_le90_3x.json) | **3× DOTA pretrain** — inherits 1×; 36 epochs, milestones [24, 33]. Hub: `rotated_faster_rcnn_dota_le90_3x`. |
 | [`hrsc2016_le90_1x.json`](./hrsc2016_le90_1x.json) | **1× HRSC2016** — native XML, single-class ship, `keep_ratio` + pad-32, H+V+diagonal flips (rotate **off**), same ProbIoU main + Smooth L1 aux as DOTA; model/eval-val/production NMS **0.1**, `max_detections_per_image` **2000**. Deploy `production.score_threshold` **0.85** (eval-val F1 0.90 − 0.05). |
 | [`hrsc2016_le90_3x.json`](./hrsc2016_le90_3x.json) | **3× HRSC2016** — inherits 1×; 36 epochs, milestones [24, 33], `lr_scheduler_gamma` 0.1, random rotate p=0.5 **±20°**. Hub: `rotated_faster_rcnn_hrsc2016_le90_3x`. |
+| [`fair1m_le90_1x.json`](./fair1m_le90_1x.json) | **1× FAIR1M** — tiled 1024/200, finetune `hf://rotated_faster_rcnn_dota_le90_1x` (37-way cls re-init). Local tiled-val mAP50 **36.70%** (`runs/rotated_faster_rcnn/20260910-072116`). No Hub. |
 
 ### First run (1× / Hub)
 
@@ -194,10 +196,12 @@ odet train --config configs/rotated_faster_rcnn/hrsc2016_le90_3x.json
 If training is unstable, try `roi_box_reg_aux_weight` in `{0.05, 0.2}` (with `roi_box_reg_aux_loss_type: smooth_l1`) or `roi_box_reg_norm: sampled_all`.
 
 ### Angle fine-tune (optional polish from the Hub checkpoint)
+### Angle fine-tune (optional polish from the Hub checkpoint)
 
 Low-risk polish for orientation alignment: RoI head only (backbone and RPN frozen), higher angle SmoothL1 weight, stronger encoded-regression aux (**0.3**). ProbIoU main loss has **zero angle gradient when w≈h** (Gaussian surrogate is rotation-invariant for squares), so aux must carry angle supervision for baseball-diamond–like classes. Update `checkpoint.load_from_checkpoint` if your source run differs.
 
 ```bash
+python tools/train.py --config configs/rotated_faster_rcnn/dota_le90_1x.json
 python tools/train.py --config configs/rotated_faster_rcnn/dota_le90_1x.json
 ```
 
@@ -209,6 +213,7 @@ If training is unstable on a full 1× run, try `roi_box_reg_aux_weight` in `{0.0
 
 ## Results and models
 
+DOTA1.0 (pretrain: **train+val / val**). Published mAP is **official DOTA v1.0 Task 1** (hidden test). See [pretrained/README.md](../../pretrained/README.md).
 DOTA1.0 (pretrain: **train+val / val**). Published mAP is **official DOTA v1.0 Task 1** (hidden test). See [pretrained/README.md](../../pretrained/README.md).
 
 | Backbone | Official Task 1 | Angle | lr schd | Aug | BS | Config | Final config | Final log | Download |
@@ -233,10 +238,16 @@ Train-time mAP on 3× still climbs after the 1× schedule (non-empty val tiles ~
 - **Try 3×** only if the target needs tight boxes (high IoU) and you have a real holdout. Do not pick it because 83% eval-val looks better.
 - HRSC recipes in this folder train from scratch (`load_from_checkpoint: null`).
 
-HRSC2016 (trainval / test, 453 images). mAP = **`make eval-val`** mAP50.
+HRSC2016 (trainval / **held-out test**, 453 images). mAP = **`make eval-val`** mAP50 on ImageSets test (not in train). Unlike DOTA, this is not leaky.
 
-| Backbone | mAP (eval-val) | Angle | lr schd | Aug | Config | Final config | Final log | Download |
+| Backbone | mAP (held-out test) | Angle | lr schd | Aug | Config | Final config | Final log | Download |
 | :----------------------: | :---: | :---: | :-----: | :-: | :----: | :----------: | :-------: | :----: |
 | ResNet50 (keep-ratio 800) | 88.77 | le90 | 3× | H+V+D+RR±20° | [`hrsc2016_le90_3x.json`](./hrsc2016_le90_3x.json) | [`rotated_faster_rcnn_r50_fpn_hrsc2016_le90_3x-a755ae37.json`](../../pretrained/rotated_faster_rcnn_r50_fpn_hrsc2016_le90_3x-a755ae37.json) | [`rotated_faster_rcnn_r50_fpn_hrsc2016_le90_3x-a755ae37.log`](../../pretrained/rotated_faster_rcnn_r50_fpn_hrsc2016_le90_3x-a755ae37.log) | `hf://rotated_faster_rcnn_hrsc2016_le90_3x` |
 
 Eval report: [`docs/eval-reports/rotated_faster_rcnn_hrsc2016_le90_3x/`](../../docs/eval-reports/rotated_faster_rcnn_hrsc2016_le90_3x/model_analysis.md).
+
+FAIR1M (official **train** tiles / **held-out val** tiles after `odet fair1m-to-dota` + `odet tile-dota`; no Hub). Val is **not** in training (unlike DOTA). mAP = train-time periodic mAP50 on non-empty val tiles (score ≥ 0.05, IoU 0.50). **36.70%** at epoch 12 is in band for Faster R-CNN on FAIR1M (paper R101 31.5% official OBB; later R50 papers ~33–35%), not a failed DOTA-scale run. Class ID is the bottleneck (mean best IoU any **0.62** vs same-class **0.50**; GT cover **62%**). Still climbing at epoch 12. Details: [Data guide — FAIR1M](../../docs/user-guide/data.md#local-1x-faster-rcnn).
+
+```bash
+odet train --config configs/rotated_faster_rcnn/fair1m_le90_1x.json
+```

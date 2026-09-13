@@ -1,5 +1,28 @@
 # Model Analysis Report
 
+Hub slug **`rotated_fcos_dota_le90_3x`**. Official DOTA v1.0 Task 1 **72.91%** (AP75 45.39, COCO mAP 44.18). Deploy `production.score_threshold` **0.2** (this sweep’s best F1 0.25 − 0.05). The mAP50 below is leaky eval-val (val tiles are in train), not the published number.
+
+## Official Task 1 (hidden test)
+
+| Class | AP50 |
+| --- | ---: |
+| plane | 0.8815 |
+| baseball-diamond | 0.8197 |
+| bridge | 0.5045 |
+| ground-track-field | 0.6538 |
+| small-vehicle | 0.7488 |
+| large-vehicle | 0.7668 |
+| ship | 0.8755 |
+| tennis-court | 0.9067 |
+| basketball-court | 0.7769 |
+| storage-tank | 0.8406 |
+| soccer-ball-field | 0.5717 |
+| roundabout | 0.6164 |
+| harbor | 0.6735 |
+| swimming-pool | 0.7371 |
+| helicopter | 0.5626 |
+| **mAP50** | **0.7291** |
+
 - Generated at: `2026-09-01T06:50:26.240598`
 
 ## Model metadata

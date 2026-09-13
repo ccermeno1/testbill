@@ -29,7 +29,7 @@ The DOTA loader supports three modes for organizing your dataset:
 
 ### FAIR1M
 
-`FAIR1MDataset` reads Pascal-VOC-like XML (`points` polygons + `possibleresult/name`) for **37** fine-grained classes (`FAIR1M_CLASSES`). Config: `dataset.format: fair1m`. Tiled training uses `odet fair1m-to-dota` then `format: dota`. See [Data loading](../user-guide/data.md#fair1m).
+`FAIR1MDataset` reads Pascal-VOC-like XML (`points` polygons + `possibleresult/name`) for **37** fine-grained classes (`FAIR1M_CLASSES`). Config: `dataset.format: fair1m`. Tiled training uses `odet fair1m-to-dota` then `format: dota`. Local Faster R-CNN 1× tiled-val mAP50 is **36.70%** (expected FAIR1M band, not DOTA-scale). See [Data loading](../user-guide/data.md#fair1m).
 
 ### Data Augmentation
 

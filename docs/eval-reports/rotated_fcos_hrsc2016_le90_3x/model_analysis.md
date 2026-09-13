@@ -1,5 +1,7 @@
 # Model Analysis Report
 
+Hub slug **`rotated_fcos_hrsc2016_le90_3x`**. ImageSets **test** mAP50 **88.34%** (`make eval-val`). Train uses ImageSets **trainval** only; test images are not in training. Unlike DOTA, this is not leaky eval-val.
+
 - Generated at: `2026-08-31T03:40:14.371806`
 
 ## Model metadata

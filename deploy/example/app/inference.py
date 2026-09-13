@@ -24,7 +24,6 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from oriented_det.train.config import (
-    effective_eval_metric_thresholds,
     get_preprocessing_params,
     resolve_inference_score_threshold,
     resolve_inference_sliding_window_overlap_pixels,
@@ -218,8 +217,9 @@ class InferenceEngine:
 
     def _merge_per_class_score_thresholds(self, cfg) -> dict | None:
         """evaluation.per_class_score_threshold → production.per_class_score_threshold (overrides)."""
-        _, per_class, _ = effective_eval_metric_thresholds(cfg)
-        return per_class
+        from oriented_det.train.config import merge_per_class_score_thresholds
+
+        return merge_per_class_score_thresholds(cfg)
 
     def _load_model(self, image_height: int | None = None, image_width: int | None = None):
         # Double-checked locking: fast path avoids the lock after the first load.

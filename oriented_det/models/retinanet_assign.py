@@ -5,6 +5,9 @@ Two-stage RPN/ROI matching stays on ``match_oriented_anchors_to_gt`` /
 P3-scale grids (especially 27 priors/location) do not run the shared dense
 sampling IoU path (geometry-sized grids up to 1024 samples plus per-chunk
 ``.item()`` syncs).
+
+OBB ranking uses ``diff_iou_rotated_2d`` (MMRotate ``RBboxOverlaps2D``-style
+convex IoU) after AABB prune — not Monte-Carlo sampling.
 """
 
 from __future__ import annotations
@@ -18,16 +21,10 @@ except Exception:  # pragma: no cover
     torch = None  # type: ignore
     Tensor = None  # type: ignore
 
-from ..ops.gpu_ops import (
-    _box_vertices,
-    _generate_box_samples,
-    _points_in_paired_boxes,
-)
+from ..ops.diff_iou_rotated import diff_iou_rotated_2d
+from ..ops.gpu_ops import _box_vertices
 from .oriented_rpn import match_oriented_anchors_to_gt
 
-# Same estimator as ``oriented_box_iou_gpu``, but one fixed grid for assignment
-# ranking (0.5 / 0.4). Not the shared geometry-max-of-batch sample count.
-_ASSIGN_IOU_SAMPLES = 100
 _ANCHOR_CHUNK = 8192
 _PAIR_CHUNK = 65536
 _MAX_DENSE_ELEMENTS = 16_000_000  # ~64 MiB float32 [chunk, M]
@@ -47,7 +44,12 @@ def match_retinanet_anchors_to_gt(
     gt_boxes_lookalike: Optional[Tensor] = None,
     lookalike_iou_threshold: Optional[float] = None,
 ) -> Tuple[Tensor, Tensor]:
-    """MaxIoU assign RetinaNet anchors. HBB still uses the shared matcher."""
+    """MaxIoU assign RetinaNet anchors. HBB still uses the shared matcher.
+
+    Low-quality matches (``min_pos_iou=0``) require max IoU ``> 0`` so an all-zero
+    overlap row does not promote anchor index 0. Callers that concatenate FPN
+    levels assign once globally (MMRotate ``get_targets``).
+    """
     if torch is None:
         raise RuntimeError("PyTorch is required for RetinaNet assignment.")
     if use_hbb_for_matching:
@@ -89,7 +91,9 @@ def match_retinanet_anchors_to_gt(
         best_anchor_mask = torch.zeros(n, dtype=torch.bool, device=device)
         if match_low_quality:
             for gt_idx in range(m):
-                if max_iou_per_gt[gt_idx] >= min_pos_iou:
+                # min_pos_iou=0 must not promote a GT whose max IoU is 0 (argmax of
+                # an all-zero row is index 0).
+                if max_iou_per_gt[gt_idx] > 0 and max_iou_per_gt[gt_idx] >= min_pos_iou:
                     anchor_idx = best_anchor_per_gt[gt_idx]
                     labels[anchor_idx] = 1
                     matched_gt_indices[anchor_idx] = gt_idx
@@ -140,23 +144,10 @@ def _aabb_overlap(boxes1: Tensor, boxes2: Tensor) -> Tensor:
     )
 
 
-def _paired_rotated_iou(boxes_a: Tensor, boxes_b: Tensor, num_samples: int) -> Tensor:
-    """Sampling IoU for aligned pairs (same estimator as ``oriented_box_iou_gpu``)."""
-    area_a = boxes_a[:, 2] * boxes_a[:, 3]
-    area_b = boxes_b[:, 2] * boxes_b[:, 3]
-    samples_a = _generate_box_samples(boxes_a, num_samples)
-    samples_b = _generate_box_samples(boxes_b, num_samples)
-    verts_a = _box_vertices(boxes_a)
-    verts_b = _box_vertices(boxes_b)
-    count_in_b = _points_in_paired_boxes(samples_a, verts_b).sum(dim=1).float()
-    count_in_a = _points_in_paired_boxes(samples_b, verts_a).sum(dim=1).float()
-    inter = torch.maximum(
-        (count_in_b / num_samples) * area_a,
-        (count_in_a / num_samples) * area_b,
-    )
-    inter = torch.minimum(inter, torch.minimum(area_a, area_b))
-    union = (area_a + area_b - inter).clamp(min=1e-8)
-    return torch.clamp(inter / union, 0.0, 1.0)
+def _paired_exact_rotated_iou(boxes_a: Tensor, boxes_b: Tensor) -> Tensor:
+    """Exact convex rotated IoU for aligned pairs (MMRotate ``RBboxOverlaps2D``)."""
+    with torch.no_grad():
+        return diff_iou_rotated_2d(boxes_a, boxes_b)
 
 
 def _anchor_chunk_size(num_gt: int) -> int:
@@ -173,9 +164,7 @@ def _fill_pairwise_rotated_iou(chunk: Tensor, gt_boxes: Tensor, iou_dense: Tenso
         p_end = min(p_start + _PAIR_CHUNK, pair_i.numel())
         pi = pair_i[p_start:p_end]
         pj = pair_j[p_start:p_end]
-        iou_dense[pi, pj] = _paired_rotated_iou(
-            chunk[pi], gt_boxes[pj], _ASSIGN_IOU_SAMPLES
-        )
+        iou_dense[pi, pj] = _paired_exact_rotated_iou(chunk[pi], gt_boxes[pj])
 
 
 def _maxiou_rotated_stats(
@@ -225,7 +214,7 @@ def _max_rotated_iou_per_anchor(anchors: Tensor, other_boxes: Tensor) -> Tensor:
             p_end = min(p_start + _PAIR_CHUNK, pair_i.numel())
             pi = pair_i[p_start:p_end]
             pj = pair_j[p_start:p_end]
-            ious = _paired_rotated_iou(chunk[pi], other_boxes[pj], _ASSIGN_IOU_SAMPLES)
+            ious = _paired_exact_rotated_iou(chunk[pi], other_boxes[pj])
             chunk_max.scatter_reduce_(0, pi, ious, reduce="amax", include_self=True)
         out[start:end] = chunk_max
     return out

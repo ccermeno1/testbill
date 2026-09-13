@@ -200,7 +200,7 @@ def test_dota_3x_recipes_are_1x_plus_36_epochs():
         assert list(three.training.lr_scheduler_milestones) == [24, 33], name
         assert three.training.lr_warmup_steps == one.training.lr_warmup_steps, name
         assert three.model.max_detections_per_image == one.model.max_detections_per_image, name
-        assert three.evaluation.score_threshold == one.evaluation.score_threshold, name
+        assert three.evaluation.train_val_score_threshold == one.evaluation.train_val_score_threshold, name
     fcos_3x = TrainingExperimentConfig.load(root / "configs/rotated_fcos/dota_le90_3x.json")
     ret_3x = TrainingExperimentConfig.load(root / "configs/rotated_retinanet/dota_le90_3x.json")
     assert fcos_3x.training.lr_warmup_steps == 500

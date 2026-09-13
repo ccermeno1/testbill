@@ -63,7 +63,7 @@ Encoded Smooth L1 (main or aux) applies **directly to all five encoded channels*
 - **RoIAlign:** `horizontal_roi_align` uses `aligned=True` (half-pixel aligned), matching mmcv's `RoIAlign` default.
 - **Backbone BN:** frozen statistics (`FrozenBatchNorm2d`) by default, matching MMRotate `norm_eval=True`. See `backbones/README.md`.
 - **Loss normalization:** RPN and ROI SmoothL1 box-regression losses are summed over positives and divided by the **total** number of sampled anchors/RoIs (MMDet `avg_factor`), including Oriented R-CNN midpoint RPN and oriented ROI stages.
-- **Assignment IoU:** RPN stages use HBB IoU when `use_hbb_for_matching: true` (MMRotate horizontal RPN). Oriented R-CNN ROI matching uses rotated IoU by default (`roi_use_hbb_for_matching: false`). RetinaNet uses rotated IoU (`use_hbb_for_matching: false`).
+- **Assignment IoU:** RPN stages use HBB IoU when `use_hbb_for_matching: true` (MMRotate horizontal RPN). Oriented R-CNN ROI matching uses rotated IoU by default (`roi_use_hbb_for_matching: false`). RetinaNet Hub DOTA recipes pin circum-HBB (`true`); base model JSON defaults to OBB (`false`).
 
 RPN proposal pruning uses horizontal xyxy proposals and `torchvision.ops.nms` on GPU.
 The RPN proposal geometry is horizontal; rotated geometry is introduced by the ROI
@@ -114,9 +114,9 @@ Configs: `configs/rotated_fcos/dota_le90_1x.json` (rIoU 1× Hub recipe), `dota_l
 - **Head:** independent `cls_convs` / `reg_convs` (default 4×3×3 each) + 3×3 `conv_cls` / `conv_bbox` (MMRotate `RetinaHead`).
 - **FPN P6/P7:** `fpn_extra_level: true` attaches torchvision `LastLevelP6P7` on C5 (`add_extra_convs='on_input'`), not max-pool P6 + manual P7 conv.
 - **5 FPN levels (P3–P7)** with strides `[8, 16, 32, 64, 128]` when `fpn_returned_layers: [2,3,4]`.
-- **`min_pos_iou=0`** in anchor assignment (MMRotate `MaxIoUAssigner`).
+- **`min_pos_iou=0`** in all-level MaxIoU (MMRotate `MaxIoUAssigner`); low-quality match requires max IoU `> 0`.
 - **Regression loss:** encoded L1/SmoothL1 summed over positives, normalized by batch positive count (MMDet `avg_factor`).
-- **Rotated IoU assignment** (`use_hbb_for_matching: false`) via `retinanet_assign.match_retinanet_anchors_to_gt` (AABB prune + 100-sample pairwise IoU). Two-stage RPN/ROI matching is unchanged.
+- **Assignment IoU:** Hub DOTA recipes pin circum-HBB (`use_hbb_for_matching: true`). Matching concatenates P3–P7 then splits labels by level (MMRotate `get_targets`). With `false`, `retinanet_assign.match_retinanet_anchors_to_gt` uses AABB prune + exact convex IoU (`diff_iou_rotated_2d`, MMRotate `RBboxOverlaps2D`). Two-stage RPN/ROI matching is unchanged.
 - **le90 angle wrap in `edge_swap` encoding** (`norm_angle_le90` in `encode_oriented_boxes`).
 
 ### `final_nms_use_cpu` (exact final NMS)
@@ -125,7 +125,7 @@ Set **`model.final_nms_use_cpu`** to **`true`** in JSON / `ModelConfig` so **pos
 
 RPN anchor assignment also uses HBB overlap when `use_hbb_for_matching` is true. That path computes HBB IoU in large chunks and keeps only the best GT per anchor and best anchor per GT. This avoids thousands of tiny GPU launches and avoids materializing a full `anchors x GT` matrix for P2, where a single image can have millions of anchors.
 
-**Rotated RetinaNet** does not call `match_oriented_anchors_to_gt` for rotated assignment. `retinanet_assign.py` keeps MaxIoU (pos 0.5 / neg 0.4, `min_pos_iou=0`) but only samples rotated IoU on AABB-overlapping pairs with a fixed 100-point grid. That is what makes 27-anchor P3 grids trainable; `oriented_box_iou_gpu` (geometry-sized grids, per-chunk `.item()` syncs) stays on two-stage / shared ops. HBB RetinaNet still delegates to the shared matcher.
+**Rotated RetinaNet** does not call `match_oriented_anchors_to_gt` for rotated assignment. `retinanet_assign.py` keeps MaxIoU (pos 0.5 / neg 0.4, `min_pos_iou=0` only if max IoU `> 0`) but only evaluates exact rotated IoU on AABB-overlapping pairs (`diff_iou_rotated_2d`). Loss concatenates P3–P7 priors, assigns once, then splits labels by level. That is what makes 27-anchor P3 grids trainable; `oriented_box_iou_gpu` (geometry-sized grids, per-chunk `.item()` syncs) stays on two-stage / shared ops. HBB RetinaNet still delegates to the shared matcher.
 
 First-batch timing probes are gated by code-only debug flags and are disabled by
 default: `TRACE_FIRST_TRAIN_FORWARD_TIMING` in `oriented_rcnn.py` and

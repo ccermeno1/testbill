@@ -69,7 +69,7 @@ def test_production_section_load_and_strict(tmp_path: Path):
             {
                 "model_type": "rotated_faster_rcnn",
                 "dataset": {"data_root": str(tmp_path)},
-                "evaluation": {"score_threshold": 0.1, "iou_threshold": 0.4},
+                "evaluation": {"train_val_score_threshold": 0.1, "iou_threshold": 0.4},
                 "production": {"overlap_pixels": 192, "score_threshold": 0.35},
             }
         ),
@@ -81,7 +81,7 @@ def test_production_section_load_and_strict(tmp_path: Path):
     assert resolve_inference_score_threshold(cfg) == 0.35
     assert resolve_inference_sliding_window_overlap_pixels(cfg) == 192
     sc, pc, iou = effective_eval_metric_thresholds(cfg)
-    assert sc == 0.35
+    assert sc == 0.1  # train-val uses evaluation only; production is deploy
     assert pc is None
     assert iou == 0.4
 
@@ -115,6 +115,8 @@ def test_production_section_load_and_strict(tmp_path: Path):
 
 
 def test_effective_eval_per_class_merges_with_evaluation(tmp_path: Path):
+    from oriented_det.train.config import merge_per_class_score_thresholds
+
     p = tmp_path / "merge_pc.json"
     p.write_text(
         json.dumps(
@@ -122,19 +124,28 @@ def test_effective_eval_per_class_merges_with_evaluation(tmp_path: Path):
                 "model_type": "rotated_faster_rcnn",
                 "dataset": {"data_root": str(tmp_path)},
                 "evaluation": {
+                    "train_val_score_threshold": 0.05,
                     "per_class_score_threshold": {"plane": 0.2, "ship": 0.3},
                 },
-                "production": {"per_class_score_threshold": {"ship": 0.5}},
+                "production": {
+                    "score_threshold": 0.45,
+                    "per_class_score_threshold": {"ship": 0.5},
+                },
             }
         ),
         encoding="utf-8",
     )
     cfg = TrainingExperimentConfig.load(p)
     sc, pc, iou = effective_eval_metric_thresholds(cfg)
-    assert sc == cfg.evaluation.score_threshold
+    assert sc == pytest.approx(0.05)
     assert pc is not None
     assert pc["plane"] == 0.2
-    assert pc["ship"] == 0.5
+    assert pc["ship"] == 0.3  # train-val ignores production per-class
+    merged = merge_per_class_score_thresholds(cfg)
+    assert merged is not None
+    assert merged["plane"] == 0.2
+    assert merged["ship"] == 0.5  # preds/deploy apply production override
+    assert resolve_inference_score_threshold(cfg) == pytest.approx(0.45)
 
 
 def test_apply_inference_config_to_model_sets_existing_attrs():
@@ -164,7 +175,7 @@ def test_resolve_preds_score_ignores_production_and_train_eval_floor(tmp_path: P
             {
                 "model_type": "rotated_fcos",
                 "dataset": {"data_root": str(tmp_path)},
-                "evaluation": {"score_threshold": 0.3},
+                "evaluation": {"train_val_score_threshold": 0.3},
                 "production": {"score_threshold": 0.3},
             }
         ),
@@ -176,7 +187,7 @@ def test_resolve_preds_score_ignores_production_and_train_eval_floor(tmp_path: P
     assert "0.05" in src
     assert resolve_inference_score_threshold(cfg) == pytest.approx(0.3)
     train_sc, _, _ = effective_eval_metric_thresholds(cfg)
-    assert train_sc == pytest.approx(0.3)
+    assert train_sc == pytest.approx(0.3)  # evaluation.train_val_score_threshold; not production
 
     sc_cli, src_cli = resolve_preds_score_threshold(cfg, cli_score_threshold=0.12)
     assert sc_cli == pytest.approx(0.12)
@@ -188,7 +199,7 @@ def test_resolve_preds_score_ignores_production_and_train_eval_floor(tmp_path: P
             {
                 "model_type": "rotated_fcos",
                 "dataset": {"data_root": str(tmp_path)},
-                "evaluation": {"score_threshold": 0.3, "preds_score_threshold": 0.08},
+                "evaluation": {"train_val_score_threshold": 0.3, "preds_score_threshold": 0.08},
                 "production": {"score_threshold": 0.3},
             }
         ),
@@ -198,6 +209,42 @@ def test_resolve_preds_score_ignores_production_and_train_eval_floor(tmp_path: P
     sc_set, src_set = resolve_preds_score_threshold(cfg_set)
     assert sc_set == pytest.approx(0.08)
     assert "preds_score_threshold" in src_set
+
+
+def test_legacy_evaluation_score_threshold_alias(tmp_path: Path):
+    p = tmp_path / "legacy_score.json"
+    p.write_text(
+        json.dumps(
+            {
+                "model_type": "rotated_fcos",
+                "dataset": {"data_root": str(tmp_path)},
+                "evaluation": {"score_threshold": 0.27},
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.warns(DeprecationWarning, match="train_val_score_threshold"):
+        cfg = TrainingExperimentConfig.load(p)
+    assert cfg.evaluation.train_val_score_threshold == pytest.approx(0.27)
+    train_sc, _, _ = effective_eval_metric_thresholds(cfg)
+    assert train_sc == pytest.approx(0.27)
+
+    conflict = tmp_path / "conflict_score.json"
+    conflict.write_text(
+        json.dumps(
+            {
+                "model_type": "rotated_fcos",
+                "dataset": {"data_root": str(tmp_path)},
+                "evaluation": {
+                    "score_threshold": 0.2,
+                    "train_val_score_threshold": 0.3,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="both set"):
+        TrainingExperimentConfig.load(conflict)
 
 
 def test_resolve_preds_final_nms_prefers_evaluation_over_production(tmp_path: Path):

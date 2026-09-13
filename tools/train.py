@@ -2332,7 +2332,7 @@ def main():
         print(
             f"  Eval (mAP / val matching): score_threshold={eval_thr_sc}, "
             f"iou_threshold={eval_thr_iou}{_eval_thr_extra}"
-            " (production.score_threshold overrides evaluation when set)"
+            " (evaluation.train_val_score_threshold; production does not override)"
         )
         print(
             f"  Eval IoU backend (mAP / GT cover): "

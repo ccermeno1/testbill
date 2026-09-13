@@ -696,6 +696,76 @@ class TestRotatedRetinaNet:
         assert seen_sizes[0] <= 512
         assert losses["loss_box_reg"].requires_grad
 
+    def test_retinanet_loss_assigns_concatenated_fpn_levels_once_per_image(self):
+        """MaxIoU should see cat(P3, P4) once, not each FPN level separately."""
+        from unittest.mock import patch
+
+        from oriented_det.models.retinanet_assign import match_retinanet_anchors_to_gt
+        from oriented_det.models.rotated_retinanet import compute_oriented_retinanet_loss
+
+        device = torch.device("cpu")
+        num_classes = 2
+        num_anchors = 3
+        gt_boxes = [torch.tensor([[64.0, 64.0, 32.0, 16.0, 0.0]], device=device)]
+        gt_labels = [torch.tensor([1], device=device, dtype=torch.int64)]
+        image_sizes = [(128, 128)]
+
+        cls_logits = []
+        bbox_regs = []
+        anchor_levels = []
+        for stride, size in [(8, 16), (16, 8)]:
+            h = w = size
+            cls_logits.append(
+                torch.randn(1, num_anchors * num_classes, h, w, device=device, requires_grad=True)
+            )
+            bbox_regs.append(
+                torch.randn(1, num_anchors * 5, h, w, device=device, requires_grad=True)
+            )
+            yy, xx = torch.meshgrid(
+                torch.arange(h, device=device, dtype=torch.float32),
+                torch.arange(w, device=device, dtype=torch.float32),
+                indexing="ij",
+            )
+            cx = (xx + 0.5) * stride
+            cy = (yy + 0.5) * stride
+            grid_cx = cx.reshape(-1)
+            grid_cy = cy.reshape(-1)
+            n_loc = grid_cx.numel()
+            anchors = torch.stack(
+                [
+                    grid_cx.repeat(num_anchors),
+                    grid_cy.repeat(num_anchors),
+                    torch.full((n_loc * num_anchors,), 32.0, device=device),
+                    torch.full((n_loc * num_anchors,), 16.0, device=device),
+                    torch.zeros(n_loc * num_anchors, device=device),
+                ],
+                dim=1,
+            )
+            anchor_levels.append(anchors)
+
+        seen = []
+
+        def _capture_match(anchors, gt_boxes, *args, **kwargs):
+            seen.append(int(anchors.shape[0]))
+            return match_retinanet_anchors_to_gt(anchors, gt_boxes, *args, **kwargs)
+
+        with patch(
+            "oriented_det.models.rotated_retinanet.match_retinanet_anchors_to_gt",
+            side_effect=_capture_match,
+        ):
+            losses = compute_oriented_retinanet_loss(
+                classification_logits=cls_logits,
+                bbox_regression=bbox_regs,
+                anchors=anchor_levels,
+                gt_boxes=gt_boxes,
+                gt_labels=gt_labels,
+                image_sizes=image_sizes,
+                num_classes=num_classes,
+            )
+
+        assert seen == [anchor_levels[0].shape[0] + anchor_levels[1].shape[0]]
+        assert losses["loss_classifier"].requires_grad
+
     def test_rotated_retinanet_loss_computation(self):
         """Test that RotatedRetinaNet computes losses correctly."""
         model = RotatedRetinaNet(

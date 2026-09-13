@@ -2,6 +2,18 @@
 
 The data module provides dataset loading, image tiling, data augmentation, and evaluation utilities.
 
+## Train / eval splits
+
+`make eval-val` always scores the recipe **val** split. Whether that split is held-out depends on the dataset:
+
+| Dataset | Train | `make eval-val` | Held-out test |
+|---------|-------|-----------------|---------------|
+| **DOTA v1.0** | train **+ val** tiles (`train_tiles_dirs`; MMRotate pretrain) | **Leaky** — those val tiles are also in train | **Official Task 1** (`make dota-submit`; labels not public) |
+| **HRSC2016** | ImageSets **trainval** | ImageSets **test** (453 images) | Same as eval-val — test is **not** in train |
+| **FAIR1M** | official **train** tiles only | official **val** tiles | Gaofen test labels are not public; val is **not** in train |
+
+Do **not** call HRSC or FAIR1M `make eval-val` leaky. That word is DOTA-only. For DOTA, quote **Task 1** as the real test; eval-val is a convenience metric on tiles the model already saw.
+
 ## DOTA Dataset
 
 ### Label file format (official DOTA: comma-separated)
@@ -259,7 +271,7 @@ sample = sample.filter_by_class(drop_difficult=True)
 
 ### DOTA v1.0 official test (Task 1)
 
-Test **images** are public; test **labels are not**. Hub `eval-val` mAP is on val tiles that were also used in training. To score on the hidden test set, run sliding-window inference on full-size test rasters and upload a Task 1 zip to the [DOTA evaluation server](https://captain-whu.github.io/DOTA/evaluation.html) (v1.0 Task 1, oriented boxes).
+This is the **real DOTA test**. Test **images** are public; test **labels are not**. Zoo recipes train on **train+val tiles**, so `make eval-val` mAP is **leaky** (val tiles were in training). To score on the hidden test set, run sliding-window inference on full-size test rasters and upload a Task 1 zip to the [DOTA evaluation server](https://captain-whu.github.io/DOTA/evaluation.html) (v1.0 Task 1, oriented boxes).
 
 ```bash
 # Official download layout: test/images/*.png (no labelTxt)
@@ -374,7 +386,7 @@ HRSC2016/
 
 - Single class: **`ship`** (fine-grained `Class_ID` values are ignored).
 - XML `mbox_cx/cy/w/h/ang` uses **radians**; boxes are converted through the same polygon → RBox path as DOTA (**le90**).
-- Default ImageSets mapping (MMRotate): train → **`trainval`**, val → **`test`**. Override with `dataset.train_split` / `dataset.val_split`.
+- Default ImageSets mapping (MMRotate): train → **`trainval`**, val → **`test`**. Override with `dataset.train_split` / `dataset.val_split`. Test images are **not** in training; `make eval-val` is held-out ImageSets test (unlike leaky DOTA eval-val).
 - Oriented R-CNN, Faster R-CNN, and FCOS 1×/3× use **`keep_ratio`** (long edge 800) + `pad_size_divisor` 32. FCOS HRSC 1×/3× and Oriented R-CNN / Faster R-CNN 3× enable random rotate at p=0.5 **±20°**. Two-stage 1× recipes leave rotate off. Oriented R-CNN uses Smooth L1 + ProbIoU aux; Faster R-CNN keeps ProbIoU main + Smooth L1 aux. `make eval-val` / `odet preds` use the same whole-image path for `pad` / `keep_ratio` (no native sliding windows). DOTA eval-val stays on `fixed` pre-tiled rasters.
 - HRSC / DOTA final NMS: train `model`, eval-val `evaluation.final_nms_iou_threshold`, and deploy `production.final_nms_iou_threshold` are all **0.1** (MMRotate test parity). Two-stage HRSC keeps max **2000** dets/image and score **0.05**.
 - Optional DOTA export (for `odet tile-dota`): `odet hrsc-to-dota --data-root /path/to/HRSC2016 --output-dir /path/to/HRSC2016-dota`.
@@ -403,7 +415,7 @@ Fine-grained oriented detection (**37** classes under 5 coarse groups). Supporte
 | [Kaggle `ollypowell/fair1m-satellite-imagery-for-object-detection`](https://www.kaggle.com/datasets/ollypowell/fair1m-satellite-imagery-for-object-detection) | JPG + labels (~9 GB). Layout: `Dataset/Images/{Train,Val}/*.jpg` with labels in `Notebook_Working/{train,val}_labels/N.xml` (JPG stems `t_N` / `v_N` map to XML stem `N`). Same-stem `Dataset/Labels/Train/*.xml` also works. Optional `Dataset/labels*.parquet`. **License: CC BY-NC-SA 3.0 IGO.** |
 | Official Gaofen / ModelScope mirrors | TIFF + `labelXml` under `train/part1`, `train/part2`, `validation/` (TorchGeo layout) |
 
-**Kaggle notebook:** [`notebooks/kaggle_fair1m_tutorial.ipynb`](https://github.com/DL4EO/oriented-det/blob/main/notebooks/kaggle_fair1m_tutorial.ipynb) — attach the dataset, convert + tile, short train smoke (subset by default).
+**Kaggle notebook:** [`notebooks/kaggle_fair1m_tutorial.ipynb`](https://github.com/DL4EO/oriented-det/blob/main/notebooks/kaggle_fair1m_tutorial.ipynb) — attach the dataset, convert + tile, 1-epoch smoke (subset by default). Full 1× Faster R-CNN tiled-val mAP50 is **36.70%** (expected FAIR1M band; see [below](#local-1x-faster-rcnn)).
 
 Paper: Sun et al., *FAIR1M: A Benchmark Dataset for Fine-grained Object Recognition in High-Resolution Remote Sensing Imagery*, ISPRS 2022. [arXiv:2103.05569](https://arxiv.org/abs/2103.05569).
 
@@ -413,7 +425,7 @@ Native loader (`dataset.format: fair1m`) reads XML `points` polygons → le90 vi
 
 Images are typically 1k–10k px — do **not** train whole-image like HRSC.
 
-Official FAIR1M-1.0 under `/path/to/data/FAIR1M` already has **train (16,488) + val (8,287)**. Use those splits — do **not** pass `--val-fraction` (that would ignore official val and hold out from train). Gaofen **test** labels are not public. If a dump really has no val folder, add `--val-fraction 0.1 --split-seed 0` so the image-level split happens **before** tiling.
+Official FAIR1M-1.0 under `/path/to/data/FAIR1M` already has **train (16,488) + val (8,287)**. Recipes train on **train tiles only**; official val is **not** in training (unlike DOTA train+val). Use those splits — do **not** pass `--val-fraction` (that would ignore official val and hold out from train). Gaofen **test** labels are not public, so `make eval-val` is held-out official val, not the hidden test. If a dump really has no val folder, add `--val-fraction 0.1 --split-seed 0` so the image-level split happens **before** tiling.
 
 ```bash
 # 1) Native XML → DOTA folders (official train / val; JPEG/PNG copied as-is)
@@ -435,6 +447,28 @@ odet train --config configs/oriented_rcnn/fair1m_le90_1x.json
 Optional holdout protocol (only when there is no labeled val): sorted image stems, `md5(f"{seed}:{stem}")` bucket vs `val_fraction` (default seed **0**, fraction **0.1**). Stem lists are written to `FAIR1M-dota/ImageSets/{train,val}.txt`. Local eval uses the val tiles (official val, or that holdout). There is no FAIR1M test-submit tool.
 
 Recipes (1×, fixed 1024 canvas): [`configs/oriented_rcnn/fair1m_le90_1x.json`](https://github.com/DL4EO/oriented-det/blob/main/configs/oriented_rcnn/fair1m_le90_1x.json), [`configs/rotated_faster_rcnn/fair1m_le90_1x.json`](https://github.com/DL4EO/oriented-det/blob/main/configs/rotated_faster_rcnn/fair1m_le90_1x.json), [`configs/rotated_fcos/fair1m_le90_1x.json`](https://github.com/DL4EO/oriented-det/blob/main/configs/rotated_fcos/fair1m_le90_1x.json). Zoo roles: DOTA = pretrain Hub; HRSC = published small-data Hub; FAIR1M = fine-grained support only.
+
+### Local 1× Faster R-CNN (tiled val) {: #local-1x-faster-rcnn }
+
+A full 12-epoch finetune of [`fair1m_le90_1x.json`](https://github.com/DL4EO/oriented-det/blob/main/configs/rotated_faster_rcnn/fair1m_le90_1x.json) from `hf://rotated_faster_rcnn_dota_le90_1x` (37-way classifier re-init) reached **36.70%** mAP50 on non-empty val tiles (`runs/rotated_faster_rcnn/20260910-072116`, NVIDIA L4, ~24.5 h). That is **low versus DOTA** (same detector ~74% official Task 1 / ~83% leaky eval-val) and **in band for FAIR1M**.
+
+| Epoch | Train loss | Val mAP50 |
+|------:|-----------:|----------:|
+| 4 | 0.496 | 30.03% |
+| 8 | 0.456 | 33.71% |
+| 12 | 0.412 | **36.70%** |
+
+Protocol: train-time periodic mAP (`compute_map_every_n_epochs: 4`), score ≥ 0.05, rotated IoU 0.50, exact CPU polygon, `filter_empty_gt` val (9,896 tiles; 20,055 train). **Not** the Gaofen hidden test and **not** FAIR1M `mAP_F`. There is no FAIR1M Hub zoo.
+
+Literature (different test sets; cited as a band only):
+
+- FAIR1M paper, Faster R-CNN R101, official OBB: **31.53%**
+- Later Rotated Faster R-CNN R50 papers: **~33–35%**
+- Oriented R-CNN R50: **~39–42%**
+
+The bottleneck is **class ID, not boxes**. Epoch 12 mean best IoU vs any detection was **0.62**, same-class **0.50**, GT cover **62%** (DOTA ~88%). ~32.6k GTs had IoU ≥ 0.5 with a **wrong-class** box. Train imbalance is **1038×** (Small Car 143,249 vs C919 138); the 1× recipe uses unweighted CE (`roi_grouped_ce` off). Rare subtypes stay near 0 AP (Tractor, other-vehicle, other-ship, Trailer, Boeing777, ARJ21, C919, Truck Tractor). Sports fields are easy (Baseball Field 88.5%, Tennis Court 81%). Loss and mAP were still climbing at epoch 12 (horizontal RPN priors, 37-way head randomly initialized).
+
+Do **not** compare this number to DOTA Hub tables. To raise it: resume / 3× from this checkpoint; train Oriented R-CNN 1× (rotated proposals); enable `loss.roi_grouped_ce_*` or class weights for airplane / ship / vehicle subtypes. The Kaggle notebook is a **1-epoch smoke** and will not reproduce 36.7%.
 
 ## Image Tiling
 
@@ -485,6 +519,7 @@ visualize_tiles(
 
 ## Data Augmentation
 
+Training collate applies geometric augs after spatial resize: random flips (`preprocessing.enable_flip_*`, MMRotate `RRandomFlip`) then optional random rotate (`enable_random_rotate`, `random_rotate_prob`, `random_rotate_angle_range` in degrees — MMRotate `PolyRandomRotate`, `auto_bound=False`). Val and inference do not flip or rotate. FCOS HRSC 1×/3× and Oriented R-CNN / Faster R-CNN HRSC 3× use p=0.5 ±20°; two-stage 1× and DOTA Hub leave rotate off. RetinaNet 1× RR ablation (`configs/rotated_retinanet/dota_le90_1x_rr.json`) uses p=0.5 ±180°.
 Training collate applies geometric augs after spatial resize: random flips (`preprocessing.enable_flip_*`, MMRotate `RRandomFlip`) then optional random rotate (`enable_random_rotate`, `random_rotate_prob`, `random_rotate_angle_range` in degrees — MMRotate `PolyRandomRotate`, `auto_bound=False`). Val and inference do not flip or rotate. FCOS HRSC 1×/3× and Oriented R-CNN / Faster R-CNN HRSC 3× use p=0.5 ±20°; two-stage 1× and DOTA Hub leave rotate off. RetinaNet 1× RR ablation (`configs/rotated_retinanet/dota_le90_1x_rr.json`) uses p=0.5 ±180°.
 
 ### 1. Geometric Transforms (Oriented Bounding Box Aware)
@@ -573,6 +608,8 @@ augmented_image = transform(image)
 ```
 
 ## Evaluation
+
+Split protocol (DOTA leaky eval-val vs HRSC/FAIR1M held-out): see [Train / eval splits](#train--eval-splits).
 
 ### Oriented mAP
 

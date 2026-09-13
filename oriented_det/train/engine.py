@@ -1852,7 +1852,7 @@ def evaluate(
                     if total_dets > 50000:
                         print(f"  Warning: Large number of detections may slow down mAP computation")
                         print(
-                            f"  Consider increasing evaluation.score_threshold "
+                            f"  Consider increasing evaluation.train_val_score_threshold "
                             f"(current: {score_threshold}) for faster mAP matching"
                         )
                 _map_t0 = time.perf_counter()

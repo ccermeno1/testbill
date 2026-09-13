@@ -4,7 +4,7 @@
 
 - Python >= 3.9
 - [uv](https://docs.astral.sh/uv/) (recommended for Python versions, virtualenv, and installs)
-- PyTorch and TorchVision (see below)
+- PyTorch >= 2.4.0 and TorchVision >= 0.19.0 (see below)
 - Pillow >= 9.0
 
 ## Install from repository (Linux, CUDA 12.1)
@@ -18,8 +18,8 @@ cd oriented-det
 uv venv --python 3.12
 source .venv/bin/activate
 
-# PyTorch with CUDA 12.1 (2.3.0 or newer)
-uv pip install "torch>=2.3.0" "torchvision>=0.18.0" --index-url https://download.pytorch.org/whl/cu121
+# PyTorch with CUDA 12.1 (2.4.0 or newer)
+uv pip install "torch>=2.4.0" "torchvision>=0.19.0" --index-url https://download.pytorch.org/whl/cu121
 
 # Project dependencies and editable install (includes huggingface_hub for Hub weights)
 uv pip install -r requirements.txt

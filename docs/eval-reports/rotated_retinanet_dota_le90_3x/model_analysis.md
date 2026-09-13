@@ -1,5 +1,7 @@
 # Model Analysis Report
 
+Hub slug **`rotated_retinanet_dota_le90_3x`**. Interim June Hub report. The mAP50 below is **leaky eval-val** (val tiles are in train). Official **Task 1** is the real held-out test; it will replace this file after the 3× retrain.
+
 - Generated at: `2026-06-15T02:38:20.099444`
 
 ## Model metadata

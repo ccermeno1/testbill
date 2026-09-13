@@ -54,6 +54,7 @@ from .config import (
     resolve_preds_score_threshold,
     resolve_preds_final_nms_iou_threshold,
     effective_eval_metric_thresholds,
+    merge_per_class_score_thresholds,
     apply_inference_config_to_model,
 )
 
@@ -94,6 +95,7 @@ __all__ = [
     "resolve_preds_score_threshold",
     "resolve_preds_final_nms_iou_threshold",
     "effective_eval_metric_thresholds",
+    "merge_per_class_score_thresholds",
     "apply_inference_config_to_model",
     "CheckpointConfig",
     "AugmentationConfig",

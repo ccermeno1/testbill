@@ -56,6 +56,7 @@ from oriented_det.train.config import (
     get_preprocessing_params,
     apply_inference_config_to_model,
     effective_eval_metric_thresholds,
+    merge_per_class_score_thresholds,
     resolve_preds_score_threshold,
     resolve_preds_final_nms_iou_threshold,
     resolve_inference_sliding_window_overlap_pixels,
@@ -1419,7 +1420,9 @@ def run_inference_and_save(experiment_dir: str, checkpoint_path: str, config_pat
         test_dir: unlabeled official DOTA test images (``test/`` or ``test/images/``)
         vis_score_threshold: score threshold for visualization (default: 0.5).
         score_threshold: score threshold for diagnostics and mAP. If None, uses
-            ``effective_eval_metric_thresholds`` (``production.*`` overrides ``evaluation.*`` when set).
+            :func:`resolve_preds_score_threshold` (CLI → ``evaluation.preds_score_threshold`` → 0.05).
+            Per-class floors merge ``evaluation`` then ``production`` via
+            :func:`merge_per_class_score_thresholds`.
         overlap_pixels: sliding-window overlap per axis. If None (and ``overlap_ratio`` is None),
             uses ``resolve_inference_sliding_window_overlap_pixels(config)`` (production.overlap_pixels
             or default 200).
@@ -1537,7 +1540,8 @@ def run_inference_and_save(experiment_dir: str, checkpoint_path: str, config_pat
             f"Using CLI max_detections_per_image={int(max_detections_per_image)} "
             "(overrides config model.max_detections_per_image)"
         )
-    _, cfg_thr_pc, cfg_thr_iou = effective_eval_metric_thresholds(config)
+    _, _, cfg_thr_iou = effective_eval_metric_thresholds(config)
+    cfg_thr_pc = merge_per_class_score_thresholds(config)
 
     per_cls_thr: Optional[Dict[str, float]] = per_class_score_threshold
     score_threshold, score_src = resolve_preds_score_threshold(
@@ -2225,7 +2229,7 @@ def main():
     parser.add_argument('--score-threshold', type=float, default=None,
                        help='Score floor for odet preds / eval-val mAP and diagnostics. '
                             'Default: evaluation.preds_score_threshold when set, else 0.05. '
-                            'Ignores production.score_threshold and evaluation.score_threshold '
+                            'Ignores production.score_threshold and evaluation.train_val_score_threshold '
                             '(those stay for deploy and train val).')
     parser.add_argument('--no-per-class-score-thresholds', action='store_true',
                        help='Ignore evaluation.per_class_score_threshold from config and use the global score threshold only.')
@@ -2344,9 +2348,11 @@ def main():
 
         diag_prev = meta.get('diagnostics') if isinstance(meta.get('diagnostics'), dict) else {}
 
-        cfg_thr_sc, cfg_thr_pc, cfg_thr_iou = (None, None, None)
+        cfg_thr_sc, _, cfg_thr_iou = (None, None, None)
+        cfg_thr_pc = None
         if config is not None:
-            cfg_thr_sc, cfg_thr_pc, cfg_thr_iou = effective_eval_metric_thresholds(config)
+            cfg_thr_sc, _, cfg_thr_iou = effective_eval_metric_thresholds(config)
+            cfg_thr_pc = merge_per_class_score_thresholds(config)
 
         iou_thr = args.iou_threshold
         if iou_thr is None:

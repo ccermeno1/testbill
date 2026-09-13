@@ -1,10 +1,19 @@
 """Rotated RetinaNet assignment (not the shared two-stage matcher)."""
 
+import math
 from unittest.mock import patch
 
+import pytest
 import torch
 
-from oriented_det.models.retinanet_assign import match_retinanet_anchors_to_gt
+from oriented_det.geometry.rbox import RBox
+from oriented_det.models.retinanet_assign import (
+    _paired_exact_rotated_iou,
+    match_retinanet_anchors_to_gt,
+)
+from oriented_det.ops.diff_iou_rotated import diff_iou_rotated_2d
+from oriented_det.ops.iou import rbox_iou
+from oriented_det.ops.gpu_ops import oriented_box_hbb_iou_gpu
 
 
 def _box(cx, cy, w, h, angle=0.0):
@@ -25,6 +34,43 @@ def test_identical_anchor_is_positive_far_anchor_is_background():
     assert matched[0].item() == 0
     assert labels[1].item() == 0
     assert matched[1].item() == -1
+
+
+def test_zero_iou_low_quality_match_stays_background():
+    """min_pos_iou=0 must not promote index 0 when every IoU is 0."""
+    anchors = torch.tensor(
+        [
+            [10.0, 10.0, 8.0, 8.0, 0.0],
+            [30.0, 30.0, 8.0, 8.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    gt = _box(800.0, 800.0, 16.0, 8.0, 0.4)
+    labels, matched = match_retinanet_anchors_to_gt(
+        anchors, gt, min_pos_iou=0.0, match_low_quality=True
+    )
+    assert torch.equal(labels, torch.zeros(2, dtype=torch.long))
+    assert torch.equal(matched, torch.full((2,), -1, dtype=torch.long))
+
+
+def test_concat_assign_does_not_force_coarse_level_when_fine_level_fits():
+    """Per-level min_pos_iou=0 would mark a huge P7 prior; concat keeps only the P3 best."""
+    p3 = torch.tensor([[64.0, 64.0, 32.0, 16.0, 0.0]], dtype=torch.float32)
+    p7 = torch.tensor([[64.0, 64.0, 256.0, 256.0, 0.0]], dtype=torch.float32)
+    gt = _box(64.0, 64.0, 32.0, 16.0, 0.0)
+
+    labels_p7, _ = match_retinanet_anchors_to_gt(
+        p7, gt, min_pos_iou=0.0, match_low_quality=True
+    )
+    assert labels_p7[0].item() == 1
+
+    labels_cat, matched_cat = match_retinanet_anchors_to_gt(
+        torch.cat([p3, p7], dim=0), gt, min_pos_iou=0.0, match_low_quality=True
+    )
+    assert labels_cat[0].item() == 1
+    assert matched_cat[0].item() == 0
+    assert labels_cat[1].item() == 0
+    assert matched_cat[1].item() == -1
 
 
 def test_low_quality_match_assigns_best_anchor_when_all_ious_below_pos():
@@ -108,6 +154,53 @@ def test_hbb_path_delegates_to_shared_matcher():
     assert mocked.call_args.kwargs["use_hbb_for_matching"] is True
     assert labels is sentinel_labels
     assert matched is sentinel_matched
+
+
+def test_obb_rejects_thin_rotated_gt_that_hbb_accepts():
+    """Horizontal prior vs thin ~45° GT: circum-HBB ≥0.5 but exact OBB IoU <0.4."""
+    anchors = torch.tensor([[64.0, 64.0, 32.0, 16.0, 0.0]], dtype=torch.float32)
+    gt = torch.tensor(
+        [[64.0, 64.0, 32.0, 8.0, math.radians(45.0)]], dtype=torch.float32
+    )
+    hbb = float(oriented_box_hbb_iou_gpu(anchors, gt)[0, 0])
+    obb = float(diff_iou_rotated_2d(anchors, gt))
+    assert hbb >= 0.5
+    assert obb < 0.4
+
+    labels_obb, _ = match_retinanet_anchors_to_gt(
+        anchors,
+        gt,
+        use_hbb_for_matching=False,
+        positive_iou_threshold=0.5,
+        negative_iou_threshold=0.4,
+        match_low_quality=False,
+    )
+    labels_hbb, _ = match_retinanet_anchors_to_gt(
+        anchors,
+        gt,
+        use_hbb_for_matching=True,
+        positive_iou_threshold=0.5,
+        negative_iou_threshold=0.4,
+        match_low_quality=False,
+    )
+    assert labels_obb[0].item() == 0
+    assert labels_hbb[0].item() == 1
+
+
+def test_assigner_exact_iou_matches_diff_iou_rotated_and_shapely():
+    a = torch.tensor([[10.0, 20.0, 40.0, 12.0, 0.4]], dtype=torch.float32)
+    b = torch.tensor([[14.0, 18.0, 36.0, 14.0, -0.25]], dtype=torch.float32)
+    got = float(_paired_exact_rotated_iou(a, b))
+    ref = float(diff_iou_rotated_2d(a, b))
+    shapely = float(
+        rbox_iou(
+            RBox(*[float(x) for x in a[0]]),
+            RBox(*[float(x) for x in b[0]]),
+            intersection_backend="auto",
+        )
+    )
+    assert got == pytest.approx(ref, abs=1e-6)
+    assert got == pytest.approx(shapely, abs=3e-3)
 
 
 def test_dense_p3_grid_finishes_without_materializing_full_sampling():
