@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
 
-from testbank.dataio.loader import (
+from testbank.dataio.prepare import (
     DEFAULT_MIN_RELATIVE_AREA,
     FilterReport,
     load_samples,

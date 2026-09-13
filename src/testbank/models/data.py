@@ -1,6 +1,6 @@
 """Dataset de entrenamiento del candidato propio.
 
-Lee por la misma puerta que todo lo demas: `dataio/view.prepare`, que aplica el
+Lee por la misma puerta que todo lo demas: `dataio/prepare.prepare`, que aplica el
 filtro de area relativa y la politica de billetes que cruzan el borde. Si esto
 cargara los ficheros por su cuenta, el candidato propio entrenaria con una
 verdad distinta de la de Ultralytics y la tabla los compararia como iguales.
@@ -30,7 +30,7 @@ import torch
 from torch.utils.data import Dataset
 
 from testbank.config import Config
-from testbank.dataio.view import PreparedSample, prepare
+from testbank.dataio.prepare import PreparedSample, prepare
 from testbank.geometry.quad import Quad
 
 

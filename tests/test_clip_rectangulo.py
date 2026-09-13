@@ -19,7 +19,7 @@ import math
 import pytest
 from shapely.geometry import Polygon, box
 
-from testbank.dataio.view import clip_quad
+from testbank.dataio.prepare import clip_quad
 from testbank.geometry.quad import Quad
 
 # Recortar un billete muy salido lo deja casi cuadrado, y entonces el ancla del

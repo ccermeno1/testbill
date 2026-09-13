@@ -20,7 +20,6 @@ from testbank.data.discover import Layout, LayoutMode, Sample, detect_layout
 
 SPLIT_NAMES = ("train", "valid", "test")
 MANIFEST_NAME = "manifest.json"
-FOLDS_DIRNAME = "folds"
 TEST_LOG_PATH = Path("runs") / "test_evaluations.jsonl"
 
 _HEADER = (
@@ -202,8 +201,7 @@ def materialize_splits(
         raise SplitError(
             f"ya hay una particion materializada en {splits_dir}. Se niega a "
             "sobrescribirla: eso invalidaria toda comparacion anterior. Usa "
-            "extend-splits para anadir muestras, o --overwrite si de verdad "
-            "quieres empezar de cero"
+            "--overwrite si de verdad quieres empezar de cero"
         )
 
     layout = detect_layout(data_root)
@@ -526,183 +524,7 @@ class SplitLoader:
 # -- extension --------------------------------------------------------------
 
 
-def extend_splits(
-    splits_dir: str | Path,
-    *,
-    data_root: str | Path | None = None,
-    ratios: tuple[float, float, float] = (0.7, 0.15, 0.15),
-    seed: int | None = None,
-) -> dict:
-    """Anexa muestras nuevas sin reordenar las existentes.
-
-    Una muestra nueva de un grupo ya existente hereda su particion sin opcion.
-    """
-    splits_dir = Path(splits_dir)
-    manifest_path = splits_dir / MANIFEST_NAME
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    root = Path(data_root or manifest["data_root"])
-
-    layout = detect_layout(root)
-    assignment = {
-        name: _read_split_file(splits_dir / f"{name}.txt") for name in SPLIT_NAMES
-    }
-    known = {sid for ids in assignment.values() for sid in ids}
-    new_samples = [s for s in layout.all_samples if s.sample_id not in known]
-    if not new_samples:
-        return {"added": {name: 0 for name in SPLIT_NAMES}, "manifest": manifest}
-
-    strategy = GroupStrategy(manifest["group_strategy"])
-    config = GroupConfig(
-        strategy=strategy,
-        regex=manifest.get("group_regex"),
-        manifest_path=(
-            Path(manifest["group_manifest"]) if manifest.get("group_manifest") else None
-        ),
-        independence_confirmed=True,
-    )
-    resolver = config.resolver(require_independence_confirmation=False)
-
-    group_split: dict[str, str] = {}
-    by_id = {s.sample_id: s for s in layout.all_samples}
-    for name in SPLIT_NAMES:
-        for sid in assignment[name]:
-            sample = by_id.get(sid)
-            if sample is not None:
-                group_split.setdefault(resolver.key(sample), name)
-
-    if layout.mode is LayoutMode.ADOPT:
-        where = {
-            s.sample_id: split
-            for split, samples in layout.groups.items()
-            for s in samples
-        }
-    else:
-        where = {}
-
-    inherited: list[str] = []
-    fresh: dict[str, list[str]] = {}
-    for sample in new_samples:
-        key = resolver.key(sample)
-        if key in group_split:
-            assignment[group_split[key]].append(sample.sample_id)
-            inherited.append(sample.sample_id)
-        elif sample.sample_id in where:
-            assignment[where[sample.sample_id]].append(sample.sample_id)
-        else:
-            fresh.setdefault(key, []).append(sample.sample_id)
-
-    added = {name: 0 for name in SPLIT_NAMES}
-    if fresh:
-        rng = random.Random(seed if seed is not None else manifest["seed"] + 1)
-        keys = sorted(fresh)
-        rng.shuffle(keys)
-        total = len(keys)
-        n_train = round(total * ratios[0])
-        n_valid = min(round(total * ratios[1]), total - n_train)
-        chunks = {
-            "train": keys[:n_train],
-            "valid": keys[n_train : n_train + n_valid],
-            "test": keys[n_train + n_valid :],
-        }
-        for name, chunk in chunks.items():
-            for key in chunk:
-                assignment[name].extend(sorted(fresh[key]))
-                added[name] += len(fresh[key])
-
-    _check_disjoint(assignment)
-    _check_groups_disjoint(assignment, layout, resolver)
-    for name in SPLIT_NAMES:
-        _write_split_file(splits_dir / f"{name}.txt", assignment[name])
-
-    manifest["counts"] = {name: len(assignment[name]) for name in SPLIT_NAMES}
-    manifest["digest"] = _digest(assignment)
-    manifest.setdefault("history", []).append(
-        {
-            "action": "extend",
-            "utc": _now(),
-            "new_samples": len(new_samples),
-            "inherited_by_group": len(inherited),
-            "added_fresh": added,
-        }
-    )
-    manifest_path.write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
-    return {"added": added, "inherited": len(inherited), "manifest": manifest}
-
-
 # -- pliegues ---------------------------------------------------------------
-
-
-def make_folds(
-    splits_dir: str | Path,
-    *,
-    k: int = 5,
-    seed: int = 20260910,
-    data_root: str | Path | None = None,
-    overwrite: bool = False,
-    groups: GroupConfig | None = None,
-) -> dict:
-    """Pliegues agrupados sobre train+valid, materializados y congelados.
-
-    Test se queda fuera, sellado, igual que siempre.
-
-    `groups` sustituye a la agrupacion declarada en el manifiesto de la
-    particion. Tiene sentido que se pueda: la particion adoptada viene dada por
-    el export y no la elegimos, pero los PLIEGUES los construimos nosotros, asi
-    que si sabemos de casi-duplicados podemos evitar partirlos aqui aunque la
-    particion de origen los reparta. Ver `data/duplicates.py`.
-    """
-    loader = SplitLoader(splits_dir, data_root)
-    folds_dir = Path(splits_dir) / FOLDS_DIRNAME
-    if folds_dir.exists() and any(folds_dir.iterdir()) and not overwrite:
-        raise SplitError(
-            f"ya hay pliegues congelados en {folds_dir}; usa --overwrite para rehacerlos"
-        )
-
-    pool = list(loader.load("train")) + list(loader.load("valid"))
-    config = groups or GroupConfig(
-        strategy=GroupStrategy(loader.manifest["group_strategy"]),
-        regex=loader.manifest.get("group_regex"),
-        manifest_path=(
-            Path(loader.manifest["group_manifest"])
-            if loader.manifest.get("group_manifest")
-            else None
-        ),
-        independence_confirmed=True,
-    )
-    resolver = config.resolver(require_independence_confirmation=False)
-
-    by_group: dict[str, list[str]] = {}
-    for sample in pool:
-        by_group.setdefault(resolver.key(sample), []).append(sample.sample_id)
-
-    keys = sorted(by_group)
-    rng = random.Random(seed)
-    rng.shuffle(keys)
-    buckets: list[list[str]] = [[] for _ in range(k)]
-    # Reparto por tamano descendente para que los pliegues queden equilibrados
-    # aunque los grupos sean de tamanos muy distintos.
-    for key in sorted(keys, key=lambda g: (-len(by_group[g]), g)):
-        target = min(range(k), key=lambda i: (len(buckets[i]), i))
-        buckets[target].extend(sorted(by_group[key]))
-
-    folds_dir.mkdir(parents=True, exist_ok=True)
-    for index, bucket in enumerate(buckets):
-        _write_split_file(folds_dir / f"fold_{index}.txt", sorted(bucket))
-
-    summary = {
-        "k": k,
-        "seed": seed,
-        "group_strategy": config.strategy.value,
-        "pool_size": len(pool),
-        "fold_sizes": [len(b) for b in buckets],
-        "created_utc": _now(),
-    }
-    (folds_dir / "manifest.json").write_text(
-        json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
-    return summary
 
 
 def read_test_accesses(log_path: Path | None = None) -> list[dict]:

@@ -19,7 +19,6 @@ from __future__ import annotations
 import numpy as np
 
 from testbank.config import Config
-from testbank.metrics.bootstrap import bootstrap_images
 from testbank.metrics.core import (
     PolygonCache,
     angle_error_deg,
@@ -34,6 +33,7 @@ from testbank.metrics.crop import (
 from testbank.metrics.detection import (
     COCO_THRESHOLDS,
     ap_from_stats,
+    bootstrap_images,
     counts_from_stats,
     image_stats,
 )

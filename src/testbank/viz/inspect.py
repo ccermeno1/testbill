@@ -21,7 +21,7 @@ import numpy as np
 
 from testbank.checks.visibility import Finding, check_quads
 from testbank.data.discover import Sample
-from testbank.dataio.loader import (
+from testbank.dataio.prepare import (
     DEFAULT_MIN_RELATIVE_AREA,
     DroppedAnnotation,
     load_sample,

@@ -28,8 +28,6 @@ from testbank.data.splits import (
     GroupStrategy,
     SplitError,
     SplitLoader,
-    extend_splits,
-    make_folds,
     materialize_splits,
     read_test_accesses,
 )
@@ -128,41 +126,6 @@ def cmd_make_splits(args, config: Config) -> int:
     return 0
 
 
-def cmd_extend_splits(args, config: Config) -> int:
-    result = extend_splits(
-        args.splits_dir or config.data.splits_dir,
-        data_root=args.data_root,
-        ratios=config.splits.ratios,
-        seed=args.seed,
-    )
-    print(f"heredadas por grupo: {result.get('inherited', 0)}")
-    print(f"nuevas asignadas:    {result['added']}")
-    return 0
-
-
-def cmd_make_folds(args, config: Config) -> int:
-    groups = None
-    if args.group_key or args.group_manifest:
-        groups = GroupConfig(
-            strategy=GroupStrategy(args.group_key or GroupStrategy.MANIFEST.value),
-            regex=args.group_regex,
-            manifest_path=Path(args.group_manifest) if args.group_manifest else None,
-            independence_confirmed=True,
-        )
-    summary = make_folds(
-        args.splits_dir or config.data.splits_dir,
-        k=args.k or config.splits.folds,
-        seed=args.seed if args.seed is not None else config.splits.seed,
-        data_root=args.data_root,
-        overwrite=args.overwrite,
-        groups=groups,
-    )
-    print(f"{summary['k']} pliegues sobre {summary['pool_size']} muestras de train+valid")
-    print(f"  tamanos: {summary['fold_sizes']}")
-    print("  test sigue sellado y fuera de los pliegues")
-    return 0
-
-
 def cmd_check_visibility(args, config: Config) -> int:
     loader = SplitLoader(args.splits_dir or config.data.splits_dir, args.data_root)
     splits = args.splits or ["train", "valid"]
@@ -242,8 +205,8 @@ def cmd_find_duplicates(args, config: Config) -> int:
         path = write_manifest(report, args.manifest_out)
         print(f"\nManifiesto de grupos: {path}")
         print(
-            "  Usalo en los pliegues, que si generamos nosotros:\n"
-            f"    testbank make-folds --group-key manifest --group-manifest {path}"
+            "  Usalo al repartir:\n"
+            f"    testbank make-splits --repartition --group-key manifest --group-manifest {path}"
         )
     return 0
 
@@ -468,22 +431,6 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    extend = subparsers.add_parser("extend-splits", help="anexa muestras nuevas")
-    extend.add_argument("--seed", type=int, default=None)
-
-    folds = subparsers.add_parser("make-folds", help="pliegues agrupados sobre train+valid")
-    folds.add_argument(
-        "--group-key",
-        choices=[s.value for s in GroupStrategy],
-        default=None,
-        help="agrupacion para los pliegues; sustituye a la de la particion",
-    )
-    folds.add_argument("--group-regex", default=None)
-    folds.add_argument("--group-manifest", default=None)
-    folds.add_argument("--k", type=int, default=None)
-    folds.add_argument("--seed", type=int, default=None)
-    folds.add_argument("--overwrite", action="store_true")
-
     visibility = subparsers.add_parser(
         "check-visibility", help="consistencia de la politica de visibilidad"
     )
@@ -606,8 +553,6 @@ def build_parser() -> argparse.ArgumentParser:
 _COMMANDS = {
     "detect": cmd_detect,
     "make-splits": cmd_make_splits,
-    "extend-splits": cmd_extend_splits,
-    "make-folds": cmd_make_folds,
     "check-visibility": cmd_check_visibility,
     "train": cmd_train,
     "find-duplicates": cmd_find_duplicates,

@@ -7,7 +7,7 @@ import pytest
 torch = pytest.importorskip("torch", reason="el candidato propio necesita torch")
 
 from testbank.config import AngleWeightConfig
-from testbank.models.angle_weight import (
+from testbank.models.losses import (
     DECAYS,
     angle_weight,
     side_ratio_px,

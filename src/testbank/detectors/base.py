@@ -28,7 +28,7 @@ from typing import ClassVar, Protocol, runtime_checkable
 from testbank.config import Config
 from testbank.dataio.formats import ImageSize
 from testbank.dataio.image_sizes import SizeIndex
-from testbank.dataio.loader import load_samples
+from testbank.dataio.prepare import load_samples
 from testbank.experiment.run import ComponentInfo
 from testbank.geometry.quad import Quad
 from testbank.metrics.core import ImageEval, Prediction

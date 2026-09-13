@@ -40,7 +40,6 @@ class SplitConfig(StrictModel):
     group_regex: str | None = None
     group_manifest: Path | None = None
     i_confirm_independence: bool = False
-    folds: int = 5
 
     @model_validator(mode="after")
     def _ratios_sum_to_one(self) -> SplitConfig:
@@ -226,7 +225,7 @@ class AngleWeightConfig(StrictModel):
     @field_validator("decay")
     @classmethod
     def _known_decay(cls, value: str) -> str:
-        from testbank.models.angle_weight import DECAYS
+        from testbank.models.losses import DECAYS
 
         if value not in DECAYS:
             raise ValueError(

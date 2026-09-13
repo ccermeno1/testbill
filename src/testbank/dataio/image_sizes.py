@@ -24,18 +24,6 @@ def read_size(path: str | Path) -> tuple[int, int]:
         return image.size  # (width, height)
 
 
-def build_index(samples, *, out_path: str | Path | None = None) -> dict[str, list[int]]:
-    """Construye {sample_id: [ancho, alto]} y lo guarda si se pide."""
-    index = {s.sample_id: list(read_size(s.image_path)) for s in samples}
-    if out_path is not None:
-        out_path = Path(out_path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(
-            json.dumps(index, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
-    return index
-
-
 def load_index(path: str | Path) -> dict[str, tuple[int, int]]:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
     return {key: (int(value[0]), int(value[1])) for key, value in raw.items()}

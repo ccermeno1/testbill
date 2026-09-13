@@ -18,9 +18,9 @@ from shapely.geometry import Polygon
 
 from testbank.models.ddgrcf import DdgrcfYoloxObb
 from testbank.models.ddgrcf import load_pretrained as load_ddgrcf
-from testbank.models.polygon import box_corners, pairwise_rotated_iou, rotated_iou
+from testbank.models.losses import regularize_angle_ddgrcf
+from testbank.models.overlap import box_corners, pairwise_rotated_iou, rotated_iou
 from testbank.models.pretrained import load_megvii_yolox, remap_megvii_key
-from testbank.models.recipes import regularize_angle_ddgrcf
 from testbank.models.yolox_obb import YoloxObb
 
 torch.manual_seed(0)

@@ -98,7 +98,7 @@ o los datos. → `data/datasets.py`
 shapely no cabe en el bucle de entrenamiento, así que la asignación usa
 envolventes alineadas y la pérdida se descompone en forma + giro. La evaluación
 sigue usando shapely, de modo que si la aproximación reparte mal el compromiso,
-el número final lo delata. → `models/assign.py`, `models/loss.py`
+el número final lo delata. → `models/assign.py`, `models/losses.py`
 
 **Se entrena con la verdad recortada y se mide con la sin recortar.** La política
 `clip` ajusta la caja al marco; las métricas evalúan contra el quad original.
@@ -158,9 +158,10 @@ con tests de regresión en `tests/test_clip_rectangulo.py`:
   que se sale 0.029 por arriba, la restricción `y >= 0` se «arreglaba» encogiendo
   el lado **largo** de 0.890 a 0.064. Cumplía todo y conservaba el 8% del billete.
 
-Consecuencia práctica: `clip` ya **no está vetado** en los formatos que solo
-representan rectángulos (`voc_xml`, `yolox_obb_voc`). El veto se ha sustituido por
-una comprobación geométrica real antes de escribir nada.
+Consecuencia práctica: los formatos que solo representan rectángulos dejaron
+de necesitar un veto a `clip`. Esos formatos (`voc_xml`, `yolox_obb_voc`) se
+quitaron después en el refactor por falta de consumidor, y con ellos el veto:
+`dota` y `coco` aceptan cualquier cuadrilátero.
 
 **El atenuador de ángulo puede sobrar.** Existe por el 19% de cajas casi
 cuadradas, que probablemente es artefacto del redimensionado. Si se resuben los
@@ -189,32 +190,20 @@ declara nadie y el resolutor lo sube sin avisar. → *Entorno para RTMDet-R*
 para los demás. El `run.json` registra la versión, pero sigue siendo una
 comparación entre entornos separados por dos años de PyTorch.
 
-**El fork de YOLOX-OBB es un clon parcheado, no un paquete.** Cinco parches
-(`tools/patch_yolox_obb_fork.py`): `polyiou` por shapely, las clases, un stub de
-`apex`, y dos alias de NumPy eliminados en la 2.0. Un `git pull` del fork puede
-dejar cualquiera sin efecto; `--check` lo detecta. Y su entrenamiento exige
-CUDA por diseño suyo. → *buzhidaoshenme/YOLOX-OBB*
-
-**El torch del entorno principal es CPU.** Vale para los circuitos cortos; para
-las líneas base largas y para el fork hay que instalar el de CUDA en ese mismo
-entorno. → *Uso*
+**El torch del entorno principal es CPU.** Vale para los circuitos cortos y
+para un Mac (MPS); para líneas base largas en PC hay que instalar el de CUDA en
+ese mismo entorno. → *Uso*
 
 ### Sin probar todavía
 
 - **RTMDet-R no ha entrenado nunca.** Verificado que la config se construye y el
   modelo se instancia (4.873.470 parámetros); no se ha lanzado un entrenamiento.
-- **El fork de YOLOX-OBB no ha entrenado nunca.** Su `predict` está verificado
-  en CPU (14.196 cajas, todas dentro del marco); su `Trainer` exige CUDA y este
-  equipo no tiene.
-- **DDGRCF/YOLOX_OBB no ha importado siquiera.** Sus operadores exigen MSVC y
-  aquí no hay compilador; el camino de datos sí está verificado entero.
 - **La partición re-hecha no se ha usado para entrenar.** `--repartition` está
   medido sobre el export real (cero pares cruzando, los ocho tipos en cada lado)
   pero la partición activa en `splits/` sigue siendo la del export. Cambiarla es
   una decisión, y anula toda comparación con ejecuciones anteriores.
 - **`evaluate-test` no se ha ejecutado.** Deliberado: gastaría un acceso al
   conjunto sellado sobre un modelo que no significa nada.
-- **`voc_xml` no lo consume ningún candidato.** → aviso en `dataio/export.py`
 - **Ninguna línea base larga se ha lanzado.** Todo lo medido son pruebas de
   circuito de 1 o 2 épocas, cuyos números no significan nada.
 
@@ -394,16 +383,18 @@ crear**; en modo adoptar no elegimos el reparto, únicamente lo congelamos.
 **Integridad al cargar.** Una muestra en dos particiones es error fatal con
 mensaje que la identifica. Con clave de grupo, también un grupo repartido.
 
-**`extend-splits`** anexa muestras nuevas sin reordenar las existentes. Una
-muestra nueva de un grupo ya existente hereda su partición sin opción.
+**Sin `extend-splits`.** Hubo un comando para anexar muestras nuevas a una
+partición ya materializada; se quitó en el refactor. Si llega un export nuevo,
+o se adopta su partición o se re-parte con `--repartition`: dos caminos que
+hacen cosas distintas con los datos nuevos era una ambigüedad de más.
 
 **Test sellado.** `SplitLoader.load("test")` exige `allow_test=True`. El runner
 nunca lo pasa. El comando aparte `evaluate-test` registra cada acceso en
 `runs/test_evaluations.jsonl`.
 
-**Pliegues.** `make-folds` materializa 5 pliegues agrupados sobre train+valid en
-`splits/folds/fold_{k}.txt`, congelados igual que las particiones. Test queda
-fuera.
+**Sin validación cruzada.** Hubo un `make-folds`; se quitó en el refactor
+porque la validación cruzada quedó descartada y el runner de pliegues nunca se
+escribió. El manifiesto de casi-duplicados sirve ahora para `--repartition`.
 
 ## Métricas
 
@@ -549,7 +540,7 @@ Lo que sustituye a sus operadores compilados:
 
 | Suyo (C++/CUDA) | Aquí |
 |---|---|
-| `box_iou_rotated` en el SimOTA | `models/polygon.py`: IoU exacto de polígonos en torch, 18,6 ms por imagen |
+| `box_iou_rotated` en el SimOTA | `models/overlap.py`: IoU exacto de polígonos en torch, 18,6 ms por imagen |
 | PolyIoU en la pérdida | El mismo, diferenciable; coincide con shapely a 2,5e-6 en 2.000 pares |
 | `nms_rotated` | Nuestro `rotated_nms` |
 | Su `Trainer` y `DataPrefetcher` (CUDA) | El bucle de testbank |
@@ -562,8 +553,8 @@ port **no** reproduce: su *dataloader* (mosaico, mixup, resampling), su
 optimizador y su EMA.
 
 Es **apto para producción** —nada compilado, ningún clon— y es hoy el único
-candidato con preentreno DOTA que puede entrenar en un M4. Sus pesos siguen en
-Baidu Pan: `--pretrained <YOLOX_s_dota1_0.pth>` cuando los tengas.
+candidato con preentreno DOTA que puede entrenar en un M4. Sus pesos están en
+Baidu Pan (hace falta su cliente): `--pretrained weights/yolox_s_dota1_0.pth`.
 
 ### La entrada iba en el formato equivocado, y con preentreno se notaba
 
@@ -636,7 +627,7 @@ checkpoint**: cargar unos pesos reconstruye la que los produjo.
 mismos términos, mismas ganancias (`reg_weight = 5.0`, `τ = 1.0`), misma
 normalización, mismo objetivo de clase, mismo SimOTA con la KLD como coste. La
 KLD propia está anclada numéricamente contra su fórmula en
-`tests/test_gaussian.py` (500 pares aleatorios, `atol 1e-5`). Dos desviaciones,
+`tests/test_overlap.py` (500 pares aleatorios, `atol 1e-5`). Dos desviaciones,
 las dos de cabeza: ellos regresan el ángulo en grados directamente —con el salto
 en ±90°— y aquí se mantiene `(sin 2θ, cos 2θ)`; y su L1 tardía va sobre
 `(dx, dy, log w, log h)` mientras aquí va sobre las cuatro distancias, que es la
@@ -657,7 +648,7 @@ código tuviera un detalle no documentado, aquí no está.
 Los dos papers convierten `(w, h)` en varianzas de forma distinta —`w²/4` la
 KLD, `w²/12` la ProbIoU— y mezclarlas cambia los números sin cambiar el nombre.
 `box_to_gaussian` exige el divisor explícito para que no se pueda llamar «a
-secas». → `models/gaussian.py`
+secas». → `models/overlap.py`
 
 ### Lo que está medido
 
@@ -720,262 +711,35 @@ volver a medir la distribución de ratios. Es bastante probable que el 19% se
 desplome y que el atenuador deje de hacer falta — en cuyo caso `enabled=False`
 y a otra cosa. Medirlo antes de quitarlo, no al revés.
 
-## buzhidaoshenme/YOLOX-OBB: arranca, y con menos fricción de la esperada
+## Descartados en el refactor: los dos clones de YOLOX-OBB
 
-Estuvo descartado. Se retoma por petición explícita, y el resultado contradice
-dos de los motivos por los que se había dejado fuera. Verificado de punta a
-punta, sobre PyTorch 2.x y sin compilar una sola línea de C++:
+Hubo dos adaptadores que envolvían repositorios ajenos clonados y parcheados.
+Se quitaron en `feature/refactor_code` porque lo que aportaban ya está en casa,
+y los dos exigían CUDA. Se deja lo aprendido, que costó medirlo.
 
-```
-imagenes que ve SU dataloader: 351          (+ 101 en JPEGImages-val/)
-target [xmin,ymin,xmax,ymax,angulo,clase]:
-[[  0.   0. 477. 243.   0.   0.]]           coincide con la etiqueta de origen
-YOLOXOBB_KLD small: 8,938,069 parametros
-forward OK -> (1, 3549, 7)
-```
+**`buzhidaoshenme/YOLOX-OBB`** (Apache-2.0, abandonado en 2021). Aportaba su
+receta KLD y el COCO de Megvii (`yolox_s.pth.tar`, backbone sin rama de
+ángulo). Hoy la receta es `--loss-recipe yolox_obb_fork` sobre la cabeza propia
+—anclada numéricamente contra su fórmula— y el COCO lo carga `--pretrained` en
+las tres variantes. Lo que costó hacerlo arrancar, por si alguien vuelve:
+`polyiou` es una extensión C++ con SWIG sin wheel de la que cuelga `import
+yolox` entero (se sustituía por shapely: dos nombres, `VectorDouble` e
+`iou_poly`); `apex` importado sin condición; `np.int0` y `np.bool` eliminados
+en NumPy 2.0; su lector VOC resta 1 a las coordenadas mientras su generador
+escribe en base 0; su `evaluate_detections` devuelve `0.0, 0.0` fijo; y su
+`DataPrefetcher` está construido sobre `torch.cuda.Stream`. Su README dice
+0.712 mAP en DOTA pero no publica ese checkpoint.
 
-Reproducirlo son tres órdenes:
-
-```bash
-git clone --depth 1 https://github.com/buzhidaoshenme/YOLOX-OBB.git fork
-python tools/patch_yolox_obb_fork.py fork
-testbank export yolox_obb_voc --out-of-bounds keep
-```
-
-Todo lo de abajo es medido, no pronosticado.
-
-### Lo que se corrigió al leer su código de verdad
-
-Este README afirmaba que su `<bndbox>` era «una envolvente alineada con un
-ángulo pegado». **Es falso.** Leído su generador `custom tools/DOTA2VOC_obb.py`,
-los cuatro campos llevan el ancho y el alto de la caja **girada** colocados
-alrededor del centro:
-
-```python
-if w_o <= h_o: w = h_o; h = w_o; angle = angle_o - 90.0   # w siempre el lado largo
-xmin = int(c_x - w / 2);  xmax = int(c_x + w / 2)          # -> w = xmax - xmin
-```
-
-O sea un `(cx, cy, w, h, ángulo)` corriente escrito en los campos equivocados.
-Es representable sin pérdida de orientación, y por eso el exportador existe.
-
-### El fork se contradice consigo mismo por un píxel
-
-Su lector aplica la base 1 de VOC:
-
-```python
-cur_pt = int(bbox.find(pt).text) - 1        # dota_obb.py:60
-```
-
-pero su generador escribe en base 0, sin sumar nada. Sus propias etiquetas, por
-tanto, llegan a la red desplazadas −1 px. **Aquí se sigue al lector** (se escribe
-`+1`), porque el lector es quien fabrica los objetivos de entrenamiento y
-reproducir el fallo no compra nada. La consecuencia, anotada por honestidad: leer
-ficheros generados por *su* herramienta con nuestro conversor da 1 px de desfase,
-que es el desfase que el fork ya tiene por dentro.
-
-### Lo que cuesta alimentarlo
-
-| Coste | Medida |
-|---|---|
-| Recodificar a PNG | 11.6 MiB → **113.6 MiB**, ×9.8 |
-| Redondeo a entero | IoU rotado 0.9965 mediana, 0.969 el peor de 762 |
-
-El PNG no es opcional: `_imgpath` cablea `"%s.png"`. Un enlace con otro nombre
-colaría en `cv2.imread` pero no es lo que se está midiendo, así que se recodifica
-de verdad y hay un test que mira los bytes de cabecera.
-
-### Lo que el exportador NO puede arreglar
-
-**Las clases están cableadas.** `dota_classes.py` lleva las 15 de DOTA y el
-parser hace `class_to_ind[name]`: con `euro_banknote` es un `KeyError` hasta que
-se sustituye el fichero. Lo hace `tools/patch_yolox_obb_fork.py`, porque es un
-parche sobre el fork y no configuración.
-
-**No tiene métrica de validación.** Su `evaluate_detections` hace:
-
-```python
-self._write_voc_results_file(all_boxes)
-return 0.0, 0.0  #add          # dota_obb.py:190
-```
-
-El `#add` es suyo. Todo el cálculo de mAP que viene debajo es código muerto: el
-fork entrena reportando 0.0 siempre. Para un candidato cuyo único propósito es
-entrar en una tabla comparativa, esto significa que **habría que puntearlo desde
-fuera con nuestro `evaluate`**, y para eso hay que sacarle predicciones — que es
-justo el trabajo del adaptador que falta.
-
-### Corrección: no hace falta PyTorch 1.9, ni compilar
-
-Este README afirmaba que el fork exigía un entorno de la época de PyTorch 1.9 y
-extensiones compiladas. **Las dos cosas eran falsas**, y conviene dejarlo escrito
-porque fueron parte del argumento para descartarlo.
-
-Su `requirements.txt` pide `torch>=1.7`, sin techo, y arranca en el torch 2.x del
-entorno principal. Lo que sí bloqueaba era una dependencia distinta de la que se
-había señalado: no `yolox._C` — ese es sólo la aceleración de COCOeval, que la
-ruta OBB no toca — sino `polyiou`, una extensión C++ con SWIG de la que cuelga
-`yolox/utils/boxes.py:7` y, por el `from .boxes import *` de `yolox/utils/`,
-**el `import yolox` entero**. No trae wheel.
-
-`tools/patch_yolox_obb_fork.py` la sustituye por shapely. Toda la superficie que
-usa la ruta OBB son dos nombres — `VectorDouble` y `iou_poly` — y el reemplazo no
-es sólo más barato: es **el mismo IoU con el que puntúa el resto del proyecto**.
-Compilar el original habría dado un candidato midiéndose con una implementación
-de IoU distinta de la de la tabla, sin forma de separar esa diferencia del
-modelo. Hay un test (`tests/test_fork_patch.py`) que lo ancla contra
-`metrics.core.iou`.
-
-El resto de dependencias van en el grupo opcional `yolox-fork`: todas con wheel,
-ninguna compilada desde fuente.
-
-**Lo que el shim sí cuesta: velocidad.** Su `py_cpu_nms_poly` es O(n²) en Python
-puro, y ahora cada comparación es una intersección de shapely en vez de una
-llamada a C++. Medido:
-
-| cajas que entran al NMS | shim inicial | con descarte por envolvente |
-|---|---|---|
-| 200 | 0.77 s | 0.05 s |
-| 500 | 3.04 s | 0.20 s |
-| 1000 | 6.77 s | 0.43 s |
-
-El descarte es trivial: dos rectángulos no pueden solaparse si sus envolventes
-alineadas no se tocan, y eso son cuatro comparaciones antes de construir ningún
-polígono. ×15 con resultados idénticos, anclado en `tests/test_fork_patch.py`
-contra shapely a pelo sobre 300 pares aleatorios.
-
-Sigue siendo O(n²) por diseño suyo. A un umbral realista con un modelo entrenado
-son unas pocas cajas y da igual; con el umbral a 0.001 y pesos sin entrenar
-entran las 3.549 anclas enteras. Conviene saberlo antes de bajar
-`confidence_threshold` para depurar.
-
-Esa misma prueba, por cierto, es la verificación más fuerte que hay de la
-conversión de coordenadas: **14.196 cajas producidas, 14.196 dentro del marco**.
-La rejilla de anclas entera, no una muestra.
-
-### Lo que sigue en pie
-
-- **Pérdida KLD**, la formulación gaussiana que este proyecto descartó a
-  propósito por alejarse del IoU rotado con el que medimos. Su resultado no sería
-  separable entre backbone y pérdida.
-- **Abandonado**: último commit en noviembre de 2021, 14 issues abiertas. Hay que
-  clonarlo y parchearlo; no es un paquete, y los parches son nuestros para
-  siempre.
-- **8.94M parámetros** medidos, frente a los 857k de la cabeza propia. Diez veces
-  el tamaño para un despliegue móvil, y su única ventaja era el preentreno.
-
-### El adaptador, y el muro que queda
-
-`detectors/yolox_obb_fork.py` esta hecho y registrado como `yolox-obb-fork-small`.
-Genera el `Exp` de cada ejecucion —su exp de referencia trae la ruta de datos
-cableada, literalmente `/home/lyy/gxw/DOTA_OBB_1_5`—, exporta el dataset, y
-envuelve su `Trainer`.
-
-**`predict` funciona y esta verificado en CPU.** Era la pieza que su repositorio
-no permite hacer desde dentro. Sobre las imagenes reales, con pesos sin entrenar:
-507 cajas producidas, todas dentro de [0,1], pasando por su `preproc`, su cabeza
-KLD y su NMS rotado con el shim de shapely.
-
-**`train` no corre en este equipo, y no es cosa del adaptador.** El fork esta
-escrito contra CUDA:
-
-```
-yolox/core/trainer.py:47         self.device = "cuda:{}".format(self.local_rank)
-yolox/core/trainer.py:161        torch.cuda.set_device(self.local_rank)
-yolox/data/data_prefetcher.py:23 self.stream = torch.cuda.Stream()
-```
-
-Las dos primeras se parchean en dos lineas. La tercera no: su `DataPrefetcher`
-esta construido entero sobre streams de CUDA, y reescribirlo deja de ser un
-parche y pasa a ser mantener su bucle de datos. El adaptador lo comprueba **antes**
-de exportar nada, porque el fallo nativo es un `AttributeError: module 'torch._C'
-has no attribute '_cuda_setDevice'` seguido de `lost sys.stderr`, despues de
-haber volcado 452 imagenes a disco.
-
-O sea: **con una GPU el candidato entra en la tabla; sin ella solo se puede
-puntuar un checkpoint ya entrenado.**
-
-### Lo que costo hacerlo arrancar, por si alguien lo repite
-
-`tools/patch_yolox_obb_fork.py` acabo con cinco parches, todos encontrados
-ejecutando, no leyendo:
-
-| Parche | Por que |
-|---|---|
-| `polyiou.py` -> shapely | Extension C++ con SWIG sin wheel, de la que cuelga el `import yolox` entero |
-| `dota_classes.py` | Las 15 clases de DOTA cableadas; `class_to_ind[name]` da KeyError |
-| `apex.py` (stub) | `trainer.py` y `ema.py` lo importan sin condicion; solo se usa con fp16 o distribuido |
-| `np.int0` -> `np.intp` | Alias eliminado en NumPy 2.0 |
-| `np.bool` -> `bool` | Igual |
-
-Los dos ultimos merecen una nota: **solo saltan cuando hay cajas de verdad**. Con
-pesos sin entrenar y un umbral normal no se produce ninguna deteccion,
-`postprocessobb_kld` sale por el camino corto y la incompatibilidad pasa
-desapercibida. Se encontraron bajando el umbral a proposito para ejercitar el
-camino que si las produce — una prueba que "pasaba" sin comprobar nada.
-
-## DDGRCF/YOLOX_OBB: el único YOLOX con cabeza OBB ya entrenada
-
-Registrado como `yolox-obb-ddgrcf-small`. Existe, además del fork de
-buzhidaoshenme, por una sola razón: **publica pesos entrenados en DOTA**
-(`YOLOX_s_dota1_0`, 70.82 mAP@0.5). El otro solo trae el COCO de Megvii —
-verificado sobre el fichero: 80 clases, sin rama de ángulo.
-
-### Lo que cuesta, medido en esta máquina
-
-| Muro | Qué es | Qué hace el adaptador |
-|---|---|---|
-| **Operadores compilados** | `box_iou_rotated`, `nms_rotated`, `convex`: C++/CUDA propios, **dentro del SimOTA**, sin wheels | Detecta el `import` roto y dice qué instalar |
-| **Compilador** | `python setup.py develop` exige MSVC 14+; aquí no hay: `error: Microsoft Visual C++ 14.0 or greater is required` | Es una instalación tuya (~7 GB, Build Tools de VS) |
-| **CUDA** | `DataPrefetcher` sobre `torch.cuda.Stream`, igual que el otro fork | Lo comprueba antes de exportar nada |
-| **Pesos en Baidu Pan** | `MODEL_ZOO`, código `tdm6`; hace falta cuenta | `TESTBANK_YOLOX_OBB_DDGRCF_WEIGHTS=<ruta>`; sin ella avisa de que entrena de cero |
-
-A diferencia del otro fork, aquí el operador compilado no está solo en el NMS
-de inferencia: está en el asignador, miles de pares por iteración. No se puede
-sustituir por shapely sin cambiar su receta. Por eso este candidato **no entra
-en el entorno principal ni se parchea**: va en `.venv-yolox-ddgrcf`, compilado.
-
-### Lo que sí está verificado hoy, sin compilador
-
-El camino de datos entero. Su `DOTADataset` lee los `.pkl` que produce el
-*splitter* de BboxToolkit (Python puro) a partir de formato DOTA, que ya
-exportábamos:
-
-```
-export dota  ->  img_split.py --sizes 1024 --gaps 0 --no_padding  ->  patch_annfile.pkl
-train: 351 imágenes -> 351 parches, 537 -> 537 cajas     (1 parche = 1 imagen)
-valid: 101 -> 101, 142 -> 142
-```
-
-`--sizes 1024` y no 416 a propósito: con 416, las 7 imágenes más anchas se
-partían en dos parches con la caja duplicada. Mayor que cualquier imagen
-nuestra, cada una es un solo parche y las predicciones vuelven a nuestros ids
-sin *merge*.
-
-### Su receta, para leer la tabla
-
-`configs/losses/yolox_losses_obb.yaml`: caja **PolyIoU** ×5 —IoU de polígonos
-exacta, vía operador compilado—, obj BCE, cls BCE, L1 extra. **No es la KLD**,
-aunque el repositorio la trae: el modelo del zoo se entrenó con PolyIoU. Y su
-red no es el CSPDarknet estándar sino una definida en yaml con bloques C3 y
-ReLU: **sus pesos no sirven para la cabeza propia**.
-
-### Entorno y ejecución
-
-```bash
-git clone --depth 1 https://github.com/DDGRCF/YOLOX_OBB.git YOLOX_OBB
-git clone --depth 1 https://github.com/jbwang1997/BboxToolkit.git BboxToolkit
-uv venv .venv-yolox-ddgrcf --python 3.11
-VIRTUAL_ENV=.venv-yolox-ddgrcf uv pip install torch torchvision   # el de CUDA para entrenar
-VIRTUAL_ENV=.venv-yolox-ddgrcf uv pip install -e BboxToolkit -e .
-cd YOLOX_OBB && ../.venv-yolox-ddgrcf/Scripts/python setup.py develop && cd ..   # exige MSVC
-TESTBANK_YOLOX_OBB_DDGRCF_WEIGHTS=<YOLOX_s_dota1_0.pth> \
-  .venv-yolox-ddgrcf/Scripts/testbank train yolox-obb-ddgrcf-small --name ddgrcf_base
-```
-
-Los pesos de DOTA tienen 15 clases; su `load_ckpt` salta los tensores cuya
-forma no coincide con aviso, así que la capa de clase se reinicia y el resto se
-carga. Es el ajuste fino normal.
+**`DDGRCF/YOLOX_OBB`** (Apache-2.0, 2022). Aportaba el único YOLOX con cabeza
+OBB **entrenada en DOTA** publicada (`YOLOX_s_dota1_0`, 70.82 mAP@0.5, en Baidu
+Pan). Hoy eso es `yolox-obb-ddgrcf-port`: su red portada tensor a tensor y su
+receta con el IoU exacto en torch (§ *Preentreno*). El clon exigía compilar sus
+operadores C++/CUDA (`box_iou_rotated`, `nms_rotated`, `convex`) con MSVC —aquí
+no lo hay: `Microsoft Visual C++ 14.0 or greater is required`— y BboxToolkit,
+que sí es Python puro. El camino de datos (`export dota` → `img_split.py`
+`--sizes 1024` → sus `.pkl`, 1 parche = 1 imagen) se verificó entero. El
+operador compilado estaba *dentro* de su SimOTA, así que no admitía el truco
+de shapely del otro fork; por eso el port reimplementa el IoU de polígonos.
 
 ## Entorno para RTMDet-R
 
@@ -1100,10 +864,9 @@ uv pip install -e ".[ultralytics]"        # opcional: la referencia AGPL
 pytest -q                                 # 495 tests
 ```
 
-El `torch` que instala es **CPU**. La cabeza propia entrena en CPU sin problema
-para circuitos cortos; para líneas base largas, o para el fork de YOLOX-OBB,
-hace falta el torch con CUDA de <https://pytorch.org/get-started/locally/>
-instalado *en este mismo entorno*.
+El `torch` que instala es **CPU**. En un Mac con M-series el bucle propio usa
+MPS solo; en un PC con NVIDIA hace falta el torch con CUDA de
+<https://pytorch.org/get-started/locally/> instalado *en este mismo entorno*.
 
 | Candidato | Entorno | Comando |
 |---|---|---|
@@ -1112,8 +875,6 @@ instalado *en este mismo entorno*.
 | `yolox-obb-small` (7.75M) | principal | `testbank train yolox-obb-small --name small_base` |
 | `ultralytics-yolo-obb` | principal + `[ultralytics]` | `testbank train ultralytics-yolo-obb --name ul_ref` |
 | `yolox-obb-ddgrcf-port` (8.05M) | principal | `testbank train yolox-obb-ddgrcf-port --pretrained <DOTA.pth>` |
-| `yolox-obb-fork-small` | principal + `[yolox-fork]` + clon + **GPU** | ver abajo |
-| `yolox-obb-ddgrcf-small` | `.venv-yolox-ddgrcf` aparte + clon **compilado** + **GPU** | § *DDGRCF/YOLOX_OBB* |
 | `rtmdet-r-tiny` | `.venv-rtmdet` aparte | ver abajo |
 
 `train` entrena, evalúa sobre `valid` con las métricas de testbank y deja la
@@ -1135,20 +896,6 @@ Y después de varias ejecuciones:
 ```bash
 testbank compare --csv-out runs/tabla.csv
 ```
-
-### El fork de YOLOX-OBB — entorno principal + clon + GPU
-
-```bash
-uv pip install -e ".[yolox-fork]"
-git clone --depth 1 https://github.com/buzhidaoshenme/YOLOX-OBB.git YOLOX-OBB
-python tools/patch_yolox_obb_fork.py YOLOX-OBB
-testbank train yolox-obb-fork-small --name fork_base
-```
-
-Si el clon va en otro sitio: `TESTBANK_YOLOX_OBB_FORK=<ruta>`. **Su entrenamiento
-exige CUDA** — no es cosa del adaptador, ver § *buzhidaoshenme/YOLOX-OBB*. Sin
-GPU, `train` lo dice antes de tocar nada; `--weights` con un checkpoint ya
-entrenado sí funciona en CPU.
 
 ### RTMDet-R — `.venv-rtmdet`, aparte
 
@@ -1174,8 +921,9 @@ Sus números salen de torch 2.0 y los demás de torch 2.14: la tabla lo anota.
 - Lo que hay en `runs/` hasta hoy son circuitos de 1–2 épocas. **Ninguno es una
   medida de calidad.** Conviene vaciarlo, o nombrar las líneas base de forma que
   `compare` no los mezcle.
-- Las tres variantes propias y Ultralytics se pueden lanzar hoy. El fork y
-  RTMDet-R necesitan lo suyo.
+- Las tres variantes propias, el port de DDGRCF y Ultralytics se pueden lanzar
+  hoy, y usan la GPU si la hay (`cuda` → `mps` → `cpu`; `TESTBANK_DEVICE` lo
+  fuerza). RTMDet-R necesita su entorno.
 - **Decidir la partición.** La activa es la del export, con un 20% del test
   contaminado por casi-duplicados. `make-splits --repartition` la rehace sin
   fugas y estratificada (§ *Particiones*); hacerlo invalida la comparación con
@@ -1196,9 +944,9 @@ cada ejecución. Cabeza OBB propia sobre YOLOX en tres variantes (857k / 4.37M /
 7.75M parámetros), entrenamiento determinista, atenuador de ángulo por ratio.
 Adaptadores: Ultralytics (referencia, `production_ready=False`), RTMDet-R, el
 fork de YOLOX-OBB (`predict` verificado; `train` exige CUDA) y las tres variantes
-propias, DDGRCF/YOLOX_OBB como clon (exige compilar) y **como port en torch
-puro** (`yolox-obb-ddgrcf-port`, entrena en CPU/MPS, carga sus pesos de DOTA).
-Ocho candidatos registrados. La cabeza propia carga el **COCO de Megvii**
+propias, y DDGRCF/YOLOX_OBB **como port en torch puro** (`yolox-obb-ddgrcf-port`,
+entrena en CPU/MPS, carga sus pesos de DOTA). Seis candidatos registrados; los
+dos clones de YOLOX-OBB se quitaron en el refactor (§ *Descartados*). La cabeza propia carga el **COCO de Megvii**
 (`--pretrained`). La cabeza propia entrena con **tres
 recetas de pérdida completas** (`--loss-recipe own | yolox_obb_fork |
 ultralytics_obb`), cada una la de una red concreta, sobre el mismo backbone.
@@ -1210,7 +958,7 @@ depende de `tools/make_synthetic.py`, que se conserva para los tests.
 
 - Entrenar `buzhidaoshenme/YOLOX-OBB`. El adaptador está hecho y `predict` está
   verificado, pero su `Trainer` exige CUDA y este equipo es CPU
-  (§ *buzhidaoshenme/YOLOX-OBB*).
+  (§ *Descartados en el refactor*).
 - Prueba de humo de RTMDet-R: el entorno se resolvió y el `Runner` se construye,
   pero no se ha ejecutado ni una época.
 - Enmascarado por polígono para el recorte, hoy rectangular (§ *Salvedades*).

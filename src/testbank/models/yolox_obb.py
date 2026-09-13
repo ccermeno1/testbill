@@ -215,6 +215,20 @@ class HeadOutput:
     regression: str = "direct"
     angle_mode: str = "sincos"
 
+    def to_cpu(self) -> HeadOutput:
+        """Para decodificar: el NMS rotado va por shapely, que vive en CPU."""
+        move = lambda t: None if t is None else t.detach().cpu()
+        return HeadOutput(
+            distances=move(self.distances),
+            angle=move(self.angle),
+            objectness=move(self.objectness),
+            classes=move(self.classes),
+            stride=self.stride,
+            distribution=move(self.distribution),
+            regression=self.regression,
+            angle_mode=self.angle_mode,
+        )
+
 
 class ObbHead(nn.Module):
     """Cabeza desacoplada con rama de angulo. Comparte pesos entre niveles.
@@ -373,17 +387,6 @@ def decode_angle(angle: torch.Tensor, mode: str = "sincos") -> torch.Tensor:
     raise ValueError(f"modo de angulo desconocido: {mode!r}")
 
 
-def encode_scalar_angle(theta: torch.Tensor) -> torch.Tensor:
-    """Inversa de la rama escalar: theta -> logit. Para construir objetivos.
-
-    Se lleva theta a `[-pi/4, 3pi/4)` primero, que es el rango que la sigmoide
-    puede producir; un objetivo fuera de el no seria alcanzable.
-    """
-    shifted = (theta + math.pi / 4) % math.pi - math.pi / 4
-    fraction = (shifted / math.pi + 0.25).clamp(1e-6, 1 - 1e-6)
-    return torch.log(fraction / (1 - fraction))
-
-
 def encode_angle(theta: torch.Tensor) -> torch.Tensor:
     """Inversa de `decode_angle`, para construir el objetivo de entrenamiento."""
     return torch.stack((torch.sin(2 * theta), torch.cos(2 * theta)), dim=-1)
@@ -400,5 +403,4 @@ __all__ = [
     "YoloxObb",
     "decode_angle",
     "encode_angle",
-    "encode_scalar_angle",
 ]

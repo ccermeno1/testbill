@@ -6,7 +6,7 @@ El clon exige operadores C++/CUDA compilados y una GPU, y ninguna de las dos
 cosas hay aqui. Pero su red -- backbone YOLOv5 con bloques `C3` y ReLU, cuello
 PAFPN, cabezas desacopladas de YOLOX -- es torch puro. Lo unico compilado eran
 el IoU rotado del asignador y de la perdida, y el NMS. Asi que la red se porta
-y esas tres piezas se sustituyen por versiones en torch (`polygon.py`).
+y esas tres piezas se sustituyen por versiones en torch (`overlap.py`).
 
 Licencia: Apache-2.0, con atribucion. Los bloques de abajo son los suyos
 (`yolox/models/modules/common.py` y `block.py`), reducidos a lo que el yaml usa.
@@ -129,7 +129,7 @@ class OBBDetectX(nn.Module):
     """Las 1x1 finales de su `OBBDetectX`: `cls_preds`, `reg_preds`, `obj_preds`.
 
     Solo las capas. Su asignador, su perdida y su postproceso -- lo que llevaba
-    los operadores compilados -- viven en `recipes.py` y `polygon.py`.
+    los operadores compilados -- viven en `losses.py` y `overlap.py`.
     Devuelve `HeadOutput` para que el decodificador comun no sepa de donde viene.
     """
 

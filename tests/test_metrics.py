@@ -10,7 +10,6 @@ from conftest import rotated_rect_points
 from testbank.config import Config, MetricsConfig
 from testbank.dataio.formats import ImageSize
 from testbank.geometry.quad import Quad, canonicalize
-from testbank.metrics.bootstrap import bootstrap_images
 from testbank.metrics.core import (
     ImageEval,
     Prediction,
@@ -22,6 +21,7 @@ from testbank.metrics.core import (
 from testbank.metrics.crop import crop_samples, summarize
 from testbank.metrics.detection import (
     average_precision,
+    bootstrap_images,
     counts,
     mean_average_precision,
 )

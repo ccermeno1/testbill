@@ -21,14 +21,14 @@ import torch
 from testbank.config import Config
 from testbank.models.assign import AnchorGrid, build_anchor_grid, tal_assign
 from testbank.models.decode import decode_outputs
-from testbank.models.gaussian import pairwise_probiou
-from testbank.models.recipes import (
+from testbank.models.losses import (
     RECIPES,
     distribution_focal_loss,
     head_spec_for,
     losses_for_image,
     target_distances,
 )
+from testbank.models.overlap import pairwise_probiou
 from testbank.models.train import load_model
 from testbank.models.yolox_obb import STRIDES, HeadSpec, YoloxObb, decode_angle
 

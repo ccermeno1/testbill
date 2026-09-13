@@ -1,4 +1,6 @@
-"""Las tres recetas de perdida de la cabeza propia, cada una ENTERA.
+"""Las cuatro recetas de perdida, cada una entera, y lo que comparten.
+
+Las tres recetas de perdida de la cabeza propia, cada una ENTERA.
 
 Una receta no es una perdida de caja: es la combinacion de asignador, objetivos,
 terminos, normalizacion y ganancias que una red concreta usa. Mezclar la caja de
@@ -6,7 +8,7 @@ una con el asignador de otra daria algo que no es ninguna de las dos, y la tabla
 lo llamaria por un nombre que no le corresponde. Asi que aqui cada receta es una
 funcion cerrada, y `losses_for_image` solo elige cual.
 
-    own              `loss.py`: IoU alineada + angulo atenuado + obj + cls; SimOTA
+    own              `losses.py`: IoU alineada + angulo atenuado + obj + cls; SimOTA
     yolox_obb_fork   KLD x5 + obj + cls por solape + L1 tardia; SimOTA con KLD
     ultralytics_obb  ProbIoU x7.5 + DFL x1.5 + cls x0.5 con objetivo suave; TAL
 
@@ -27,9 +29,71 @@ terminos, que ganancias, que asignador -- sale de su documentacion publica; las
 formulas salen de los papers (ProbIoU: Llerena 2021; DFL: Li 2020; TAL: Feng
 2021). Es una reproduccion de la RECETA descrita, no una copia. Si en su codigo
 hubiera un detalle no documentado, aqui no esta.
+
+=== La receta propia, en detalle ===
+Perdidas del candidato propio.
+
+Se descompone en tres, en vez de optimizar el IoU rotado directamente:
+
+    caja      IoU alineada sobre la envolvente
+    angulo    coseno sobre (sin 2t, cos 2t), ATENUADO por el ratio
+    presencia BCE para objectness y clase
+
+Por que descomponer
+-------------------
+Optimizar el IoU rotado de verdad exigiria construir e intersectar poligonos en
+cada iteracion, y eso no cabe en el bucle (ver `assign.py`). La descomposicion
+es una aproximacion: no optimiza exactamente lo que luego se mide.
+
+Se asume a conciencia, y es medible. La metrica de evaluacion SIGUE siendo el
+IoU rotado por shapely, asi que si la descomposicion asigna mal el compromiso
+entre forma y giro, el numero final lo dice. Entrenar con una aproximacion y
+medir con lo bueno es el orden correcto; al reves seria enganarse.
+
+El atenuador de angulo
+----------------------
+Es lo unico no estandar. Cuando la caja verdadera es casi cuadrada su angulo no
+esta definido -- `(w, h, t)` y `(h, w, t+90)` son el mismo rectangulo -- asi que
+la perdida de angulo se rebaja. Parametrizable y apagable para poder medir
+cuanto aporta. Ver `losses.py` y el README.
+
+=== El atenuador de angulo de la receta propia ===
+Peso de la perdida de angulo segun lo cuadrada que sea la caja.
+
+Por que hace falta
+------------------
+La representacion `(cx, cy, w, h, theta)` es ambigua cuando `w ~ h`: la caja
+`(w, h, t)` y la caja `(h, w, t+90)` son el MISMO rectangulo. La codificacion
+`(sin 2t, cos 2t)` resuelve que `t` y `t+180` sean el mismo, pero NO esto: manda
+las dos versiones a puntos opuestos del circulo, asi que el modelo recibiria dos
+objetivos contradictorios para la misma caja.
+
+Medido sobre el export: 145 de 762 anotaciones (19%) tienen ratio < 1.1.
+
+Por que atenuar y no arreglarlo
+-------------------------------
+Porque en el caso ambiguo el angulo DA IGUAL para lo que nos importa. Un
+rectangulo casi cuadrado recortado con 5 grados de error tapa practicamente lo
+mismo, y la politica de anotacion ya dice que un rectangulo aproximado basta.
+Castigar al modelo por no acertar algo que ni esta bien definido ni cambia el
+resultado es gastar capacidad en ruido.
+
+La alternativa seria la representacion gaussiana, que absorbe la ambiguedad de
+forma natural. Descartada a proposito: se aleja del IoU rotado por shapely con
+el que medimos, y esa trazabilidad pesa mas que la elegancia de la formulacion.
+
+Todo parametrizable
+-------------------
+Umbral, forma y suelo van en `detector.loss.angle_weight`, con `enabled` para
+apagarlo. La pregunta "cuanto aporta esto" se responde entrenando con y sin, no
+razonando. Ver `AngleWeightConfig`.
 """
 
 from __future__ import annotations
+
+import math
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import torch
 from torch.nn import functional as F
@@ -37,20 +101,268 @@ from torch.nn import functional as F
 from testbank.config import Config
 from testbank.models.assign import (
     AnchorGrid,
+    Assignment,
     build_anchor_grid,
+    enclosing_boxes,
+    pairwise_iou,
     simota_assign,
     tal_assign,
 )
 from testbank.models.decode import decode_outputs
-from testbank.models.gaussian import (
+from testbank.models.overlap import (
     kld_loss,
     pairwise_kld_loss,
     pairwise_probiou,
+    pairwise_rotated_iou,
     probiou,
+    rotated_iou,
 )
-from testbank.models.loss import LossTerms, compute_losses
-from testbank.models.polygon import pairwise_rotated_iou, rotated_iou
 from testbank.models.yolox_obb import STRIDES, HeadSpec, YoloxObb
+
+# --------------------------------------------------------------------------
+# Atenuador de angulo (receta propia)
+# --------------------------------------------------------------------------
+
+#: Formas de subida entre el cuadrado perfecto y el umbral. La clave es lo que
+#: acepta `decay` en la config; anadir una es anadir una entrada aqui.
+DECAYS: dict[str, Callable[[torch.Tensor], torch.Tensor]] = {
+    # Sube recto. La mas simple de interpretar: el peso es la fraccion del
+    # camino recorrido hacia el umbral.
+    "linear": lambda t: t,
+    # Arranca despacio y frena al final. Deja casi sin peso la franja mas
+    # ambigua en vez de subir desde el primer momento.
+    "smoothstep": lambda t: t * t * (3.0 - 2.0 * t),
+    # Intermedia: arranca despacio pero no frena.
+    "quadratic": lambda t: t * t,
+    # Escalon. Sirve de referencia para medir si la transicion suave aporta
+    # algo frente a cortar por lo sano.
+    "step": lambda t: (t >= 1.0).to(t.dtype),
+}
+
+
+def angle_weight(
+    ratio: torch.Tensor,
+    *,
+    enabled: bool = True,
+    ratio_threshold: float = 1.1,
+    min_weight: float = 0.0,
+    decay: str = "smoothstep",
+) -> torch.Tensor:
+    """Peso en `[min_weight, 1]` para la perdida de angulo de cada caja.
+
+    `ratio` es lado largo / lado corto de la caja VERDADERA, en pixeles. En
+    pixeles y no normalizado: normalizar escala x e y por factores distintos, y
+    el ratio dejaria de ser el geometrico -- el mismo error que ya mordio dos
+    veces en este proyecto.
+
+    Con `enabled=False` devuelve unos: es la rama de control del experimento, y
+    tiene que costar exactamente lo mismo escribirla que la otra.
+    """
+    if not enabled:
+        return torch.ones_like(ratio)
+    if ratio_threshold <= 1.0:
+        raise ValueError(
+            f"ratio_threshold tiene que ser > 1, se recibio {ratio_threshold}"
+        )
+    try:
+        shape = DECAYS[decay]
+    except KeyError:
+        raise ValueError(
+            f"forma de decaimiento desconocida {decay!r}; hay {sorted(DECAYS)}"
+        ) from None
+
+    # Un ratio por debajo de 1 no existe: es el lado largo entre el corto. Si
+    # llega, es que alguien los ha intercambiado, y truncar en 1 evita pesos
+    # negativos sin ocultar el problema (el peso saldria minimo, no absurdo).
+    progress = ((ratio.clamp(min=1.0) - 1.0) / (ratio_threshold - 1.0)).clamp(0.0, 1.0)
+    return min_weight + (1.0 - min_weight) * shape(progress)
+
+
+def side_ratio_px(width: torch.Tensor, height: torch.Tensor) -> torch.Tensor:
+    """Lado largo / lado corto, sin asumir cual de los dos es cual.
+
+    El orden de `w` y `h` es justo lo que la ambiguedad vuelve arbitrario, asi
+    que el ratio no puede depender de el.
+    """
+    long_side = torch.maximum(width, height)
+    short_side = torch.minimum(width, height)
+    return long_side / short_side.clamp(min=1e-6)
+
+
+# --------------------------------------------------------------------------
+# Receta propia: terminos
+# --------------------------------------------------------------------------
+
+@dataclass(frozen=True, slots=True)
+class LossTerms:
+    """Cada termino por separado. Juntarlos en un escalar oculta cual falla."""
+
+    box: torch.Tensor
+    angle: torch.Tensor
+    objectness: torch.Tensor
+    classes: torch.Tensor
+    total: torch.Tensor
+    num_positives: int
+    #: Solo la receta de Ultralytics. Cero en las demas, para que el registro
+    #: de cada ejecucion tenga siempre las mismas columnas.
+    dfl: torch.Tensor | None = None
+    #: Solo la receta del fork, y solo en sus ultimas epocas.
+    l1: torch.Tensor | None = None
+
+    def to_dict(self) -> dict:
+        """Solo para registrar. `detach` a proposito: convertir a float un
+        tensor todavia enganchado al grafo avisa, y arrastrar el grafo a un
+        diccionario de informes es como se filtran las fugas de memoria."""
+        def value(t):
+            return 0.0 if t is None else t.detach().item()
+
+        return {
+            "box": value(self.box),
+            "angle": value(self.angle),
+            "objectness": value(self.objectness),
+            "classes": value(self.classes),
+            "dfl": value(self.dfl),
+            "l1": value(self.l1),
+            "total": value(self.total),
+            "num_positives": self.num_positives,
+        }
+
+
+def iou_loss(predicted: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """`1 - IoU` sobre las envolventes alineadas.
+
+    IoU y no L1 sobre las coordenadas: L1 trata igual un error de 5 pixeles en
+    un billete pequeno y en uno grande, cuando en el primero es fatal y en el
+    segundo irrelevante. El IoU es relativo al tamano por construccion.
+    """
+    if predicted.numel() == 0:
+        return predicted.new_zeros(())
+    boxes_p = enclosing_boxes(predicted)
+    boxes_t = enclosing_boxes(target)
+    iou = pairwise_iou(boxes_p, boxes_t).diagonal()
+    return (1.0 - iou).mean()
+
+
+def angle_loss(
+    predicted_angle: torch.Tensor,
+    target_theta: torch.Tensor,
+    target_wh: torch.Tensor,
+    *,
+    enabled: bool = True,
+    ratio_threshold: float = 1.1,
+    min_weight: float = 0.0,
+    decay: str = "smoothstep",
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Devuelve `(perdida, pesos)`. Los pesos salen para poder registrarlos.
+
+    `predicted_angle` es (P, 2) con `(sin 2t, cos 2t)` SIN normalizar: la red
+    saca dos numeros libres. Se normalizan aqui para que la perdida mida solo
+    direccion; la magnitud no significa nada y dejarla suelta le daria al
+    modelo una via de bajar la perdida sin acertar el angulo.
+    """
+    if predicted_angle.numel() == 0:
+        zero = predicted_angle.new_zeros(())
+        return zero, predicted_angle.new_zeros((0,))
+
+    predicted = F.normalize(predicted_angle, dim=-1, eps=1e-6)
+    target = torch.stack(
+        (torch.sin(2 * target_theta), torch.cos(2 * target_theta)), dim=-1
+    )
+    # 1 - coseno: cero cuando apuntan igual, 2 en el peor caso. Continuo en todo
+    # el circulo, que es el motivo de haber doblado el angulo.
+    per_box = 1.0 - (predicted * target).sum(dim=-1)
+
+    weights = angle_weight(
+        side_ratio_px(target_wh[:, 0], target_wh[:, 1]),
+        enabled=enabled,
+        ratio_threshold=ratio_threshold,
+        min_weight=min_weight,
+        decay=decay,
+    )
+    # Se divide por el NUMERO de cajas, no por la suma de pesos.
+    #
+    # Dividir por la suma deshace la atenuacion: con una sola caja de peso 0.1,
+    # `(1 * 0.1) / 0.1` vuelve a dar 1.0, y con un lote entero de cajas ambiguas
+    # el gradiente sale a plena potencia -- justo lo que el atenuador existe
+    # para evitar. Normalizando por N, atenuar reduce de verdad la magnitud.
+    #
+    # Que eso baje la perdida total no falsea nada: los candidatos se comparan
+    # por las METRICAS de evaluacion, no por el valor de una perdida, y comparar
+    # perdidas entre funciones de perdida distintas no significa nada de todos
+    # modos.
+    return (per_box * weights).sum() / per_box.numel(), weights
+
+
+def compute_losses(
+    predicted_boxes: torch.Tensor,
+    predicted_angle: torch.Tensor,
+    predicted_objectness: torch.Tensor,
+    predicted_classes: torch.Tensor,
+    target_boxes: torch.Tensor,
+    target_classes: torch.Tensor,
+    assignment: Assignment,
+    *,
+    angle_config=None,
+    box_gain: float = 5.0,
+    angle_gain: float = 1.0,
+    obj_gain: float = 1.0,
+    cls_gain: float = 1.0,
+) -> LossTerms:
+    """Junta los tres terminos. Todo en pixeles."""
+    positive = assignment.positive
+    matched = assignment.matched[positive]
+    device = predicted_objectness.device
+
+    # Objectness: TODAS las celdas participan. Es la unica senal que ensena que
+    # el fondo es fondo, y con ~3500 celdas y 2 billetes es casi toda la senal.
+    obj_target = positive.to(predicted_objectness.dtype)
+    objectness = F.binary_cross_entropy_with_logits(
+        predicted_objectness, obj_target, reduction="mean"
+    )
+
+    if not positive.any():
+        zero = torch.zeros((), device=device)
+        return LossTerms(zero, zero, objectness * obj_gain, zero, objectness * obj_gain, 0)
+
+    boxes_p = predicted_boxes[positive]
+    boxes_t = target_boxes[matched]
+
+    box = iou_loss(boxes_p, boxes_t)
+
+    options = {} if angle_config is None else {
+        "enabled": angle_config.enabled,
+        "ratio_threshold": angle_config.ratio_threshold,
+        "min_weight": angle_config.min_weight,
+        "decay": angle_config.decay,
+    }
+    angle, _ = angle_loss(
+        predicted_angle[positive], boxes_t[:, 4], boxes_t[:, 2:4], **options
+    )
+
+    classes = F.binary_cross_entropy_with_logits(
+        predicted_classes[positive],
+        F.one_hot(
+            target_classes[matched], predicted_classes.shape[-1]
+        ).to(predicted_classes.dtype),
+        reduction="mean",
+    )
+
+    total = (
+        box_gain * box + angle_gain * angle + obj_gain * objectness + cls_gain * classes
+    )
+    return LossTerms(
+        box=box,
+        angle=angle,
+        objectness=objectness,
+        classes=classes,
+        total=total,
+        num_positives=assignment.num_positives,
+    )
+
+
+# --------------------------------------------------------------------------
+# Las cuatro recetas y el despacho
+# --------------------------------------------------------------------------
 
 RECIPES = ("own", "yolox_obb_fork", "ultralytics_obb", "ddgrcf")
 
@@ -339,7 +651,6 @@ def regularize_angle_ddgrcf(boxes: torch.Tensor) -> torch.Tensor:
     el objetivo tiene que estar en ese rango o no seria alcanzable con gradiente
     pequeno.
     """
-    import math
 
     cx, cy, w, h, theta = boxes.unbind(dim=-1)
     theta1 = (theta + math.pi / 2) % math.pi - math.pi / 2
@@ -470,14 +781,4 @@ def _image_size(config: Config):
     return ImageSize(side, side)
 
 
-__all__ = [
-    "RECIPES",
-    "architecture_of",
-    "build_model",
-    "distribution_focal_loss",
-    "head_spec_for",
-    "losses_for_image",
-    "regularize_angle_ddgrcf",
-    "target_distances",
-]
-
+__all__ = ['DECAYS', 'RECIPES', 'LossTerms', 'angle_loss', 'angle_weight', 'architecture_of', 'build_model', 'compute_losses', 'distribution_focal_loss', 'head_spec_for', 'iou_loss', 'losses_for_image', 'regularize_angle_ddgrcf', 'side_ratio_px', 'target_distances']

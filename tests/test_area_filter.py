@@ -9,13 +9,13 @@ from conftest import rotated_rect_points
 
 from testbank.checks.visibility import check_samples
 from testbank.data.discover import Sample
-from testbank.dataio.loader import (
+from testbank.dataio.obb_yolo import Annotation
+from testbank.dataio.prepare import (
     DEFAULT_MIN_RELATIVE_AREA,
     filter_by_relative_area,
     load_sample,
     load_samples,
 )
-from testbank.dataio.obb_yolo import Annotation
 from testbank.geometry.quad import Quad, canonicalize
 
 

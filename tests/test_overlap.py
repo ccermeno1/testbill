@@ -19,7 +19,7 @@ import math
 import pytest
 import torch
 
-from testbank.models.gaussian import (
+from testbank.models.overlap import (
     KLD_VARIANCE_DIVISOR,
     PROBIOU_VARIANCE_DIVISOR,
     bhattacharyya_distance,

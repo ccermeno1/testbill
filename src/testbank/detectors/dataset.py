@@ -15,7 +15,7 @@ directorio de datos tal cual, entrenarian con DOS incoherencias:
 Asi que se escribe una vista derivada bajo `data/derived/`. **Los ficheros de
 origen no se tocan**: esto es una copia de trabajo, regenerable y desechable.
 
-El filtro y la politica de borde viven en `dataio/view.py`, compartidos con los
+El filtro y la politica de borde viven en `dataio/prepare.py`, compartidos con los
 exportadores de DOTA, VOC y COCO. Repetirlos aqui habria dejado que derivaran, y
 entonces dos candidatos entrenarian con verdades distintas mientras la tabla los
 compara como si fueran lo mismo.
@@ -31,7 +31,7 @@ import yaml
 from testbank.config import Config, OutOfBoundsPolicy
 from testbank.dataio.formats import DEFAULT_CLASS_NAMES
 from testbank.dataio.formats import get as get_format
-from testbank.dataio.view import (
+from testbank.dataio.prepare import (
     PreparationReport,
     clip_quad,
     pad_geometry,

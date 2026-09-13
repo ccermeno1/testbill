@@ -76,10 +76,6 @@ class YoloxObbDetector(BaseDetector):
             )}
         )
 
-    def _pretrained(self) -> Path | None:
-        """Checkpoint ajeno con el que arrancar. La cabeza propia no lo tiene."""
-        return None
-
     # --- entrenamiento ----------------------------------------------------
 
     def train(self, samples_by_split, config: Config, *, output_dir: Path) -> TrainResult:
@@ -92,9 +88,7 @@ class YoloxObbDetector(BaseDetector):
         if "train" not in datasets:
             raise DetectorError("hace falta la particion 'train' para entrenar")
 
-        weights, history = fit(
-            datasets["train"], config, output_dir=output_dir, pretrained=self._pretrained()
-        )
+        weights, history = fit(datasets["train"], config, output_dir=output_dir)
         last = history.epochs[-1] if history.epochs else {}
         return TrainResult(
             weights=weights,
@@ -134,6 +128,7 @@ class YoloxObbDetector(BaseDetector):
             samples, cache_path=config.data.derived_dir / "image_sizes.json"
         )
         model = load_model(weights)
+        device = next(model.parameters()).device
         side = config.detector.image_size
 
         out: dict[str, list] = {}
@@ -144,8 +139,8 @@ class YoloxObbDetector(BaseDetector):
                     raise DetectorError(f"no se pudo leer {sample.image_path}")
                 resized = cv2.resize(image, (side, side), interpolation=cv2.INTER_LINEAR)
                 # La MISMA conversion que en entrenamiento, o los pesos no valen.
-                tensor = image_to_input(resized).unsqueeze(0)
-                outputs = model(tensor)
+                tensor = image_to_input(resized).unsqueeze(0).to(device)
+                outputs = [o.to_cpu() for o in model(tensor)]
                 width, height = sizes.size(sample.sample_id)
                 out[sample.sample_id] = detections(
                     outputs,
@@ -204,7 +199,7 @@ class YoloxObbDdgrcfPortDetector(YoloxObbDetector):
     Es la version de ese candidato que ENTRENA en CPU y en MPS: la misma red
     (`models/ddgrcf.py`, verificada tensor a tensor contra la suya), la misma
     receta (`recipes.py: ddgrcf`, con el IoU exacto en torch) y sus pesos de
-    DOTA si se apuntan por `TESTBANK_YOLOX_OBB_DDGRCF_WEIGHTS`.
+    DOTA con `--pretrained weights/yolox_s_dota1_0.pth`.
 
     Apto para produccion: no depende de nada compilado ni de un clon. Lo que
     NO reproduce del clon es su bucle de datos (mosaico, mixup, resampling) ni
@@ -225,8 +220,8 @@ class YoloxObbDdgrcfPortDetector(YoloxObbDetector):
             "SimOTA con -log(IoU). El IoU de poligonos va en torch, no compilado."
         ),
         (
-            "Preentreno DOTA opcional por TESTBANK_YOLOX_OBB_DDGRCF_WEIGHTS; la "
-            "capa de clase (15 -> 1) se reinicia y el resto se carga estricto."
+            "Preentreno DOTA con --pretrained; la capa de clase (15 -> 1) se "
+            "reinicia y el resto se carga estricto."
         ),
         "Entrena con el bucle de testbank, no con el suyo: sin mosaico ni mixup.",
     )
@@ -238,11 +233,6 @@ class YoloxObbDdgrcfPortDetector(YoloxObbDetector):
         return config.model_copy(
             update={"detector": config.detector.model_copy(update={"variant": self.variant, "loss": loss})}
         )
-
-    def _pretrained(self) -> Path | None:
-        from testbank.detectors.yolox_obb_ddgrcf import pretrained_weights
-
-        return pretrained_weights()
 
 
 __all__ = ["YoloxObbDdgrcfPortDetector", "YoloxObbDetector"]

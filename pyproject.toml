@@ -54,28 +54,6 @@ rtmdet = [
     "mmrotate @ git+https://github.com/open-mmlab/mmrotate@dev-1.x",
 ]
 
-# buzhidaoshenme/YOLOX-OBB. NO es un paquete: hay que clonarlo y parchearlo con
-# `tools/patch_yolox_obb_fork.py`. Esto son solo las dependencias que le faltan
-# al entorno principal, todas con wheel y ninguna compilada desde fuente.
-#
-# Lo que NO esta aqui, a proposito: `polyiou`, la extension C++ con SWIG de la
-# que cuelga toda su ruta OBB. No trae wheel y la especificacion prohibe las
-# extensiones compiladas, asi que el parche la sustituye por shapely -- que es
-# ademas el IoU con el que mide el resto del proyecto, de modo que el fork y la
-# tabla comparativa puntuan con la misma implementacion y no con dos parecidas.
-yolox-fork = [
-    "loguru",
-    "thop",
-    "tabulate",
-    "tensorboard",
-    "scikit-image",
-    "tqdm",
-    # Solo porque `yolox/data/datasets/__init__.py` importa `coco.py` sin
-    # condicion, aunque la ruta OBB no lo use. Trae wheel para las plataformas
-    # normales; si tocase compilarlo, quitar ese import del fork sale mas barato.
-    "pycocotools",
-]
-
 [project.scripts]
 testbank = "testbank.cli:main"
 

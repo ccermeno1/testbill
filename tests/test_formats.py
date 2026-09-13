@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import math
-import xml.etree.ElementTree as ET
 
 import pytest
 from conftest import rotated_rect_points
@@ -24,8 +23,8 @@ from testbank.geometry.quad import Quad, QuadShapeWarning, canonicalize
 
 SIZE = ImageSize(width=640, height=480)
 
-LOSSLESS = ("obb_yolo", "dota", "voc_xml")
-LOSSY = ("bbox_yolo", "bbox_coco")
+LOSSLESS = ("obb_yolo", "dota")
+LOSSY = ("bbox_coco",)
 
 
 def quad(cx=0.5, cy=0.5, half_long=0.2, ratio=2.0, theta=0.0) -> Quad:
@@ -63,14 +62,7 @@ def max_pixel_error(a: Quad, b: Quad) -> float:
 
 
 def test_estan_todos_los_formatos():
-    assert formats.formats() == [
-        "bbox_coco",
-        "bbox_yolo",
-        "dota",
-        "obb_yolo",
-        "voc_xml",
-        "yolox_obb_voc",
-    ]
+    assert formats.formats() == ["bbox_coco", "dota", "obb_yolo"]
 
 
 @pytest.mark.parametrize("name", LOSSLESS + LOSSY)
@@ -83,8 +75,6 @@ def test_todos_cumplen_el_protocolo(name):
     [
         ("obb_yolo", False, False),
         ("dota", False, True),
-        ("voc_xml", False, True),
-        ("bbox_yolo", True, False),
         ("bbox_coco", True, True),
     ],
 )
@@ -204,29 +194,17 @@ def test_una_caja_ya_alineada_sobrevive_a_los_lossy(name):
     assert max_pixel_error(original, get("obb_yolo").to_quad(back)) < 1e-3
 
 
-def test_bbox_yolo_da_la_envolvente_alineada():
-    original = quad(theta=math.pi / 4, half_long=0.2, ratio=2.0)
-    record = get("bbox_yolo").from_quad(original)
-    cx, cy, w, h = (float(t) for t in record.payload.split())
-    xs = [p[0] for p in original.points]
-    ys = [p[1] for p in original.points]
-    assert cx == pytest.approx((min(xs) + max(xs)) / 2)
-    assert cy == pytest.approx((min(ys) + max(ys)) / 2)
-    assert w == pytest.approx(max(xs) - min(xs))
-    assert h == pytest.approx(max(ys) - min(ys))
-
-
 # --- el tamano de la imagen -----------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["dota", "voc_xml", "bbox_coco"])
+@pytest.mark.parametrize("name", ["dota", "bbox_coco"])
 def test_sin_tamano_los_formatos_en_pixeles_fallan_claro(name):
     record = get("obb_yolo").from_quad(quad())
     with pytest.raises(FormatError, match="tamano de la imagen"):
         convert(record, source="obb_yolo", target=name)
 
 
-@pytest.mark.parametrize("name", ["obb_yolo", "bbox_yolo"])
+@pytest.mark.parametrize("name", ["obb_yolo"])
 def test_los_formatos_normalizados_no_piden_tamano(name):
     record = get("obb_yolo").from_quad(quad())
     assert convert(record, source="obb_yolo", target=name) is not None
@@ -238,36 +216,6 @@ def test_el_tamano_correcto_cambia_el_resultado():
     ancha = get("dota").from_quad(q, size=ImageSize(1000, 200))
     alta = get("dota").from_quad(q, size=ImageSize(200, 1000))
     assert ancha.payload != alta.payload
-
-
-# --- voc_xml y los rectangulos --------------------------------------------
-
-
-def test_voc_xml_escribe_robndbox_con_el_lado_largo_en_w():
-    q = quad(theta=0.4, half_long=0.2, ratio=2.5)
-    record = get("voc_xml").from_quad(q, size=SIZE)
-    box = record.payload.find("robndbox")
-    w = float(box.find("w").text)
-    h = float(box.find("h").text)
-    assert w > h
-    angle = float(box.find("angle").text)
-    assert 0.0 <= angle < math.pi
-
-
-def test_voc_xml_rechaza_un_quad_que_no_es_rectangulo():
-    """Perder informacion en silencio seria peor que fallar."""
-    torcido = canonicalize(
-        Quad.from_xy([(0.1, 0.1), (0.6, 0.12), (0.55, 0.4), (0.12, 0.3)])
-    )
-    with pytest.raises(FormatError, match="rectangulos"):
-        get("voc_xml").from_quad(torcido, size=SIZE)
-
-
-def test_voc_xml_sin_robndbox_es_error():
-    element = ET.Element("object")
-    ET.SubElement(element, "name").text = "euro_banknote"
-    with pytest.raises(FormatError, match="robndbox"):
-        get("voc_xml").to_quad(Record(0, element), size=SIZE)
 
 
 # --- las anotaciones de origen son de solo lectura ------------------------

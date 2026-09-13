@@ -28,7 +28,7 @@ from torch.utils.data import DataLoader
 from testbank.config import Config
 from testbank.experiment.provenance import seed_everything
 from testbank.models.data import BanknoteDataset, Batch, collate
-from testbank.models.recipes import architecture_of, build_model, losses_for_image
+from testbank.models.losses import architecture_of, build_model, losses_for_image
 from testbank.models.yolox_obb import HeadSpec, YoloxObb
 
 #: Fraccion del entrenamiento dedicada a subir el learning rate desde casi cero.
@@ -155,6 +155,27 @@ def train_one_epoch(
 
 
 
+def pick_device() -> torch.device:
+    """`cuda` si hay, si no `mps` (la GPU de Apple), si no `cpu`.
+
+    Todo lo que entrena con este bucle es torch puro, asi que corre en las tres.
+    Antes estaba clavado a `cpu` y en un Mac con GPU no se enteraba nadie. Se
+    puede forzar con `TESTBANK_DEVICE=cpu`, que es util para reproducir un
+    numero exacto: MPS y CUDA no garantizan la misma aritmetica que la CPU.
+    """
+    import os
+
+    forced = os.environ.get("TESTBANK_DEVICE")
+    if forced:
+        return torch.device(forced)
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    mps = getattr(torch.backends, "mps", None)
+    if mps is not None and mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 def fit(
     dataset: BanknoteDataset,
     config: Config,
@@ -169,8 +190,9 @@ def fit(
     `pretrained`: un checkpoint ajeno con el que arrancar (hoy solo el de DOTA
     de DDGRCF sobre su port). Lo que no encaje se salta y queda anotado.
     """
-    device = device or torch.device("cpu")
+    device = device or pick_device()
     history = TrainingHistory()
+    history.notes.append(f"dispositivo: {device}")
     # Se siembra TODO antes de construir el modelo, no solo el DataLoader. Los
     # pesos se inicializan al azar desde el generador global de torch: sembrar
     # solo el cargador dejaba dos ejecuciones con la misma semilla partiendo de
@@ -230,7 +252,8 @@ def load_model(weights: Path, device: torch.device | None = None) -> YoloxObb:
     fallaria con un error de formas incomprensible, y el fichero es el unico
     sitio donde esa informacion no se puede desincronizar.
     """
-    payload = torch.load(weights, map_location=device or "cpu", weights_only=False)
+    device = device or pick_device()
+    payload = torch.load(weights, map_location="cpu", weights_only=False)
     if payload.get("arch") == "ddgrcf":
         from testbank.models.ddgrcf import DdgrcfYoloxObb
 
@@ -242,7 +265,7 @@ def load_model(weights: Path, device: torch.device | None = None) -> YoloxObb:
             head=HeadSpec.from_dict(payload.get("head")),
         )
     model.load_state_dict(payload["model"])
-    return model.to(device or torch.device("cpu")).eval()
+    return model.to(device).eval()
 
 
 __all__ = [

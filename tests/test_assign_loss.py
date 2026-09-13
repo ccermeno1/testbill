@@ -17,7 +17,7 @@ from testbank.models.assign import (
     points_in_rotated_boxes,
     simota_assign,
 )
-from testbank.models.loss import angle_loss, compute_losses, iou_loss
+from testbank.models.losses import angle_loss, compute_losses, iou_loss
 
 
 def box(cx, cy, w, h, theta=0.0):

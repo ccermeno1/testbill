@@ -159,7 +159,7 @@ def test_con_una_sola_linea_mala_el_mensaje_no_cambia(tmp_path):
 def test_los_errores_se_acumulan_entre_ficheros(tmp_path):
     """Con 500 etiquetas, un error por ejecucion vuelve la limpieza un bucle."""
     from testbank.data.discover import Sample
-    from testbank.dataio.loader import load_samples
+    from testbank.dataio.prepare import load_samples
 
     samples = []
     for name, text in (("a", "0 1 2 3\n"), ("b", VALID), ("c", "0 nan 0.1 0.5 0.1 0.5 0.3 0.1 0.3\n")):
