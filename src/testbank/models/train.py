@@ -83,6 +83,68 @@ HISTORY_FILE = "training.json"
 Validator = Callable[["torch.nn.Module", int], dict]
 
 
+#: Order of the validation line, Ultralytics-style: precision and recall at
+#: the decision confidence, then the APs, then what decides the crop.
+VALIDATION_KEYS = (
+    "precision", "recall", "map50", "map50_95", "fitness", "coverage_p5", "coverage_p10",
+)
+
+#: Ultralytics' `fitness`, the number its `best.pt` is chosen by: a weighted
+#: sum of (P, R, mAP50, mAP50-95) with weights (0, 0, 0.1, 0.9), as documented.
+#: It leans on mAP50-95 so the winner is the checkpoint whose boxes fit
+#: tightest, not just the one that finds the most banknotes.
+FITNESS_WEIGHTS = (0.1, 0.9)
+
+
+def fitness(map50: float, map50_95: float) -> float:
+    w50, w50_95 = FITNESS_WEIGHTS
+    return w50 * map50 + w50_95 * map50_95
+
+
+def validation_metrics(report: dict) -> dict:
+    """The numbers a validator returns from a `metrics.json`-shaped report.
+
+    `precision`/`recall` are read at `metrics.report_confidence` (0.25),
+    the operating point, not at the low inference threshold AP needs: that is
+    where Ultralytics reads its P and R too. `fitness` is their selection
+    number, see `FITNESS_WEIGHTS`. `coverage_p10` beside `p5`
+    because with ~140 truths the 5th percentile sits on the boundary between
+    the undetected (0) and the rest, and jumps; the 10th moves smoothly.
+    """
+    at = report["detection"]["at_decision_confidence"]
+    tp, fp = at["true_positives"], at["false_positives"]
+    margin = f"{report['crop']['margin_used']:.2f}"
+    by_margin = report["crop"]["by_margin"].get(margin, {})
+    return {
+        "precision": tp / (tp + fp) if tp + fp else 0.0,
+        "recall": at["detection_rate"],
+        "map50": report["map50"]["value"],
+        "map50_95": report["map50_95"]["value"],
+        "fitness": fitness(report["map50"]["value"], report["map50_95"]["value"]),
+        "coverage_p5": report["coverage_p5"]["value"],
+        "coverage_p10": by_margin.get("coverage_p10_all", float("nan")),
+    }
+
+
+def selection_value(metrics: dict, metric_name: str) -> float:
+    """What `best.pt` is chosen by; a validator that does not report it is
+    a bug, not a silent last-epoch selection."""
+    try:
+        return metrics[metric_name]
+    except KeyError:
+        raise ValueError(
+            f"the validator did not report the selection metric {metric_name!r}; "
+            f"it returned {sorted(metrics)}"
+        ) from None
+
+
+def format_validation(metrics: dict) -> str:
+    keys = [k for k in VALIDATION_KEYS if k in metrics] + [
+        k for k in metrics if k not in VALIDATION_KEYS and k != "epoch"
+    ]
+    return "  ".join(f"{k} {metrics[k]:.3f}" for k in keys)
+
+
 def _format_terms(terms: dict) -> str:
     keys = ("total", "box", "angle", "objectness", "classes", "dfl", "l1")
     return "  ".join(f"{k} {terms[k]:.4f}" for k in keys if terms.get(k))
@@ -291,6 +353,8 @@ def fit(
     total_steps = max(1, len(loader) * total_epochs)
     step = 0
     for epoch in range(total_epochs):
+        if hasattr(dataset, "set_epoch"):
+            dataset.set_epoch(epoch)  # mosaic off for the last `close_mosaic`
         terms, step = train_one_epoch(
             model, loader, optimizer, config,
             device=device, step=step, total_steps=total_steps, base_lr=base_lr,
@@ -306,11 +370,10 @@ def fit(
             metrics = validate(model, epoch)
             model.train()
             history.validation.append({"epoch": epoch, **metrics})
-            value = metrics[metric_name]
+            value = selection_value(metrics, metric_name)
             improved = history.best is None or value > history.best[metric_name]
             say(
-                f"  valid @ {epoch + 1}: "
-                + "  ".join(f"{k} {v:.4f}" for k, v in metrics.items())
+                f"  valid @ {epoch + 1}: {format_validation(metrics)}"
                 + ("  <- best" if improved else "")
             )
             if improved:
@@ -360,13 +423,19 @@ def load_model(weights: Path, device: torch.device | None = None) -> YoloxObb:
 
 
 __all__ = [
+    "FITNESS_WEIGHTS",
     "HISTORY_FILE",
+    "VALIDATION_KEYS",
     "WARMUP_FRACTION",
     "TrainingHistory",
     "Validator",
     "checkpoint_payload",
     "fit",
+    "fitness",
+    "format_validation",
     "learning_rate_at",
     "load_model",
+    "selection_value",
     "train_one_epoch",
+    "validation_metrics",
 ]

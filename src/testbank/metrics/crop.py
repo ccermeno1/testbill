@@ -137,6 +137,10 @@ class CropReport:
     coverage_p5_all: float
     #: The same percentile only over the detected ones. Kept apart on purpose.
     coverage_p5_detected: float
+    #: The 10th percentile over all truths. With ~140 truths the 5th sits on
+    #: the boundary between the undetected (0) and the rest and jumps; the
+    #: 10th moves smoothly and discriminates between checkpoints.
+    coverage_p10_all: float
     coverage_median: float
     contamination_p95: float
     contamination_median: float
@@ -156,6 +160,7 @@ class CropReport:
             "detection_rate": self.detection_rate,
             "coverage_p5_all": self.coverage_p5_all,
             "coverage_p5_detected": self.coverage_p5_detected,
+            "coverage_p10_all": self.coverage_p10_all,
             "coverage_median": self.coverage_median,
             "contamination_p95": self.contamination_p95,
             "contamination_median": self.contamination_median,
@@ -166,7 +171,7 @@ def summarize(
     samples: list[CropSample], *, margin: float, percentile: float = 5.0
 ) -> CropReport:
     if not samples:
-        return CropReport(margin, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        return CropReport(margin, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
     all_coverage = np.array([s.coverage for s in samples])
     detected = [s for s in samples if s.detected]
     det_coverage = (
@@ -183,6 +188,7 @@ def summarize(
         detected=len(detected),
         coverage_p5_all=float(np.percentile(all_coverage, percentile)),
         coverage_p5_detected=float(np.percentile(det_coverage, percentile)),
+        coverage_p10_all=float(np.percentile(all_coverage, 10.0)),
         coverage_median=float(np.median(all_coverage)),
         contamination_p95=float(np.percentile(contamination, 95)),
         contamination_median=float(np.median(contamination)),

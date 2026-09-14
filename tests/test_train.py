@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 
@@ -18,7 +19,13 @@ from testbank.dataio.formats import get as get_format
 from testbank.detectors import get as get_detector
 from testbank.geometry.quad import Quad, canonicalize
 from testbank.models.data import build_datasets, collate, quad_to_box
-from testbank.models.train import fit, learning_rate_at, load_model
+from testbank.models.train import (
+    HISTORY_FILE,
+    VALIDATION_KEYS,
+    fit,
+    learning_rate_at,
+    load_model,
+)
 
 SIDE = 128
 
@@ -306,7 +313,7 @@ def test_validation_keeps_the_best_checkpoint_not_the_last(setup, tmp_path):
 
     def validate(model, epoch):
         snapshots[epoch] = {k: v.clone() for k, v in model.state_dict().items()}
-        return {"map50": scores[epoch], "coverage_p5": 1.0}
+        return {"map50": scores[epoch], "fitness": scores[epoch], "coverage_p5": 1.0}
 
     lines = []
     weights, history = fit(
@@ -330,7 +337,7 @@ def test_eval_every_spaces_the_evaluations_and_always_includes_the_last(setup, t
 
     def validate(model, epoch):
         seen.append(epoch)
-        return {"map50": 0.5, "coverage_p5": 1.0}
+        return {"map50": 0.5, "fitness": 0.5, "coverage_p5": 1.0}
 
     fit(dataset, config, output_dir=tmp_path / "out", validate=validate, log=None)
     assert seen == [1, 3, 4]
@@ -338,9 +345,6 @@ def test_eval_every_spaces_the_evaluations_and_always_includes_the_last(setup, t
 
 def test_the_history_is_written_after_every_epoch(setup, tmp_path):
     """A run that dies halfway has to leave its curve on disk."""
-    import json
-
-    from testbank.models.train import HISTORY_FILE
 
     samples, config = setup
     config = _config_with(config, epochs=3, eval_every=1)
@@ -350,7 +354,7 @@ def test_the_history_is_written_after_every_epoch(setup, tmp_path):
     def validate(model, epoch):
         lengths.append(len(json.loads((tmp_path / "out" / HISTORY_FILE).read_text())["epochs"])
                        if (tmp_path / "out" / HISTORY_FILE).exists() else 0)
-        return {"map50": 0.5, "coverage_p5": 1.0}
+        return {"map50": 0.5, "fitness": 0.5, "coverage_p5": 1.0}
 
     fit(dataset, config, output_dir=tmp_path / "out", validate=validate, log=None)
     # At the validation of epoch k the file already had k epochs written.
@@ -370,6 +374,69 @@ def test_the_adapter_validates_with_our_metrics_and_records_it(setup, tmp_path):
     assert not (tmp_path / "t" / "_eval.pt").exists()
     assert any("2 validation images" in n for n in result.notes)
     assert any(n.startswith("best.pt = epoch") for n in result.notes)
+    history = json.loads((tmp_path / "t" / HISTORY_FILE).read_text(encoding="utf-8"))
+    # The validation line carries what Ultralytics prints (P, R, mAP50,
+    # mAP50-95) plus what decides the crop, and it all lands in the history.
+    assert set(history["validation"][0]) >= {"epoch", *VALIDATION_KEYS}
+    assert history["best"]["map50"] == history["validation"][history["best"]["epoch"]]["map50"]
+
+
+def test_validation_metrics_read_the_operating_point_of_the_report():
+    from testbank.models.train import format_validation, validation_metrics
+
+    report = {
+        "n_truths": 10,
+        "map50": {"value": 0.9},
+        "map50_95": {"value": 0.6},
+        "coverage_p5": {"value": 0.8},
+        "crop": {"margin_used": 0.05, "by_margin": {"0.05": {"coverage_p10_all": 0.85}}},
+        "detection": {
+            "at_decision_confidence": {
+                "true_positives": 8, "false_positives": 2, "detection_rate": 0.8,
+            }
+        },
+    }
+    metrics = validation_metrics(report)
+    assert metrics == pytest.approx({
+        "precision": 0.8, "recall": 0.8, "map50": 0.9, "map50_95": 0.6,
+        "fitness": 0.1 * 0.9 + 0.9 * 0.6, "coverage_p5": 0.8, "coverage_p10": 0.85,
+    })
+    line = format_validation({**metrics, "epoch": 3})
+    assert line.startswith("precision 0.800  recall 0.800  map50 0.900  map50_95 0.600  fitness 0.630")
+    assert "epoch" not in line
+    # No detections at all: precision is 0, not a division error.
+    report["detection"]["at_decision_confidence"].update(true_positives=0, false_positives=0)
+    assert validation_metrics(report)["precision"] == 0.0
+
+
+def test_a_validator_that_forgets_the_selection_metric_is_an_error(setup, tmp_path):
+    samples, config = setup
+    config = _config_with(config, epochs=1, eval_every=1)
+    dataset = build_datasets(samples, config)["train"]
+    with pytest.raises(ValueError, match="selection metric 'fitness'"):
+        fit(
+            dataset, config, output_dir=tmp_path / "out",
+            validate=lambda m, e: {"map50": 0.5, "coverage_p5": 1.0}, log=None,
+        )
+
+
+def test_the_default_selection_is_fitness_and_it_wins_on_map50_95(setup, tmp_path):
+    """Two checkpoints with the same mAP50: the one with tighter boxes wins."""
+    samples, config = setup
+    assert config.detector.selection_metric == "fitness"
+    config = _config_with(config, epochs=2, eval_every=1)
+    dataset = build_datasets(samples, config)["train"]
+    from testbank.models.train import fitness
+
+    scores = {0: (0.9, 0.5), 1: (0.9, 0.7)}
+
+    def validate(model, epoch):
+        m50, m50_95 = scores[epoch]
+        return {"map50": m50, "map50_95": m50_95, "fitness": fitness(m50, m50_95)}
+
+    _, history = fit(dataset, config, output_dir=tmp_path / "out", validate=validate, log=None)
+    assert history.best["epoch"] == 1
+    assert history.best["fitness"] == pytest.approx(0.1 * 0.9 + 0.9 * 0.7)
 
 
 def test_validating_mid_training_does_not_change_the_trajectory(setup, tmp_path):
@@ -381,7 +448,7 @@ def test_validating_mid_training_does_not_change_the_trajectory(setup, tmp_path)
     _, plain = fit(dataset, config, output_dir=tmp_path / "a", log=None)
     _, validated = fit(
         dataset, config, output_dir=tmp_path / "b",
-        validate=lambda m, e: {"map50": 0.0, "coverage_p5": 0.0}, log=None,
+        validate=lambda m, e: {"map50": 0.0, "fitness": 0.0, "coverage_p5": 0.0}, log=None,
     )
     assert [e["total"] for e in plain.epochs] == pytest.approx(
         [e["total"] for e in validated.epochs], rel=1e-6
@@ -400,7 +467,7 @@ def test_plot_training_renders_losses_and_validation(setup, tmp_path):
     dataset = build_datasets(samples, config)["train"]
     fit(
         dataset, config, output_dir=tmp_path / "run" / "_train",
-        validate=lambda m, e: {"map50": 0.2 * (e + 1), "coverage_p5": 0.9}, log=None,
+        validate=lambda m, e: {"map50": 0.2 * (e + 1), "fitness": 0.2 * (e + 1), "coverage_p5": 0.9}, log=None,
     )
     path = plot_run(tmp_path / "run")
     assert path == tmp_path / "run" / "viz" / "training.png"
@@ -412,3 +479,22 @@ def test_plot_training_says_when_there_is_nothing_to_plot(tmp_path):
 
     with pytest.raises(FileNotFoundError, match="training.json"):
         find_history(tmp_path)
+
+
+# --- augmentation in the loop ---------------------------------------------
+
+
+def test_training_with_augmentation_is_deterministic_and_trains(setup, tmp_path):
+    """The dataset draws from its own seeded generator in sampler order, so
+    two runs with `--augment` and the same seed see the same images."""
+    from testbank.config import AugmentConfig
+
+    samples, config = setup
+    config = _config_with(config, epochs=2, augment=AugmentConfig(enabled=True))
+    a_set = build_datasets(samples, config)["train"]
+    b_set = build_datasets(samples, config)["train"]
+    assert a_set.augment is not None
+    _, a = fit(a_set, config, output_dir=tmp_path / "a", log=None)
+    _, b = fit(b_set, config, output_dir=tmp_path / "b", log=None)
+    assert [e["total"] for e in a.epochs] == pytest.approx([e["total"] for e in b.epochs], rel=1e-6)
+    assert all(math.isfinite(e["total"]) for e in a.epochs)

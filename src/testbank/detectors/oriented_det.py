@@ -214,7 +214,13 @@ class RotatedFcosDetector(BaseDetector):
 
         from testbank.experiment.provenance import seed_everything
         from testbank.models.data import build_datasets, collate
-        from testbank.models.train import HISTORY_FILE, TrainingHistory, pick_device
+        from testbank.models.train import (
+            HISTORY_FILE,
+            TrainingHistory,
+            format_validation,
+            pick_device,
+            selection_value,
+        )
 
         datasets = build_datasets(samples_by_split, config)
         if "train" not in datasets:
@@ -276,6 +282,7 @@ class RotatedFcosDetector(BaseDetector):
         best_path, last_path = output_dir / "best.pt", output_dir / "last.pt"
         step = 0
         for epoch in range(epochs):
+            dataset.set_epoch(epoch)
             model.train()
             totals: dict[str, float] = {}
             batches = 0
@@ -316,11 +323,10 @@ class RotatedFcosDetector(BaseDetector):
                            output_dir / "_eval.pt")
                 metrics = validate(output_dir / "_eval.pt")
                 history.validation.append({"epoch": epoch, **metrics})
-                value = metrics[metric_name]
+                value = selection_value(metrics, metric_name)
                 improved = history.best is None or value > history.best[metric_name]
                 print(
-                    f"  valid @ {epoch + 1}: "
-                    + "  ".join(f"{k} {v:.4f}" for k, v in metrics.items())
+                    f"  valid @ {epoch + 1}: {format_validation(metrics)}"
                     + ("  <- best" if improved else ""),
                     flush=True,
                 )
@@ -362,8 +368,9 @@ class RotatedFcosDetector(BaseDetector):
         )
 
         def validate(weights: Path) -> dict:
-            report = self.evaluate(valid, light, weights=weights)
-            return {"map50": report["map50"]["value"], "coverage_p5": report["coverage_p5"]["value"]}
+            from testbank.models.train import validation_metrics
+
+            return validation_metrics(self.evaluate(valid, light, weights=weights))
 
         return validate
 

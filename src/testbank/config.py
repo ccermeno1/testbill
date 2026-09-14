@@ -310,6 +310,37 @@ class LossConfig(StrictModel):
     ddgrcf: DdgrcfRecipeConfig = DdgrcfRecipeConfig()
 
 
+class AugmentConfig(StrictModel):
+    """Training-time augmentation for the candidates trained by this loop.
+
+    Off by default so the baseline stays interpretable; `--augment` switches
+    it on and the choice is frozen in the run. The defaults are Ultralytics'
+    (`default.yaml`), reproduced from its documentation: it is what the
+    `ultralytics-yolo-obb` reference trains with. See `models/augment.py`.
+    """
+
+    enabled: bool = False
+    #: Probability of building a 4-image mosaic; off for the last
+    #: `close_mosaic` epochs, as Ultralytics does.
+    mosaic: float = Field(default=1.0, ge=0.0, le=1.0)
+    close_mosaic: int = Field(default=10, ge=0)
+    #: Random affine: scale gain `+-scale`, translation `+-translate` of the side.
+    scale: float = Field(default=0.5, ge=0.0, lt=1.0)
+    translate: float = Field(default=0.1, ge=0.0, le=0.5)
+    #: HSV gains `1 + U(-x, x)` per channel.
+    hsv_h: float = Field(default=0.015, ge=0.0, le=1.0)
+    hsv_s: float = Field(default=0.7, ge=0.0, le=1.0)
+    hsv_v: float = Field(default=0.4, ge=0.0, le=1.0)
+    flip_horizontal: float = Field(default=0.5, ge=0.0, le=1.0)
+    flip_vertical: float = Field(default=0.0, ge=0.0, le=1.0)
+    #: Ours, off by default: rotations by multiples of 90 degrees, exact for
+    #: banknotes (valid in any orientation) and on the square input.
+    rotations: bool = False
+    #: A box that keeps less than this fraction of its area after the
+    #: affine is dropped (their `area_thr`).
+    min_visible: float = Field(default=0.1, gt=0.0, le=1.0)
+
+
 class DetectorConfig(StrictModel):
     """What gets handed to whichever trainer. It lives in the config and is
     recorded: two runs with different epochs are not comparable."""
@@ -325,11 +356,14 @@ class DetectorConfig(StrictModel):
     #: cosine schedule runs whole, because stopping it halfway leaves the
     #: learning rate hanging where it should have decayed.
     eval_every: int = Field(default=5, ge=0)
-    #: What "best" means. mAP50 by default and not coverage p5, which is the
-    #: metric that decides: coverage saturates at 1.0 early and stops telling
-    #: checkpoints apart, while mAP50 keeps moving. The final comparison of
-    #: candidates still reads coverage and contamination.
-    selection_metric: Literal["map50", "coverage_p5"] = "map50"
+    #: What "best" means. `fitness` by default, as in Ultralytics:
+    #: 0.1 * mAP50 + 0.9 * mAP50-95, so the winner is the checkpoint whose
+    #: boxes fit tightest and not only the one that finds the most banknotes
+    #: (`map50`). Not coverage p5, which is the metric that decides: it
+    #: saturates at 1.0 early and stops telling checkpoints apart. The final
+    #: comparison of candidates still reads coverage and contamination.
+    selection_metric: Literal["fitness", "map50", "coverage_p5"] = "fitness"
+    augment: AugmentConfig = AugmentConfig()
     #: Foreign checkpoint to start from, or None to train from scratch. For the
     #: in-house head, a Megvii `yolox_*.pth.tar` (COCO; loads backbone and neck,
     #: discards its head). For the DDGRCF port, its DOTA checkpoint. It lives

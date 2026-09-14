@@ -303,6 +303,13 @@ def build_inference_config(config: Config):
     cfg.model["bbox_head"]["num_classes"] = len(CLASSES)
     # Same loss, CPU operator; see `_register_cpu_iou_loss`.
     cfg.model["bbox_head"]["loss_bbox"]["type"] = CPU_IOU_LOSS
+    # Inference thresholds from OUR config, like every other candidate. The
+    # published `test_cfg` is DOTA's: rotated NMS at IoU 0.1 and score 0.05.
+    # 0.1 merges two banknotes that overlap by 15% into one, and 0.05 cuts
+    # the low-confidence tail AP needs. Measured on the 100-epoch run: 7 of
+    # 142 valid banknotes undetected, all in piles, before this change.
+    cfg.model["test_cfg"]["nms"]["iou_threshold"] = config.detector.nms_iou
+    cfg.model["test_cfg"]["score_thr"] = config.detector.confidence_threshold
     if _set_resolution(cfg._cfg_dict, config.detector.image_size) == 0:
         raise DetectorError("the published config has no Resize step to override")
     return cfg
@@ -329,6 +336,8 @@ def build_train_config(dota_root: Path, config: Config, *, output_dir: Path):
        original's IoU kernel is CUDA-only. Same loss, same weight.
     5. Every `Resize` and `Pad` at `detector.image_size` instead of DOTA's
        1024, so this candidate obeys the same knob as the others.
+    7. `test_cfg` NMS IoU and score threshold from our config: the published
+       rotated NMS at 0.1 merges overlapping banknotes.
     6. The learning-rate schedule rescaled to `detector.epochs`: the published
        one is pinned to 36 epochs.
     """

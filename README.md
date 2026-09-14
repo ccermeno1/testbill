@@ -748,6 +748,57 @@ naturally, was discarded because it moves away from the shapely rotated IoU we
 measure with. That traceability weighs more than the elegance of the
 formulation.
 
+## Augmentation
+
+Off by default, `--augment` switches it on, and the choice is frozen in the
+run's `config.yaml` (`detector.augment`): "how much does it add" is answered
+by two rows of the table, with and without, not by reasoning.
+
+**The recipe is Ultralytics'**, reproduced from its documentation and its
+`default.yaml` (AGPL: none of its code has been read). It is what the
+`ultralytics-yolo-obb` reference row trains with, so the candidates of this
+loop get the same treatment:
+
+| step | default | theirs |
+|---|---|---|
+| mosaic of 4 images, random center, off for the last `close_mosaic` epochs | 1.0, `close_mosaic` 10 | 1.0, 10 |
+| random affine: scale, translation (no rotation, no shear) | ±0.5, ±0.1 | ±0.5, ±0.1 |
+| HSV gains (hue, saturation, value) | 0.015, 0.7, 0.4 | same |
+| horizontal / vertical flip | 0.5 / 0.0 | 0.5 / 0.0 |
+| box dropped when less than `min_visible` of it survives, or thinner than 2 px | 0.1 | `area_thr` 0.1, `wh_thr` 2 |
+
+Same order as theirs: mosaic → affine → HSV → flips. Two things of our own,
+**off** by default so the default is theirs: vertical flip and rotations by
+multiples of 90 degrees, exact for banknotes (valid in any orientation) and
+on the square input.
+
+**The quad follows the pixels** (`models/augment.py`). Every image operation
+is applied to the quad with the same map. A box the affine pushes partly out
+of the frame goes through `clip_quad` — the same rectangle-preserving clip as
+the `clip` border policy — after a coarse clip to the tolerant range; in the
+mosaic, boxes are clipped to the canvas before the affine, as Ultralytics
+clips its labels (without that, a tile that overflowed the canvas left its
+box over gray once the affine zoomed out — caught by the test). Tested by
+painting the quad as a mask, warping the mask with the image operation and
+comparing with the mask of the warped quad; whole boxes must sit on the
+pixels, cut boxes carry the known cost of the clip policy.
+
+Deterministic: the dataset owns a `random.Random(seed)` drawn in sampler
+order (mosaic partners included); with `num_workers = 0` two runs with the
+same seed see the same augmented images (tested). The loop tells the dataset
+the epoch (`set_epoch`) so the mosaic stops for the last `close_mosaic`.
+
+Who gets it: the candidates trained by this loop — the three own variants,
+the DDGRCF port and Rotated FCOS. RTMDet-R, PP-YOLOE-R and Ultralytics carry
+their own inside their pipelines. `valid` and `test` are never augmented.
+
+To pick a subset, a YAML with `--config`; anything not set keeps its default:
+
+```yaml
+detector:
+  augment: {enabled: true, mosaic: 0.0, rotations: true}   # affine + HSV + flips + 90-degree turns, no mosaic
+```
+
 ### [SUSPICION] That 19% is probably an artifact
 
 The attenuator exists because **145 of 762 annotations (19%)** have ratio <
@@ -1143,12 +1194,27 @@ always on the last one) an evaluation on `valid` with our metrics:
 
 ```
 epoch 12/100  lr 8.13e-04  total 1.2345  box 0.4102  angle 0.0881  objectness 0.5011  classes 0.2351
-  valid @ 15: map50 0.7120  coverage_p5 0.9614  <- best
+  valid @ 15: precision 0.912  recall 0.874  map50 0.712  map50_95 0.498  fitness 0.519  coverage_p5 0.961  coverage_p10 0.973  <- best
 ```
 
-`best.pt` is the checkpoint with the best `detector.selection_metric` (mAP50
-by default: coverage p5 saturates at 1.0 early and stops telling checkpoints
-apart; the final comparison still reads coverage and contamination), `last.pt`
+The validation line reads like the Ultralytics one (P, R, mAP50, mAP50-95,
+fitness) plus what decides the crop. `precision` and `recall` are read at
+`metrics.report_confidence` (0.25), the operating point, not at the low
+inference threshold AP needs — the same figure as `at_decision_confidence` in
+`metrics.json`. `coverage_p10` sits beside `p5` because with ~140 truths in
+`valid` the 5th percentile falls on the boundary between the undetected
+(coverage 0) and the rest, and jumps between 0 and 0.9 with a single missed
+banknote; the 10th moves smoothly and tells checkpoints apart. All of it goes
+into `training.json` and the plot. During training the evaluation is *light*
+(20 bootstrap resamples, so the CI is coarse); the full one runs at the end.
+
+`best.pt` is the checkpoint with the best `detector.selection_metric`.
+`fitness` by default, the number Ultralytics picks its `best.pt` by:
+`0.1 * mAP50 + 0.9 * mAP50-95`, so the winner is the checkpoint whose boxes
+fit tightest and not only the one that finds the most banknotes. `map50` and
+`coverage_p5` are the alternatives (coverage saturates at 1.0 early and stops
+telling checkpoints apart; the final comparison still reads coverage and
+contamination). The note in the run says which epoch won and by what. `last.pt`
 the final epoch, and `_train/training.json` is rewritten after **every** epoch
 with the loss curve, the validation points and which epoch won — so a run that
 dies at hour three still leaves its curve, and you can look at it while it
@@ -1178,6 +1244,7 @@ Options valid for all:
 ```bash
 --epochs N                  # overrides the config's; it is recorded
 --image-size S              # input side for every candidate; the export is 416x416
+--augment                   # flips, 90-degree rotations, photometric jitter (own loop); § Augmentation
 --out-of-bounds clip|pad|keep   # border policy; clip by default
 --loss-recipe own|yolox_obb_fork|ultralytics_obb|ddgrcf   # own head (ddgrcf: the port); § Recipes
 --pretrained path.pth       # foreign checkpoint to START from; stays in the config

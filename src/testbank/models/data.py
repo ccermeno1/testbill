@@ -23,6 +23,7 @@ be revisited: there the letterbox would be worth it.
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass
 
 import cv2
@@ -87,31 +88,77 @@ class Batch:
 
 
 class BanknoteDataset(Dataset):
-    """Images and oriented boxes, already filtered and at the input size."""
+    """Images and oriented boxes, already filtered and at the input size.
 
-    def __init__(self, prepared: list[PreparedSample], image_size: int) -> None:
+    `augment` (an `AugmentConfig` with `enabled`) applies the training-time
+    transforms of `models/augment.py` AFTER the resize to the square input,
+    so the 90-degree rotations are exact. Only the `train` dataset gets one:
+    `valid` and `test` are measured on the real photos.
+    """
+
+    def __init__(
+        self,
+        prepared: list[PreparedSample],
+        image_size: int,
+        *,
+        augment=None,
+        seed: int = 0,
+        epochs: int = 1,
+    ) -> None:
         self.items = list(prepared)
         self.image_size = image_size
+        self.augment = augment if augment is not None and augment.enabled else None
+        # Own generator, drawn in sampler order: deterministic with
+        # `num_workers = 0`, and independent of torch's global RNG.
+        self._rng = random.Random(seed)
+        self.epochs = epochs
+        self.epoch = 0
+
+    def set_epoch(self, epoch: int) -> None:
+        """The loop says which epoch it is: the mosaic switches off for the
+        last `close_mosaic` epochs, as in Ultralytics."""
+        self.epoch = epoch
+
+    @property
+    def mosaic_active(self) -> bool:
+        a = self.augment
+        return a is not None and a.mosaic > 0 and self.epoch < self.epochs - a.close_mosaic
+
+    def _read_square(self, item: PreparedSample) -> np.ndarray:
+        image = cv2.imread(str(item.sample.image_path), cv2.IMREAD_COLOR)
+        if image is None:
+            raise OSError(f"could not read {item.sample.image_path}")
+        return cv2.resize(image, (self.image_size, self.image_size), interpolation=cv2.INTER_LINEAR)
 
     def __len__(self) -> int:
         return len(self.items)
 
     def __getitem__(self, index: int):
         item = self.items[index]
-        image = cv2.imread(str(item.sample.image_path), cv2.IMREAD_COLOR)
-        if image is None:
-            raise OSError(f"could not read {item.sample.image_path}")
-        image = cv2.resize(
-            image, (self.image_size, self.image_size), interpolation=cv2.INTER_LINEAR
-        )
+        image = self._read_square(item)
+        quads = list(item.quads)
+        if self.augment is not None:
+            from testbank.models.augment import augment
+
+            a = self.augment
+
+            def others():
+                other = self.items[self._rng.randrange(len(self.items))]
+                return self._read_square(other), list(other.quads)
+
+            image, quads = augment(
+                image, quads, self._rng,
+                others=others if self.mosaic_active else None,
+                mosaic=a.mosaic, scale=a.scale, translate=a.translate,
+                hsv_h=a.hsv_h, hsv_s=a.hsv_s, hsv_v=a.hsv_v,
+                flip_h=a.flip_horizontal, flip_v=a.flip_vertical, rotations=a.rotations,
+                min_visible=a.min_visible,
+            )
         tensor = image_to_input(image)
 
         # Quads are normalized, so the boxes are computed directly at the input
         # scale: no rescaling afterwards.
-        boxes = [
-            quad_to_box(quad, self.image_size, self.image_size)
-            for quad in item.quads
-        ]
+        boxes = [quad_to_box(quad, self.image_size, self.image_size) for quad in quads]
         return (
             tensor,
             torch.tensor(boxes, dtype=torch.float32).reshape(-1, 5),
@@ -136,7 +183,13 @@ def build_datasets(
     """One dataset per split, sharing filter and border policy."""
     prepared, _ = prepare(samples_by_split, config)
     return {
-        split: BanknoteDataset(items, config.detector.image_size)
+        split: BanknoteDataset(
+            items,
+            config.detector.image_size,
+            augment=config.detector.augment if split == "train" else None,
+            seed=config.metrics.seed,
+            epochs=config.detector.epochs,
+        )
         for split, items in prepared.items()
     }
 

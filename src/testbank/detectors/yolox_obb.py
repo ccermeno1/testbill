@@ -81,7 +81,7 @@ class YoloxObbDetector(BaseDetector):
     def train(self, samples_by_split, config: Config, *, output_dir: Path) -> TrainResult:
         torch = _import_torch()
         from testbank.models.data import build_datasets
-        from testbank.models.train import checkpoint_payload, fit
+        from testbank.models.train import checkpoint_payload, fit, validation_metrics
 
         config = self._with_variant(config)
         datasets = build_datasets(samples_by_split, config)
@@ -101,11 +101,7 @@ class YoloxObbDetector(BaseDetector):
 
             def validate(model, epoch):
                 torch.save(checkpoint_payload(model, config, epoch=epoch), scratch)
-                report = self.evaluate(valid_samples, light, weights=scratch)
-                return {
-                    "map50": report["map50"]["value"],
-                    "coverage_p5": report["coverage_p5"]["value"],
-                }
+                return validation_metrics(self.evaluate(valid_samples, light, weights=scratch))
 
         weights, history = fit(
             datasets["train"], config, output_dir=output_dir, validate=validate

@@ -317,6 +317,8 @@ def cmd_train(args, config: Config) -> int:
         updates["epochs"] = args.epochs
     if args.image_size is not None:
         updates["image_size"] = args.image_size
+    if args.augment:
+        updates["augment"] = config.detector.augment.model_copy(update={"enabled": True})
     if args.out_of_bounds is not None:
         updates["out_of_bounds"] = OutOfBoundsPolicy(args.out_of_bounds)
     if args.pretrained is not None:
@@ -525,6 +527,16 @@ def build_parser() -> argparse.ArgumentParser:
             "input side in pixels for every candidate (own head, port, "
             "Ultralytics, RTMDet-R); overrides detector.image_size and is "
             "recorded. The export is 416x416: 416 uses the pixels as they are"
+        ),
+    )
+    train.add_argument(
+        "--augment",
+        action="store_true",
+        help=(
+            "training-time augmentation for the candidates trained by this "
+            "loop (own variants, DDGRCF port, Rotated FCOS), Ultralytics' "
+            "recipe by default: mosaic, scale/translate, HSV, horizontal flip; "
+            "details in detector.augment. Off by default; recorded in the run"
         ),
     )
     train.add_argument(
