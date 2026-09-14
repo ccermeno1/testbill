@@ -18,42 +18,21 @@ Thumbs.db
 desktop.ini
 
 # --- data --------------------------------------------------------------------
-# The dataset does not go in: it is 16 MB of images whose source of truth is
-# Roboflow (clara-cermeno/annotated-banknotes-2-rwayh), not this repository. It
-# is recovered by re-exporting from there.
-#
-# What DOES go in is splits/, which is where the frozen split lives. That is the
-# point of materializing it: the .txt files survive even if the data tree
-# changes, and versioning them is what allows repeating a run.
-data/*
-!data/.gitkeep
-
-# Everything derived is regenerated: size index, view for Ultralytics.
-data/derived/
-
-# Synthetic data is rebuilt by tools/make_synthetic.py with a fixed seed.
-data/synth_*/
+# This branch serves; the dataset lives on `main`'s machines, not here.
+data/
 
 # --- runs --------------------------------------------------------------------
-# Weights and images out; the RECORD in. run.json, metrics.json and
-# config.yaml are small and are the experiment history: versioning them is what
-# gives `compare` a memory beyond this machine.
-runs/**/weights/
+# A served run is `runs/<name>/{run.json, config.yaml, metrics.json, weights/}`
+# and it IS versioned (the weights through Git LFS, see .gitattributes).
+# What training left beside it stays out.
+runs/**/_train/
 runs/**/viz/
 runs/_inspection/
+runs/test_evaluations.jsonl
+
+# Stray checkpoints anywhere else (a download, an Ultralytics leftover).
 *.pt
 *.pth
 *.onnx
 *.tflite
-
-# Ultralytics leaves this wherever it happens to be.
-yolo*.pt
-runs/detect/
-.venv-*/
-
-# Foreign checkpoints (Megvii COCO, DDGRCF DOTA) live in weights/ and go through
-# Git LFS (see .gitattributes): the repo keeps a pointer, the binaries go apart.
-# `*.pt`/`*.pth` anywhere else (runs/, the working tree) stay out.
-!/weights/*.pth
-!/weights/*.pth.tar
-!/weights/*.pdparams
+!runs/**/weights/*

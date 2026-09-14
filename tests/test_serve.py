@@ -12,7 +12,7 @@ from conftest import rotated_rect_points
 
 from testbank.config import Config
 from testbank.geometry.quad import Quad, canonicalize
-from testbank.metrics.core import Prediction
+from testbank.prediction import Prediction
 from testbank.serve import (
     TrainedModel,
     crop,
@@ -76,7 +76,7 @@ def test_the_label_carries_the_headline_metrics_and_survives_without_them(tmp_pa
     assert scored.summary() == {"mAP50": 0.91, "mAP50-95": 0.7, "cov p5": 0.95}
     assert "mAP50 0.910" in scored.label and "yolox-obb-nano" in scored.label
     bare = load_model(_run(tmp_path, "b_bare", metrics=False))
-    assert bare.summary() == {} and bare.label == "bare  ·  yolox-obb-nano"
+    assert bare.summary() == {} and bare.label == "bare  |  yolox-obb-nano"
 
 
 def test_a_missing_runs_dir_is_just_empty(tmp_path):
@@ -84,11 +84,15 @@ def test_a_missing_runs_dir_is_just_empty(tmp_path):
 
 
 def test_an_adapter_without_load_support_is_served_by_loading_each_time(tmp_path):
-    from testbank.detectors.base import BaseDetector
+    from testbank.detectors.base import BaseDetector, register
     from testbank.serve import inference_config, load_weights
 
     assert BaseDetector().load(Path("w.pt"), Config()) is None
-    model = load_model(_run(tmp_path, "a_paddle", weights=("model.pdparams",), detector="ppyoloe-r-s"))
+    @register
+    class NoLoad(BaseDetector):
+        name = "test-no-load"
+
+    model = load_model(_run(tmp_path, "a_noload", detector="test-no-load"))
     assert load_weights(model, confidence=0.5) is None
     cfg = inference_config(model, confidence=0.5, nms_iou=None)
     assert cfg.detector.confidence_threshold == 0.5
@@ -146,55 +150,40 @@ def test_decode_image_round_trips_and_rejects_garbage():
 
 
 def test_predict_image_runs_the_adapter_and_leaves_nothing_behind(tmp_path):
-    pytest.importorskip("torch")
-    from PIL import Image
+    torch = pytest.importorskip("torch")
+    from testbank.models.yolox_obb import YoloxObb
+    from testbank.serve import load_weights, predict_image
 
-    from testbank.data.discover import Sample
-    from testbank.dataio.formats import get as get_format
-    from testbank.detectors import get as get_detector
-    from testbank.serve import predict_image
-
+    # A checkpoint as `main` writes them: the network and its head travel
+    # with the weights. Untrained, so it detects nothing at 0.25; the point
+    # is the plumbing, checked at a threshold where it emits something.
     quad = _quad(0.5, 0.5, half_long=0.25)
-
-    def write(sid):
-        d = tmp_path / "src"
-        (d / "images").mkdir(parents=True, exist_ok=True)
-        (d / "labels").mkdir(parents=True, exist_ok=True)
-        Image.fromarray(_painted(quad, 64)[..., ::-1]).save(d / "images" / f"{sid}.jpg")
-        (d / "labels" / f"{sid}.txt").write_text(
-            "0 " + get_format("obb_yolo").from_quad(quad).payload + "\n"
-        )
-        return Sample(sid, d / "images" / f"{sid}.jpg", d / "labels" / f"{sid}.txt")
-
+    network = YoloxObb("nano", num_classes=1)
+    weights = tmp_path / "t" / "weights" / "best.pt"
+    weights.parent.mkdir(parents=True)
+    torch.save({
+        "model": network.state_dict(), "variant": "nano", "head": network.head_spec.to_dict(),
+        "arch": "yolox_obb", "num_classes": 1, "image_size": 64, "epoch": 0,
+    }, weights)
     base = Config()
     config = base.model_copy(update={
         "data": base.data.model_copy(update={"derived_dir": tmp_path / "derived"}),
-        "detector": base.detector.model_copy(
-            update={"epochs": 1, "image_size": 64, "batch_size": 2, "eval_every": 0}
-        ),
+        "detector": base.detector.model_copy(update={"image_size": 64}),
     })
-    result = get_detector("yolox-obb-nano").train(
-        {"train": [write(f"s{i}") for i in range(2)]}, config, output_dir=tmp_path / "t"
-    )
     model = TrainedModel(
-        directory=tmp_path / "t", name="t", detector="yolox-obb-nano",
-        weights=result.weights, config=config,
+        directory=tmp_path / "t", name="t", detector="yolox-obb-nano", weights=weights, config=config,
     )
-    predictions = predict_image(model, _painted(quad, 96), confidence=0.001, nms_iou=0.5)
+    predictions = predict_image(model, _painted(quad, 96), confidence=1e-6, nms_iou=0.5)
+    assert predictions, "an untrained head still emits something at a near-zero threshold"
     assert all(isinstance(p, Prediction) for p in predictions)
     assert [p.score for p in predictions] == sorted((p.score for p in predictions), reverse=True)
+    assert not (tmp_path / "derived").exists(), "the loose image must not touch a size cache"
     # Loading once and predicting with the loaded model (what the app caches)
     # gives exactly the same answer as loading inside `predict`.
-    from testbank.serve import load_weights
-
-    loaded = load_weights(model, confidence=0.001, nms_iou=0.5)
+    loaded = load_weights(model, confidence=1e-6, nms_iou=0.5)
     assert loaded is not None
-    again = predict_image(model, _painted(quad, 96), confidence=0.001, nms_iou=0.5, loaded=loaded)
+    again = predict_image(model, _painted(quad, 96), confidence=1e-6, nms_iou=0.5, loaded=loaded)
     assert [(p.score, p.quad) for p in again] == [(p.score, p.quad) for p in predictions]
-    # Training wrote the size cache for its own samples; the loose image
-    # must not have been added to it.
-    cache = json.loads((tmp_path / "derived" / "image_sizes.json").read_text(encoding="utf-8"))
-    assert "image" not in cache
 
 
 # --- the Streamlit page, headless -----------------------------------------
@@ -239,5 +228,9 @@ def test_the_app_says_so_when_there_is_nothing_to_serve(tmp_path, monkeypatch):
 def test_the_cli_has_an_app_command():
     from testbank.cli import build_parser
 
-    args = build_parser().parse_args(["app", "--runs-dir", "x", "--port", "8600"])
+    args = build_parser().parse_args(["--runs-dir", "x", "app", "--port", "8600"])
     assert (args.command, args.runs_dir, args.port) == ("app", "x", 8600)
+    args = build_parser().parse_args(["predict", "a.jpg", "b.jpg", "--run", "r", "--margin", "0.1"])
+    assert (args.command, [p.name for p in args.images], args.run, args.margin) == (
+        "predict", ["a.jpg", "b.jpg"], "r", 0.1,
+    )

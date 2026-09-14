@@ -197,6 +197,11 @@ class OutOfBoundsPolicy(str, Enum):
     KEEP = "keep"
 
 
+#: Shapes of the angle-weight rise, as `main`'s `models/losses.py` defines
+#: them. Kept here so a run's frozen config validates without the losses.
+DECAY_SHAPES = ("linear", "smoothstep", "quadratic", "step")
+
+
 class AngleWeightConfig(StrictModel):
     """Attenuates the angle loss on nearly square boxes.
 
@@ -231,10 +236,8 @@ class AngleWeightConfig(StrictModel):
     @field_validator("decay")
     @classmethod
     def _known_decay(cls, value: str) -> str:
-        from testbank.models.losses import DECAYS
-
-        if value not in DECAYS:
-            raise ValueError(f"unknown decay shape {value!r}; available: {sorted(DECAYS)}")
+        if value not in DECAY_SHAPES:
+            raise ValueError(f"unknown decay shape {value!r}; available: {sorted(DECAY_SHAPES)}")
         return value
 
 

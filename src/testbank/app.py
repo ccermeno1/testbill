@@ -117,8 +117,9 @@ def _show(model, image, name: str, *, confidence, nms, margin) -> None:
     except DetectorError as exc:
         st.error(
             f"`{model.detector}` cannot run in this environment: {exc}\n\n"
-            "Runs trained in a separate environment (RTMDet-R, Rotated FCOS, "
-            "PP-YOLOE-R) need the app started from that environment."
+            "Rotated FCOS runs need the app started from the `oriented-det` "
+            "environment (README, *Environment*); adapters that only exist on "
+            "`main` (RTMDet-R, PP-YOLOE-R, Ultralytics) cannot be served here."
         )
         return
     left, right = st.columns([3, 2])

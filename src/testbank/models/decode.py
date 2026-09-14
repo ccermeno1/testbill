@@ -30,7 +30,7 @@ import warnings
 import torch
 from shapely.geometry import Polygon
 
-from testbank.dataio.formats import ImageSize
+from testbank.dataio.image_sizes import ImageSize
 from testbank.geometry.quad import (
     COORD_MAX,
     COORD_MIN,
@@ -39,9 +39,9 @@ from testbank.geometry.quad import (
     QuadShapeWarning,
     canonicalize,
 )
-from testbank.metrics.core import Prediction
 from testbank.models.assign import AnchorGrid, build_anchor_grid
 from testbank.models.yolox_obb import decode_angle
+from testbank.prediction import Prediction
 
 #: Below this no detection is emitted. Low on purpose: the precision-recall
 #: curve needs the tail. See `MetricsConfig.report_confidence`.

@@ -270,34 +270,4 @@ class DdgrcfYoloxObb(nn.Module):
         return sum(p.numel() for p in self.parameters())
 
 
-def load_pretrained(model: DdgrcfYoloxObb, path) -> dict:
-    """Load THEIR DOTA checkpoint. Returns what did not fit, which must be only
-    the class layer: their weights have 15 outputs and here there is one.
-
-    Strict in everything else on purpose: if a name does not match, the port
-    has drifted from the yaml, and that has to be known, not hidden.
-    """
-    payload = torch.load(str(path), map_location="cpu", weights_only=False)
-    state = payload.get("model", payload) if isinstance(payload, dict) else payload
-    own = model.state_dict()
-    kept, skipped = {}, {}
-    for key, value in state.items():
-        if key not in own:
-            skipped[key] = "does not exist in the port"
-        elif own[key].shape != value.shape:
-            skipped[key] = f"shape {tuple(value.shape)} != {tuple(own[key].shape)}"
-        else:
-            kept[key] = value
-    missing = sorted(set(own) - set(kept))
-    unexpected_missing = [k for k in missing if "cls_preds" not in k]
-    if unexpected_missing:
-        raise RuntimeError(
-            "the checkpoint does not cover the port: "
-            f"{len(unexpected_missing)} tensors outside the class layer are missing, "
-            f"the first one {unexpected_missing[0]!r}"
-        )
-    model.load_state_dict(kept, strict=False)
-    return skipped
-
-
-__all__ = ["DdgrcfYoloxObb", "OBBDetectX", "load_pretrained", "make_divisible"]
+__all__ = ["DdgrcfYoloxObb", "OBBDetectX", "make_divisible"]

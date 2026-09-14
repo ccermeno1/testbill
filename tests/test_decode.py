@@ -8,8 +8,9 @@ import pytest
 
 torch = pytest.importorskip("torch", reason="the own candidate needs torch")
 
-from testbank.dataio.formats import ImageSize
-from testbank.metrics.core import to_polygon
+from shapely.geometry import Polygon
+
+from testbank.dataio.image_sizes import ImageSize
 from testbank.models.decode import (
     box_to_polygon,
     boxes_to_quads,
@@ -79,9 +80,8 @@ def test_rotated_nms_keeps_fanned_banknotes():
     b = box(200, 200, 160, 30, -math.pi / 4)
     boxes = torch.stack([a, b])
 
-    from testbank.models.assign import enclosing_boxes, pairwise_iou
-
-    aligned_iou = float(pairwise_iou(enclosing_boxes(boxes), enclosing_boxes(boxes))[0, 1])
+    envelopes = [box_to_polygon(x).envelope for x in (a, b)]
+    aligned_iou = envelopes[0].intersection(envelopes[1]).area / envelopes[0].union(envelopes[1]).area
     assert aligned_iou > 0.99, "the envelopes are the same square"
 
     # But the rotated IoU is low, and both survive.
@@ -118,7 +118,7 @@ def test_quads_come_out_normalized():
 def test_the_quad_preserves_the_box_area():
     b = box(208, 208, 100, 50, 0.6)
     quad = boxes_to_quads(torch.stack([b]), SIZE)[0]
-    quad_area = to_polygon(quad, SIZE).area
+    quad_area = Polygon([(x * SIZE.width, y * SIZE.height) for x, y in quad.points]).area
     assert quad_area == pytest.approx(100 * 50, rel=1e-3)
 
 
@@ -189,45 +189,12 @@ def test_detections_come_out_ordered_by_confidence():
     assert scores == sorted(scores, reverse=True)
 
 
-def test_a_prediction_far_outside_the_frame_counts_as_a_false_positive():
+def test_a_prediction_far_outside_the_frame_has_no_geometry():
     """REGRESSION. With the COCO backbone freshly loaded and the head
     untrained, the network predicted a vertex at -0.54 normalized and `Quad`
-    rejected it with a QuadError: the whole evaluation of the run went down.
-
-    It is not discarded: it is emitted without geometry and the metric counts
-    it as a false positive. Discarding it would have been gifting the model a
-    mistake it made.
-    """
-    from testbank.metrics.core import ImageEval, PolygonCache, Prediction
-    from testbank.metrics.matching import Outcome, match_image
-
+    rejected it with a QuadError. It is emitted without geometry instead:
+    `main` counts it as a false positive, the app skips it."""
     outside = box(-300, 208, 100, 50)  # center half a frame left of the image
     inside = box(208, 208, 100, 50)
     quads = boxes_to_quads(torch.stack([outside, inside]), SIZE)
     assert quads[0] is None and quads[1] is not None
-
-    # In the metric: the inside one matches the truth, the outside one
-    # matches nothing and stays as a false positive at its score.
-    truth = quads[1]
-    item = ImageEval(
-        sample_id="x", size=SIZE, truths=(truth,),
-        predictions=(Prediction(quad=None, score=0.9), Prediction(quad=quads[1], score=0.8)),
-    )
-    matching = match_image(item, PolygonCache.build(item), match_iou=0.5)
-    assert [p.prediction_index for p in matching.pairs] == [1]
-    outcome = {index: result for index, result, _ in matching.outcomes}
-    assert outcome[0] is Outcome.FALSE_POSITIVE, "no geometry = false positive, not discard"
-
-
-def test_drawing_a_prediction_without_geometry_does_not_blow_up():
-    """REGRESSION: the port with DOTA produced a prediction without quad, the
-    metric counted it fine and then the VISUALIZATION of the run went down
-    with `'NoneType' object has no attribute 'points'`."""
-    import numpy as np
-
-    from testbank.metrics.core import Prediction
-    from testbank.viz.inspect import _draw_prediction
-
-    canvas = np.zeros((64, 64, 3), dtype=np.uint8)
-    _draw_prediction(canvas, Prediction(quad=None, score=0.5), offset=(0, 0), width=64, height=64)
-    assert canvas.sum() == 0

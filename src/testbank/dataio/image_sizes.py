@@ -12,11 +12,22 @@ costs as much as reading the header.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image
 
 DEFAULT_INDEX_NAME = "image_sizes.json"
+
+
+@dataclass(frozen=True, slots=True)
+class ImageSize:
+    width: int
+    height: int
+
+    @property
+    def aspect(self) -> float:
+        return self.width / self.height
 
 
 def read_size(path: str | Path) -> tuple[int, int]:
@@ -75,3 +86,5 @@ class SizeIndex:
 
     def __len__(self) -> int:
         return len(self._index)
+
+__all__ = ["DEFAULT_INDEX_NAME", "ImageSize", "SizeIndex", "load_index", "read_size"]

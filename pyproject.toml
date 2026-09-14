@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "testbank"
 version = "0.1.0"
-description = "Banknote localization by single-stage OBB detection"
+description = "Banknote localization by single-stage OBB detection: inference and app"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 dependencies = [
@@ -17,66 +17,20 @@ dependencies = [
     "opencv-python-headless>=4.9",
 ]
 
-# No AGPL/GPL in the base set. See README, section Licenses.
+# No AGPL/GPL anywhere. See README, section Licenses.
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "hypothesis>=6.98", "ruff>=0.3", "matplotlib>=3.8"]
+dev = ["pytest>=8.0", "hypothesis>=6.98", "ruff>=0.3"]
+# The own candidates (YOLOX-OBB variants, DDGRCF port) need only torch.
 torch = ["torch>=2.2"]
 # The Streamlit front end (`testbank app`). Apache-2.0. Only `testbank.app`
 # imports it; nothing in the library or the CLI depends on it.
 app = ["streamlit>=1.35"]
-# AGPL-3.0. Performance reference only, production_ready=False.
-# Isolated behind the adapter; no other module may import it (test_detectors.py).
-ultralytics = ["ultralytics>=8.3"]
-
-# RTMDet-R. Apache-2.0 and fit for production, but it requires a SEPARATE
-# environment and a VERY narrow chain of versions. Nobody declares it: they are
-# `assert`s inside each package's __init__.py, which only fire on import.
-#
-#   mmrotate 1.0.0rc1  ->  mmdet >=3.0.0rc6, <3.2.0
-#   mmdet 3.1.0        ->  mmcv  >=2.0.0rc4, <2.1.0
-#   mmcv 2.0.x         ->  only exists on the torch 2.0 index
-#
-# Each link pushes the next. The result is torch 2.0.0 -- March 2023. The torch
-# 2.1 index only carries mmcv 2.1.0 and 2.2.0, both above mmdet's cap, so 2.1
-# does NOT work even though MMCV installs.
-#
-# `numpy<2` is pinned: torch 2.0 predates NumPy 2 and does not restrict it, and
-# mmcv/mmengine ask for `numpy` without a cap. The resolver bumps it and
-# `torch.from_numpy` starts failing with "Numpy is not available", with no
-# warning from anything.
-#
-# `mmrotate` is NOT published on PyPI in its 1.x line: PyPI only has 0.3.4,
-# which goes with mmcv-full 1.x and mmdet <3. It has to be installed from the
-# dev-1.x branch.
-#
-# Recipe verified end to end (see README, "RTMDet-R environment").
-rtmdet = [
-    "torch==2.0.0",
-    "torchvision==0.15.1",
-    "numpy==1.26.4",
-    "mmcv==2.0.1",
-    "mmdet==3.1.0",
-    "mmrotate @ git+https://github.com/open-mmlab/mmrotate@dev-1.x",
-]
-
-# PP-YOLOE-R. PaddlePaddle is a second framework; PaddleDetection is cloned
-# outside the repo and installed editable (README, "PP-YOLOE-R environment").
-# `numpy<2` because their `imgaug` breaks on NumPy 2; `setuptools<70` because
-# `ppdet` imports `pkg_resources`.
-paddle = ["paddlepaddle>=3.0", "numpy<2", "setuptools<70"]
-
-# Rotated FCOS from oriented-det: pure torch, but it pins numpy<2, so its own
-# environment. `--only-binary=:all:` on install (README, "Rotated FCOS").
+# Rotated FCOS runs from oriented-det: pure torch, but it pins numpy<2, so it
+# goes in its own environment. `--only-binary=:all:` on install (README).
 orienteddet = ["oriented-det>=0.2.0", "numpy<2"]
 
 [project.scripts]
 testbank = "testbank.cli:main"
-
-# `mmrotate` is installed from a git branch, and hatchling requires explicit
-# permission for direct references. It is deliberate: the 1.x line of mmrotate
-# is not published on PyPI (see the comment of the `rtmdet` group).
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/testbank"]

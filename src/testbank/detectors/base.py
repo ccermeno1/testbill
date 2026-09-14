@@ -1,82 +1,46 @@
-"""`Detector` protocol and registration by decorator.
+"""`Detector` protocol and registration by decorator, inference side only.
 
-Adding a candidate is writing `train` and `predict` in a class and decorating
-it with `@register`. No `if candidate ==`.
+This branch serves models trained on `main`: an adapter here knows how to
+`load` a run's weights and `predict` on images, nothing else. Adding a
+candidate is writing those two in a class and decorating it with
+`@register`; the run's `run.json` names the adapter, so the registered name
+must match what `main` registered when it trained.
 
-Why `evaluate` is NOT implemented by each adapter
--------------------------------------------------
-The specification asks for `train`, `predict` and `evaluate` in the protocol.
-The first two are necessarily specific to each candidate. The third CANNOT be.
-
-If each adapter brought its own `evaluate`, each would use its library's:
-Ultralytics computes mAP its way, MMDetection its own, and the figures of the
-comparison table would stop being comparable even though they share a name.
-It would be exactly the mistake the table exists to avoid.
-
-So `evaluate` is concrete, lives here, and is written on top of `predict`: all
-candidates are scored with OUR metrics, the same rotated IoU and the same
-matching. An adapter can override it, but then its numbers are not comparable
-and it had better be said in place.
+Every adapter imports its framework LAZILY, inside its methods: `import
+testbank.detectors` works with the bare base set, and a run whose framework
+is not installed lists in the app and fails to predict with a
+`DetectorError` that says what is missing.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Protocol, runtime_checkable
 
 from testbank.config import Config
-from testbank.dataio.formats import ImageSize
-from testbank.dataio.image_sizes import SizeIndex
-from testbank.dataio.prepare import load_samples
-from testbank.experiment.run import ComponentInfo
-from testbank.geometry.quad import Quad
-from testbank.metrics.core import ImageEval, Prediction
-from testbank.metrics.evaluate import evaluate as evaluate_metrics
 
 
 class DetectorError(RuntimeError):
     """The candidate cannot be used in this environment."""
 
 
-@dataclass(frozen=True, slots=True)
-class TrainResult:
-    weights: Path
-    epochs: int
-    notes: tuple[str, ...] = ()
-
-
 @runtime_checkable
 class Detector(Protocol):
     name: ClassVar[str]
     license: ClassVar[str]
-    production_ready: ClassVar[bool]
 
-    def train(self, samples, config: Config, *, output_dir: Path) -> TrainResult: ...
+    def load(self, weights: Path, config: Config): ...
 
     def predict(self, samples, *, weights: Path, config: Config, model=None) -> dict: ...
 
-    def evaluate(self, samples, config: Config, *, weights: Path) -> dict: ...
-
 
 class BaseDetector:
-    """Implements `evaluate` on top of `predict`. Adapters inherit from here."""
+    """Adapters inherit from here."""
 
     name: ClassVar[str] = ""
     license: ClassVar[str] = ""
-    production_ready: ClassVar[bool] = False
-    #: What is said about this candidate in the run record.
+    #: What is said about this candidate.
     notes: ClassVar[tuple[str, ...]] = ()
-
-    def component(self) -> ComponentInfo:
-        return ComponentInfo(
-            name=self.name,
-            license=self.license,
-            production_ready=self.production_ready,
-        )
-
-    def train(self, samples, config: Config, *, output_dir: Path) -> TrainResult:
-        raise NotImplementedError
 
     def load(self, weights: Path, config: Config):
         """The model behind `weights`, ready for repeated `predict` calls
@@ -84,56 +48,17 @@ class BaseDetector:
         one at a time and cannot pay the load each time (the app).
 
         None means the adapter does not support it and `predict` loads on
-        every call, which is what evaluation does anyway. Thresholds that the
-        framework bakes into the loaded object (RTMDet-R's `test_cfg`) are
-        those of `config` at load time: reload when they change.
+        every call. Thresholds that a framework bakes into the loaded object
+        are those of `config` at load time: reload when they change.
         """
         return
 
     def predict(self, samples, *, weights: Path, config: Config, model=None) -> dict:
-        """`sample_id -> list of Prediction`, in normalized coordinates.
-
-        `model`: what `load` returned, to skip the load; None loads here."""
-        raise NotImplementedError
-
-    def evaluate(self, samples, config: Config, *, weights: Path) -> dict:
-        """Score with OUR metrics. The same for all candidates.
-
-        The truth is read through the single door (`load_samples`), so the
-        relative area filter is applied here just like everywhere else, and
-        what the filter discards enters as `ignored`: detecting it does not
-        penalize.
+        """`sample_id -> list of Prediction`, in normalized coordinates,
+        each list ordered by score. `samples` carry `sample_id` and
+        `image_path`; `model` is what `load` returned, or None to load here.
         """
-        samples = list(samples)
-        predictions = self.predict(samples, weights=weights, config=config)
-        return evaluate_metrics(
-            build_image_evals(samples, predictions, config=config), config
-        )
-
-
-def build_image_evals(samples, predictions: dict, *, config: Config) -> list[ImageEval]:
-    """Joins filtered truth, drops and predictions into what the metrics consume."""
-    sizes = SizeIndex.for_samples(
-        samples, cache_path=config.data.derived_dir / "image_sizes.json"
-    )
-    loaded, _ = load_samples(
-        samples,
-        sizes=sizes,
-        min_relative_area=config.annotation_policy.min_relative_area,
-    )
-    items: list[ImageEval] = []
-    for item in loaded:
-        width, height = sizes.size(item.sample_id)
-        items.append(
-            ImageEval(
-                sample_id=item.sample_id,
-                size=ImageSize(int(width), int(height)),
-                truths=item.quads,
-                predictions=tuple(predictions.get(item.sample_id, ())),
-                ignored=tuple(d.quad for d in item.dropped),
-            )
-        )
-    return items
+        raise NotImplementedError
 
 
 REGISTRY: dict[str, BaseDetector] = {}
@@ -161,22 +86,12 @@ def detectors() -> list[str]:
     return sorted(REGISTRY)
 
 
-def production_candidates() -> list[str]:
-    """The ones that can go to production. The rest are performance references."""
-    return sorted(n for n, d in REGISTRY.items() if d.production_ready)
-
-
 __all__ = [
     "REGISTRY",
     "BaseDetector",
     "Detector",
     "DetectorError",
-    "Prediction",
-    "Quad",
-    "TrainResult",
-    "build_image_evals",
     "detectors",
     "get",
-    "production_candidates",
     "register",
 ]

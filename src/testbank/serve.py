@@ -32,9 +32,16 @@ import numpy as np
 from testbank.config import Config
 from testbank.data.discover import Sample
 from testbank.detectors import get as get_detector
-from testbank.experiment.run import METRICS, RUN_RECORD
 from testbank.geometry.quad import Quad
-from testbank.metrics.core import Prediction
+from testbank.prediction import Prediction
+
+RUN_RECORD = "run.json"
+METRICS = "metrics.json"
+CONFIG = "config.yaml"
+
+#: Outline colour (BGR) and font of the drawn predictions.
+COLOR_PREDICTION = (40, 190, 255)
+FONT = cv2.FONT_HERSHEY_SIMPLEX
 
 #: Preference among the weight files a run can hold: the selected checkpoint
 #: first; then a foreign framework's last epoch; then whatever is there.
@@ -59,10 +66,10 @@ class TrainedModel:
     @property
     def label(self) -> str:
         """What the selector shows: name, adapter and the headline numbers."""
-        head = f"{self.name}  ·  {self.detector}"
+        head = f"{self.name}  |  {self.detector}"
         summary = self.summary()
         if summary:
-            head += "  ·  " + "  ".join(f"{k} {v:.3f}" for k, v in summary.items())
+            head += "  |  " + "  ".join(f"{k} {v:.3f}" for k, v in summary.items())
         return head
 
     def summary(self) -> dict[str, float]:
@@ -104,7 +111,7 @@ def load_model(directory: str | Path) -> TrainedModel | None:
     inspection folder, a run that died before saving)."""
     directory = Path(directory)
     record_path = directory / RUN_RECORD
-    config_path = directory / "config.yaml"
+    config_path = directory / CONFIG
     weights = _weights_in(directory)
     if not (record_path.is_file() and config_path.is_file() and weights):
         return None
@@ -204,7 +211,7 @@ def predict_image(
         config = config.model_copy(
             update={"data": config.data.model_copy(update={"derived_dir": tmp_path / "derived"})}
         )
-        sample = Sample(sample_id="image", image_path=image_path, label_path=tmp_path / "image.txt")
+        sample = Sample(sample_id="image", image_path=image_path)
         detector = get_detector(model.detector)
         predictions = detector.predict(
             [sample], weights=model.weights, config=config, model=loaded
@@ -219,8 +226,6 @@ def _pixels(quad: Quad, width: int, height: int) -> np.ndarray:
 def draw(image: np.ndarray, predictions, *, thickness: int = 2) -> np.ndarray:
     """The image with every prediction outlined and its score. Amber, like
     the inspection sheets; the first vertex (the canonical anchor) marked."""
-    from testbank.viz.inspect import COLOR_PREDICTION, FONT
-
     canvas = image.copy()
     height, width = canvas.shape[:2]
     scale = max(0.4, min(width, height) / 900)
