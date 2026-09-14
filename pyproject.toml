@@ -62,6 +62,10 @@ rtmdet = [
 # `ppdet` imports `pkg_resources`.
 paddle = ["paddlepaddle>=3.0", "numpy<2", "setuptools<70"]
 
+# Rotated FCOS from oriented-det: pure torch, but it pins numpy<2, so its own
+# environment. `--only-binary=:all:` on install (README, "Rotated FCOS").
+orienteddet = ["oriented-det>=0.2.0", "numpy<2"]
+
 [project.scripts]
 testbank = "testbank.cli:main"
 

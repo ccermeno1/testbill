@@ -126,6 +126,7 @@ FRAMEWORK_ADAPTERS = {
     "mmdet": SRC / "detectors" / "rtmdet_r.py",
     "mmengine": SRC / "detectors" / "rtmdet_r.py",
     "paddle": SRC / "detectors" / "ppyoloe_r.py",
+    "oriented_det": SRC / "detectors" / "oriented_det.py",
     "ppdet": SRC / "detectors" / "ppyoloe_r.py",
 }
 

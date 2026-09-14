@@ -236,7 +236,7 @@ def fit(
     base_lr: float = 1e-3,
     pretrained: Path | None = None,
     validate: Validator | None = None,
-    log: Callable[[str], None] | None = print,
+    log: Callable[[str], None] | None = None,
 ) -> tuple[Path, TrainingHistory]:
     """Train and leave the weights. Returns `(path to best.pt, history)`.
 
@@ -254,7 +254,9 @@ def fit(
     output_dir.mkdir(parents=True, exist_ok=True)
     history = TrainingHistory()
     history.notes.append(f"device: {device}")
-    say = log or (lambda _: None)
+    # Flushed on every line: redirected to a file, a buffered `print` shows
+    # nothing until the process ends, which is exactly when it is not needed.
+    say = log if log is not None else (lambda line: print(line, flush=True))
     # EVERYTHING is seeded before building the model, not only the DataLoader.
     # Weights are initialized at random from torch's global generator: seeding
     # only the loader left two runs with the same seed starting from different

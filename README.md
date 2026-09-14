@@ -211,6 +211,11 @@ in that same environment. → *Usage*
 - **PP-YOLOE-R has never trained.** Inference through the adapter is
   verified; training needs `ppdet/ext_op` compiled, pending on the Mac
   (§ *PP-YOLOE-R environment*).
+- **Rotated FCOS R50 has trained one smoke epoch on CPU** (§ *Rotated FCOS
+  environment*): mAP50 0.940 [0.900, 0.977] on `valid`, coverage p5 0.689 --
+  the first non-zero smoke number, because it starts from a complete DOTA
+  detector and only the class layer is new. Boxes still short in the tail
+  (coverage), angle right (median 4.5 deg). R18 has not trained.
 - **The redone split has not been used for training.** `--repartition` is
   measured on the real export (zero pairs crossing, all eight types on each
   side) but the only materialized version, `splits/v1`, is still the export's.
@@ -1020,6 +1025,57 @@ shares the area filter and the border policy with every other one.
 - The `coco` exporter now writes the oriented quad as `segmentation` next to
   the envelope `bbox`: what PaddleDetection's own DOTA-to-COCO tool writes.
 
+## Rotated FCOS (oriented-det) environment
+
+`rotated-fcos-r50` and `rotated-fcos-r18` come from
+[`oriented-det`](https://github.com/DL4EO/oriented-det) (DL4EO, Apache-2.0,
+v0.2, one maintainer): a small torch-only framework for rotated detection.
+Why it is here despite the size: it is the **only foreign reference that
+meets the project's constraint as is** -- rotated IoU and NMS in pure torch,
+nothing compiled -- so it trains on CPU and on a Mac with MPS without any
+surgery, and it publishes DOTA checkpoints on Hugging Face
+(`dl4eo/oriented-det-pretrained`). Adapter: `detectors/oriented_det.py`, the
+only module that may import `oriented_det`.
+
+| candidate | backbone | start | parameters |
+|---|---|---|---|
+| `rotated-fcos-r50` | ResNet-50 + FPN | `rotated_fcos_dota_le90_3x_riou`, 81.58 mAP50 on DOTA | 36.2M |
+| `rotated-fcos-r18` | ResNet-18 + FPN | ImageNet backbone (torchvision); FPN and head from scratch | 19.7M |
+
+R18 is the lightest backbone its constructor accepts; the FCOS head alone is
+4.7M, so even that is 23x the own nano. These are references for what a
+large model gets out of these data, not deployment candidates. Swapping in a
+truly light backbone (MobileNet) would throw away the DOTA weights, which is
+the only reason to bring the framework in; if a lighter backbone is ever
+wanted, the place is the own candidate.
+
+**Their model, our loop.** `model(images, targets)` returns their losses in
+training and `{rboxes, scores, labels}` in inference, and that is all the
+adapter uses of them. The dataset (area filter, border policy, `image_size`),
+the deterministic loop, validation every `eval_every` epochs with our metrics,
+`best.pt`/`last.pt`, `training.json` and `plot-training` are testbank's, like
+for the DDGRCF port. Kept from their recipe: SGD (momentum 0.9, weight decay
+1e-4, lr 0.0025), warmup capped at 10% of the iterations, step decay x0.1 at
+2/3 and 11/12 of the epochs (their 24 and 33 of 36), gradient clipping at 35.
+Not reproduced: their flips and their trainer. Inputs go RGB in [0, 1] with
+ImageNet mean/std; boxes go in their `le90` convention (long side first,
+angle in [-pi/2, pi/2)), converted from ours.
+
+### Recipe
+
+```bash
+uv venv .venv-orienteddet --python 3.11
+VIRTUAL_ENV=.venv-orienteddet uv pip install --only-binary=:all: oriented-det
+VIRTUAL_ENV=.venv-orienteddet uv pip install -e ".[dev]" "numpy<2"
+.venv-orienteddet/Scripts/testbank train rotated-fcos-r50 --epochs 1 --image-size 416 --name fcos_smoke
+```
+
+`--only-binary` because a transitive dependency (`stringzilla`, via
+`albumentations`) has no wheel for every build and wants MSVC otherwise;
+`numpy<2` is their pin, and the reason this is not the main environment.
+Weights: `weights/rotated_fcos_r50_dota_le90_3x_riou.pth` (Git LFS, 145 MB:
+their 289 MB checkpoint with the optimizer state stripped).
+
 ## Licenses
 
 No AGPL or GPL code in production. The registry distinguishes **two
@@ -1047,7 +1103,7 @@ chain is.
 
 ## Usage: environments and how to launch each candidate
 
-There are **four environments**, not one, and the reason is always the same:
+There are **five environments**, not one, and the reason is always the same:
 dependencies that do not fit together. Each candidate says which one it needs.
 
 ### Main environment — `.venv`
@@ -1075,6 +1131,7 @@ environment*.
 | `yolox-obb-ddgrcf-port` (8.05M) | main | `testbank train yolox-obb-ddgrcf-port --pretrained <DOTA.pth>` |
 | `rtmdet-r-tiny` | separate `.venv-rtmdet` | see below |
 | `ppyoloe-r-s` (8.09M) | separate `.venv-paddle` | `testbank train ppyoloe-r-s --image-size 416` (§ *PP-YOLOE-R environment*) |
+| `rotated-fcos-r50` (36.2M) / `-r18` (19.7M) | separate `.venv-orienteddet` | `testbank train rotated-fcos-r50 --image-size 416` (§ *Rotated FCOS environment*) |
 
 `train` trains, evaluates on `valid` with testbank's metrics and leaves the
 run in `runs/<date>_<name>/` with the frozen config. **The test is not
@@ -1182,8 +1239,9 @@ variants (857k / 4.37M / 7.75M parameters), deterministic training, angle
 attenuator by ratio. Adapters: Ultralytics (reference,
 `production_ready=False`), RTMDet-R, the three own variants, and
 DDGRCF/YOLOX_OBB **as a pure-torch port** (`yolox-obb-ddgrcf-port`, trains on
-CPU/MPS, loads its DOTA weights). Seven registered candidates (PP-YOLOE-R-s in its
-own Paddle environment, inference verified, training pending `ext_op`); the
+CPU/MPS, loads its DOTA weights). Nine registered candidates (PP-YOLOE-R-s in its
+own Paddle environment, inference verified, training pending `ext_op`;
+Rotated FCOS R50/R18 from oriented-det in `.venv-orienteddet`, pure torch); the
 two YOLOX-OBB clones were removed in the refactor (§ *Discarded*). The own head loads
 **Megvii's COCO** (`--pretrained`). The own head trains with **three complete
 loss recipes** (`--loss-recipe own | yolox_obb_fork | ultralytics_obb`), each

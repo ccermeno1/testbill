@@ -48,7 +48,11 @@ def plot_training(history: dict, output: str | Path, *, title: str = "") -> Path
     x = [e["epoch"] + 1 for e in epochs]
     fig, (left, right) = plt.subplots(1, 2, figsize=(12, 4.2))
 
-    for term in LOSS_TERMS:
+    # The own recipes report `LOSS_TERMS`; a foreign model (oriented-det)
+    # reports its own names. Plot whatever is there, `total` in bold.
+    skip = {"epoch", "lr", "num_positives"}
+    terms = [k for k in epochs[0] if k not in skip and isinstance(epochs[0][k], (int, float))]
+    for term in sorted(terms, key=lambda k: (k != "total", k)):
         values = [e.get(term, 0.0) for e in epochs]
         if any(values):
             left.plot(x, values, label=term, linewidth=2 if term == "total" else 1)
