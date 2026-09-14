@@ -109,14 +109,34 @@ def run_candidate(
     run_name: str | None = None,
     weights: Path | None = None,
     split_version: str | None = None,
+    augmented: Path | None = None,
 ) -> RunOutcome:
     """Trains (or reuses weights), evaluates on `valid` and leaves everything written.
 
     `split_version` picks the split (`None` = latest). Whichever is resolved
-    is recorded in the run, with its digest.
+    is recorded in the run, with its digest. `augmented` is a version of
+    offline copies (`data/augmented/vN`) to ADD to the train split; it must
+    have been made from the same split version, and it is recorded too.
     """
     loader = SplitLoader(splits_dir, data_root, version=split_version)
     samples = {split: list(loader.load(split)) for split in TRAIN_SPLITS}
+    split = loader.describe()
+
+    augmented_record: dict = {}
+    notes: tuple[str, ...] = ()
+    if augmented is not None:
+        from testbank.data.augmented import describe, load_augmented
+
+        copies, manifest = load_augmented(augmented, split=split)
+        samples["train"] = samples["train"] + copies
+        augmented_record = describe(manifest)
+        recipe = manifest["recipe"]
+        note = (
+            f"offline augmentation {manifest['version']}: {manifest['copies']} copies of "
+            f"{manifest['sources']} training photos added (rotation +-{recipe['degrees']}, "
+            f"shear {recipe['shear']}, perspective {recipe['perspective']})"
+        )
+        notes = (note,)
 
     dataset = get_dataset(dataset_name)
     run = ExperimentRun.create(
@@ -125,8 +145,9 @@ def run_candidate(
         detector=detector.component(),
         datasets=(dataset.component(),),
         dataset_provenance=(dataset.provenance(),),
-        split=loader.describe(),
-        notes=(*detector.notes, *dataset.notes),
+        split=split,
+        augmented=augmented_record,
+        notes=(*detector.notes, *dataset.notes, *notes),
     )
 
     if weights is None:

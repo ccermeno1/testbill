@@ -77,6 +77,7 @@ def build_rows(runs: list[dict]) -> list[dict]:
             "license": detector.get("license", "-"),
             "n": str(metrics.get("n_images", "-")),
             "split": (run.get("split") or {}).get("version", "-"),
+            "aug": (run.get("augmented") or {}).get("version", "-"),
             "ready": "yes" if run.get("production_ready") else NOT_READY,
             "reproducible": "yes" if run.get("reproducible") else "NO",
         }
@@ -93,7 +94,7 @@ def build_rows(runs: list[dict]) -> list[dict]:
 def render_table(rows: list[dict]) -> str:
     if not rows:
         return "No runs in runs/."
-    headers = ["run", "detector", "license", "split", "n", "ready", "reproducible"]
+    headers = ["run", "detector", "license", "split", "aug", "n", "ready", "reproducible"]
     headers += [header for _, header in COLUMNS]
     headers += [header for _, header in SCENE_COLUMNS]
     widths = {h: max(len(h), *(len(str(r.get(h, ""))) for r in rows)) for h in headers}

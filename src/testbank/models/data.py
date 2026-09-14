@@ -152,7 +152,8 @@ class BanknoteDataset(Dataset):
                 mosaic=a.mosaic, scale=a.scale, translate=a.translate,
                 hsv_h=a.hsv_h, hsv_s=a.hsv_s, hsv_v=a.hsv_v,
                 flip_h=a.flip_horizontal, flip_v=a.flip_vertical, rotations=a.rotations,
-                min_visible=a.min_visible,
+                min_visible=a.min_visible, degrees=a.degrees, shear=a.shear,
+                perspective=a.perspective, keep_whole=a.keep_whole, fill=a.fill,
             )
         tensor = image_to_input(image)
 

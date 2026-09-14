@@ -82,6 +82,9 @@ class RunRecord:
     #: mode and digest. Two runs on different versions are not comparable,
     #: and `compare` shows the version so that is visible.
     split: dict = field(default_factory=dict)
+    #: Offline augmentation added to the train split (`augmented.describe`):
+    #: version, digest, copies, recipe. Empty when trained on originals only.
+    augmented: dict = field(default_factory=dict)
     notes: tuple[str, ...] = ()
 
     def license_blockers(self) -> list[str]:
@@ -156,6 +159,7 @@ class RunRecord:
             "datasets": [asdict(d) for d in self.datasets],
             "dataset_provenance": list(self.dataset_provenance),
             "split": dict(self.split),
+            "augmented": dict(self.augmented),
             "production_ready": self.production_ready,
             "reproducible": self.provenance.reproducible,
             "caveats": self.caveats,
@@ -195,6 +199,7 @@ class ExperimentRun:
         datasets: tuple[ComponentInfo, ...] = (),
         dataset_provenance: tuple[dict, ...] = (),
         split: dict | None = None,
+        augmented: dict | None = None,
         runs_dir: Path | None = None,
         seed: int | None = None,
         moment: datetime | None = None,
@@ -222,6 +227,7 @@ class ExperimentRun:
             datasets=datasets,
             dataset_provenance=dataset_provenance,
             split=dict(split or {}),
+            augmented=dict(augmented or {}),
             notes=notes,
         )
         (directory / CONFIG_SNAPSHOT).write_text(config.dump_yaml(), encoding="utf-8")

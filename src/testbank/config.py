@@ -32,6 +32,9 @@ class DataConfig(StrictModel):
     #: ambiguous in a `run.json`.
     split_version: str | None = None
     derived_dir: Path = Path("data/derived")
+    #: Container of offline augmentation versions (`data/augmented/v1`, ...),
+    #: written by `make-augmented` and read by `train --augmented`.
+    augmented_dir: Path = Path("data/augmented")
 
 
 class SplitConfig(StrictModel):
@@ -337,8 +340,55 @@ class AugmentConfig(StrictModel):
     #: banknotes (valid in any orientation) and on the square input.
     rotations: bool = False
     #: A box that keeps less than this fraction of its area after the
-    #: affine is dropped (their `area_thr`).
+    #: warp is dropped (their `area_thr`).
     min_visible: float = Field(default=0.1, gt=0.0, le=1.0)
+    #: The geometric knobs Ultralytics ships at 0, at 0 here too: rotation
+    #: by any angle, shear and perspective are done OFFLINE, before training,
+    #: by `make-augmented` (`OfflineAugmentConfig`), where the result can be
+    #: looked at. They stay available here for an experiment that wants them
+    #: on the fly.
+    degrees: float = Field(default=0.0, ge=0.0, le=180.0)
+    shear: float = Field(default=0.0, ge=0.0, le=45.0)
+    perspective: float = Field(default=0.0, ge=0.0, le=0.001)
+    #: When the draw would push a whole banknote out of the frame, zoom out
+    #: until it fits instead of cutting it (mosaic tiles excepted: they are
+    #: cut by construction). The canvas that appears takes `fill`. Off here:
+    #: Ultralytics cuts.
+    keep_whole: bool = False
+    #: `border`: the median colour of the photo's border ring, i.e. the
+    #: table; `gray`: Ultralytics' 114.
+    fill: Literal["gray", "border"] = "gray"
+
+
+class OfflineAugmentConfig(StrictModel):
+    """`testbank make-augmented`: geometric copies of the TRAIN split written
+    to disk before training, versioned like the splits (`data/augmented/vN`),
+    so they can be reviewed and are reproducible from the seed.
+
+    Rotation by any angle (the training photos are mostly horizontal or
+    vertical banknotes and the model missed the rest), a little shear, a very
+    small perspective and some translation. No scale, no mosaic, no colour:
+    that is the on-the-fly recipe (`AugmentConfig`), which can run on top.
+    A banknote that a rotation would push out of the frame is not cut: the
+    draw is zoomed out until it fits and the canvas takes the photo's own
+    background (`keep_whole`, `fill`).
+    """
+
+    #: Augmented copies per training photo. The originals stay in the set.
+    copies: int = Field(default=3, ge=1, le=20)
+    seed: int = 20260910
+    #: `+-degrees`; 180 is every orientation.
+    degrees: float = Field(default=180.0, ge=0.0, le=180.0)
+    shear: float = Field(default=2.0, ge=0.0, le=45.0)
+    perspective: float = Field(default=0.0002, ge=0.0, le=0.001)
+    translate: float = Field(default=0.05, ge=0.0, le=0.5)
+    scale: float = Field(default=0.0, ge=0.0, lt=1.0)
+    keep_whole: bool = True
+    fill: Literal["gray", "border"] = "border"
+    #: A box that keeps less than this fraction of its area is dropped.
+    min_visible: float = Field(default=0.1, gt=0.0, le=1.0)
+    #: JPEG quality of the written copies.
+    jpeg_quality: int = Field(default=95, ge=50, le=100)
 
 
 class DetectorConfig(StrictModel):
@@ -417,6 +467,7 @@ class Config(StrictModel):
     annotation_policy: AnnotationPolicyConfig = AnnotationPolicyConfig()
     crop: CropConfig = CropConfig()
     detector: DetectorConfig = DetectorConfig()
+    offline_augment: OfflineAugmentConfig = OfflineAugmentConfig()
     metrics: MetricsConfig = MetricsConfig()
     viz: VizConfig = VizConfig()
     runs_dir: Path = Path("runs")

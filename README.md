@@ -750,9 +750,67 @@ formulation.
 
 ## Augmentation
 
-Off by default, `--augment` switches it on, and the choice is frozen in the
-run's `config.yaml` (`detector.augment`): "how much does it add" is answered
-by two rows of the table, with and without, not by reasoning.
+Two stages, deliberately separate:
+
+1. **Offline, before training — `testbank make-augmented`.** The geometric
+   part: rotation by any angle, a little shear, a very small perspective,
+   some translation. Written to disk as `data/augmented/vN/` with labels, a
+   manifest and a contact sheet, so it can be **reviewed** before a single
+   epoch runs, and **reproduced** from its seed. `testbank train --augmented
+   vN` adds the copies to the train split.
+2. **On the fly, during training — `--augment`.** Ultralytics' recipe
+   (mosaic, scale/translate, HSV, flips), on originals and copies alike.
+
+Both are off by default and both are frozen in the run: `run.json` records
+the augmented version (with its digest and recipe; `compare` shows it in the
+`aug` column) and `config.yaml` the on-the-fly recipe. "How much does each
+add" is answered by rows of the table, not by reasoning.
+
+### Offline: `make-augmented`
+
+```bash
+testbank make-augmented                      # -> data/augmented/v1, 3 copies per training photo
+testbank make-augmented --copies 5 --seed 7  # another version, never overwrites
+testbank train yolox-obb-nano --augmented v1 --augment --name nano_rot   # copies + Ultralytics on top
+```
+
+Why this part is offline: the rotation is what decides whether the model
+learns the banknotes that are not horizontal or vertical — the training
+photos mostly are, and the model was missing the rest — and it is the part
+whose geometry can go wrong (a label drifting off its banknote, a banknote
+cut or collapsed). On disk it can be looked at: `_contact_sheet.png` draws
+24 copies with their boxes, and every copy is a JPEG plus an `obb_yolo`
+label like the originals.
+
+| knob (`offline_augment`) | default | what |
+|---|---|---|
+| `copies` | 3 | copies per training photo; the originals stay |
+| `degrees` | 180 | rotation in ±degrees; 180 is every orientation (a banknote is valid in all of them; multiples of 90 would teach four) |
+| `shear` | 2 | degrees |
+| `perspective` | 0.0002 | on the projective row; 0.0005 is already a lot |
+| `translate` | 0.05 | fraction of the side |
+| `scale` | 0 | none: scale is the on-the-fly recipe's job |
+| `keep_whole` | true | a banknote the draw would push out of the frame is not cut: the draw is zoomed out until it fits, 2 % inside |
+| `fill` | border | the canvas that appears takes the photo's own background — the median colour of its border ring, i.e. the table; `gray` is Ultralytics' 114 |
+| `seed` | 20260910 | |
+
+Reproducible by construction: each photo gets its own generator from
+`sha256(seed, photo id)`, so its copies do not depend on how many photos
+came before it or in which order (tested: two versions from the same seed
+have the same digest, byte for byte). Versioned like the splits: `v1`,
+`v2`, … never overwritten; `manifest.json` records the split version and
+digest it was made from, the recipe, the counts and every file.
+
+**Leakage.** Only the train split is read, and `train --augmented` refuses a
+version made from another split version or digest: a copy of a photo that is
+in `valid` of the split being trained on would be seen in training and the
+validation number would be a lie. Measured on the 351 training photos of
+`v1`: 702 copies, 1098 boxes from 549, none dropped, no copy without labels.
+Non-square photos (13 of 502) are centred on a square canvas of their longer
+side, filled with the background; the training resize then distorts
+originals and copies alike.
+
+### On the fly: `--augment`
 
 **The recipe is Ultralytics'**, reproduced from its documentation and its
 `default.yaml` (AGPL: none of its code has been read). It is what the
@@ -762,26 +820,39 @@ loop get the same treatment:
 | step | default | theirs |
 |---|---|---|
 | mosaic of 4 images, random center, off for the last `close_mosaic` epochs | 1.0, `close_mosaic` 10 | 1.0, 10 |
-| random affine: scale, translation (no rotation, no shear) | ±0.5, ±0.1 | ±0.5, ±0.1 |
+| random perspective: scale, translation | ±0.5, ±0.1 | ±0.5, ±0.1 |
+| … rotation, shear, perspective (`degrees`, `shear`, `perspective`) | 0, 0, 0 | 0, 0, 0 |
 | HSV gains (hue, saturation, value) | 0.015, 0.7, 0.4 | same |
 | horizontal / vertical flip | 0.5 / 0.0 | 0.5 / 0.0 |
 | box dropped when less than `min_visible` of it survives, or thinner than 2 px | 0.1 | `area_thr` 0.1, `wh_thr` 2 |
 
-Same order as theirs: mosaic → affine → HSV → flips. Two things of our own,
-**off** by default so the default is theirs: vertical flip and rotations by
-multiples of 90 degrees, exact for banknotes (valid in any orientation) and
-on the square input.
+Same order as theirs: mosaic → random perspective → HSV → flips. The
+geometric knobs, `keep_whole` and `fill` exist here too (same code as the
+offline stage) for an experiment that wants them on the fly; by default they
+are at Ultralytics' values, so `--augment` on top of `--augmented` does not
+rotate twice. Two exact extras, off: vertical flip and `rotations` (turns
+by multiples of 90 degrees).
 
-**The quad follows the pixels** (`models/augment.py`). Every image operation
-is applied to the quad with the same map. A box the affine pushes partly out
-of the frame goes through `clip_quad` — the same rectangle-preserving clip as
-the `clip` border policy — after a coarse clip to the tolerant range; in the
-mosaic, boxes are clipped to the canvas before the affine, as Ultralytics
-clips its labels (without that, a tile that overflowed the canvas left its
-box over gray once the affine zoomed out — caught by the test). Tested by
-painting the quad as a mask, warping the mask with the image operation and
-comparing with the mask of the warped quad; whole boxes must sit on the
-pixels, cut boxes carry the known cost of the clip policy.
+**The quad follows the pixels** (`models/augment.py`, shared by both
+stages). Every image operation is applied to the quad with the same 3×3
+map, in homogeneous coordinates for the perspective; rotation keeps a
+rectangle a rectangle, shear and perspective make it a slight quadrilateral
+and the label *is* that quadrilateral. Two things this needed and a test
+caught: OpenCV warps in pixel-centre coordinates while the quads live in
+pixel-edge coordinates, so the matrix is conjugated by half a pixel or every
+box lands 0.5 px off (measured: centroid offset 0.50 → 0.09 px); and the
+zoom-out of `keep_whole` has to be centred where the photo's centre lands,
+not where its corner does (a large rotation put that outside the frame, the
+factor went negative and 20 % of the draws collapsed to a blank tile —
+regression test). A box the warp pushes partly out of the frame goes through
+`clip_quad` — the same rectangle-preserving clip as the `clip` border
+policy — after a coarse clip to the tolerant range; in the mosaic, boxes are
+clipped to the canvas before the warp, as Ultralytics clips its labels.
+Tested by painting the quad as a mask, warping the mask with the image
+operation and comparing with the mask of the warped quad (sub-pixel
+rasterization: truncating the corners biases a 20 px box by a tenth of its
+IoU); whole boxes must sit on the pixels, cut boxes carry the known cost of
+the clip policy.
 
 Deterministic: the dataset owns a `random.Random(seed)` drawn in sampler
 order (mosaic partners included); with `num_workers = 0` two runs with the
@@ -790,13 +861,16 @@ the epoch (`set_epoch`) so the mosaic stops for the last `close_mosaic`.
 
 Who gets it: the candidates trained by this loop — the three own variants,
 the DDGRCF port and Rotated FCOS. RTMDet-R, PP-YOLOE-R and Ultralytics carry
-their own inside their pipelines. `valid` and `test` are never augmented.
+their own inside their pipelines (the offline copies reach them too: they
+are just more training files). `valid` and `test` are never augmented.
 
 To pick a subset, a YAML with `--config`; anything not set keeps its default:
 
 ```yaml
 detector:
-  augment: {enabled: true, mosaic: 0.0, rotations: true}   # affine + HSV + flips + 90-degree turns, no mosaic
+  augment: {enabled: true, mosaic: 0.0}                     # perspective + HSV + flips, no mosaic
+  augment: {enabled: true, degrees: 30, keep_whole: true, fill: border}   # mild rotation on the fly instead
+offline_augment: {copies: 5, degrees: 90, shear: 0}         # what make-augmented writes
 ```
 
 ### [SUSPICION] That 19% is probably an artifact
@@ -1244,7 +1318,8 @@ Options valid for all:
 ```bash
 --epochs N                  # overrides the config's; it is recorded
 --image-size S              # input side for every candidate; the export is 416x416
---augment                   # flips, 90-degree rotations, photometric jitter (own loop); § Augmentation
+--augmented vN              # adds the offline copies of data/augmented/vN (make-augmented) to train; § Augmentation
+--augment                   # Ultralytics' on-the-fly recipe (own loop): mosaic, scale/translate, HSV, flips
 --out-of-bounds clip|pad|keep   # border policy; clip by default
 --loss-recipe own|yolox_obb_fork|ultralytics_obb|ddgrcf   # own head (ddgrcf: the port); § Recipes
 --pretrained path.pth       # foreign checkpoint to START from; stays in the config
@@ -1289,6 +1364,10 @@ Its numbers come from torch 2.0 and the rest from torch 2.14: the table notes it
   a `v2` without leaks and stratified (§ *Splits*) and leaves `v1` intact;
   runs record their version and `compare` shows it, so mixing them is visible
   but still meaningless — pick one before the baselines.
+- **Then the offline copies.** `make-augmented` is bound to a split version:
+  make it after the split is decided (a version made from `v1` is refused by
+  a run on `v2`), look at its contact sheet, and run the baselines in pairs —
+  with and without `--augmented`, with and without `--augment`.
 
 ## Status
 

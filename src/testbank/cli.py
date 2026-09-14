@@ -332,6 +332,15 @@ def cmd_train(args, config: Config) -> int:
         config = config.model_copy(
             update={"detector": config.detector.model_copy(update=updates)}
         )
+    augmented = None
+    if args.augmented is not None:
+        from testbank.data.augmented import resolve_version as resolve_augmented
+
+        augmented = (
+            Path(args.augmented)
+            if Path(args.augmented).is_dir()
+            else resolve_augmented(config.data.augmented_dir, args.augmented)
+        )
     outcome = run_candidate(
         get_detector(args.detector),
         config,
@@ -341,9 +350,47 @@ def cmd_train(args, config: Config) -> int:
         run_name=args.name,
         weights=Path(args.weights) if args.weights else None,
         split_version=args.split_version or config.data.split_version,
+        augmented=augmented,
     )
     print(outcome.summary())
     print(f"\nVisualizations: {outcome.run.viz_dir}")
+    return 0
+
+
+def cmd_make_augmented(args, config: Config) -> int:
+    """Geometric copies of the train split, on disk, to review before training."""
+    from testbank.data.augmented import CONTACT_SHEET, load_manifest, materialize_augmented
+
+    updates = {}
+    if args.copies is not None:
+        updates["copies"] = args.copies
+    if args.seed is not None:
+        updates["seed"] = args.seed
+    if args.degrees is not None:
+        updates["degrees"] = args.degrees
+    if updates:
+        config = config.model_copy(
+            update={"offline_augment": config.offline_augment.model_copy(update=updates)}
+        )
+    loader = _loader(args, config)
+    train = list(loader.load("train"))
+    recipe = config.offline_augment
+    print(
+        f"Augmenting {len(train)} training photos of split {loader.describe()['version']}: "
+        f"{recipe.copies} copies each, rotation +-{recipe.degrees}, shear {recipe.shear}, "
+        f"perspective {recipe.perspective}, translate {recipe.translate}, seed {recipe.seed}",
+        flush=True,
+    )
+    output = materialize_augmented(
+        train, config, split=loader.describe(), container=args.output_dir, version=args.version,
+    )
+    manifest = load_manifest(output)
+    print(
+        f"\nWritten: {output}  ({manifest['copies']} copies, {manifest['boxes']['augmented']} "
+        f"boxes from {manifest['boxes']['source']}; {len(manifest['empty'])} copies without labels)"
+    )
+    print(f"Contact sheet: {output / CONTACT_SHEET}")
+    print(f"Train on it with: testbank train <detector> --augmented {manifest['version']}")
     return 0
 
 
@@ -530,13 +577,25 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     train.add_argument(
+        "--augmented",
+        default=None,
+        metavar="vN|DIR",
+        help=(
+            "offline augmentation version (data/augmented/vN, from make-augmented) "
+            "whose copies are ADDED to the train split; must come from the same "
+            "split version. Recorded in the run"
+        ),
+    )
+    train.add_argument(
         "--augment",
         action="store_true",
         help=(
             "training-time augmentation for the candidates trained by this "
-            "loop (own variants, DDGRCF port, Rotated FCOS), Ultralytics' "
-            "recipe by default: mosaic, scale/translate, HSV, horizontal flip; "
-            "details in detector.augment. Off by default; recorded in the run"
+            "loop (own variants, DDGRCF port, Rotated FCOS): Ultralytics' "
+            "recipe (mosaic, scale/translate, HSV, horizontal flip) plus rotation "
+            "by any angle, a little shear and perspective, zooming out onto the "
+            "photo's background rather than cutting a banknote; details in "
+            "detector.augment. Off by default; recorded in the run"
         ),
     )
     train.add_argument(
@@ -610,6 +669,22 @@ def build_parser() -> argparse.ArgumentParser:
     comparison.add_argument("--runs-dir", default=None)
     comparison.add_argument("--csv-out", default=None)
 
+    augmented = subparsers.add_parser(
+        "make-augmented",
+        help=(
+            "geometric copies of the train split written to data/augmented/vN "
+            "(any-angle rotation, shear, perspective, translation, background fill), "
+            "with a manifest and a contact sheet to review; train with --augmented vN"
+        ),
+    )
+    augmented.add_argument("--copies", type=int, default=None, help="copies per photo (config: 3)")
+    augmented.add_argument("--seed", type=int, default=None)
+    augmented.add_argument(
+        "--degrees", type=float, default=None, help="rotation range +-deg (config: 180)"
+    )
+    augmented.add_argument("--output-dir", default=None, help="container; default data/augmented")
+    augmented.add_argument("--version", default=None, help="vN to write; default the next one")
+
     curves = subparsers.add_parser(
         "plot-training",
         help="losses per epoch and validation metrics of a run (own candidates)",
@@ -638,6 +713,7 @@ _COMMANDS = {
     "list": cmd_list,
     "compare": cmd_compare,
     "plot-training": cmd_plot_training,
+    "make-augmented": cmd_make_augmented,
     "inspect": cmd_inspect,
 }
 
