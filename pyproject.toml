@@ -21,6 +21,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "hypothesis>=6.98", "ruff>=0.3", "matplotlib>=3.8"]
 torch = ["torch>=2.2"]
+# The Streamlit front end (`testbank app`). Apache-2.0. Only `testbank.app`
+# imports it; nothing in the library or the CLI depends on it.
+app = ["streamlit>=1.35"]
 # AGPL-3.0. Performance reference only, production_ready=False.
 # Isolated behind the adapter; no other module may import it (test_detectors.py).
 ultralytics = ["ultralytics>=8.3"]

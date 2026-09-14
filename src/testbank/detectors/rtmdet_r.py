@@ -182,7 +182,13 @@ class RtmdetRDetector(BaseDetector):
 
     # --- inference --------------------------------------------------------
 
-    def predict(self, samples, *, weights: Path, config: Config) -> dict:
+    def load(self, weights: Path, config: Config):
+        """The NMS IoU and score threshold of `config` are baked into the
+        model's `test_cfg` here: reload when they change."""
+        init_detector, _ = _import_mmrotate()
+        return init_detector(build_inference_config(config), str(weights), device="cpu")
+
+    def predict(self, samples, *, weights: Path, config: Config, model=None) -> dict:
         """`sample_id -> [Prediction]` in NORMALIZED coordinates.
 
         MMRotate returns `cx, cy, w, h, theta` in image pixels, so the
@@ -190,7 +196,7 @@ class RtmdetRDetector(BaseDetector):
         candidate: a single implementation of the step to canonical quad for
         both.
         """
-        init_detector, inference_detector = _import_mmrotate()
+        _, inference_detector = _import_mmrotate()
         import torch
 
         from testbank.metrics.core import Prediction
@@ -200,7 +206,8 @@ class RtmdetRDetector(BaseDetector):
         sizes = SizeIndex.for_samples(
             samples, cache_path=config.data.derived_dir / "image_sizes.json"
         )
-        model = init_detector(build_inference_config(config), str(weights), device="cpu")
+        if model is None:
+            model = self.load(weights, config)
 
         out: dict[str, list] = {}
         for sample in samples:

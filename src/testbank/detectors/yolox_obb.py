@@ -127,7 +127,12 @@ class YoloxObbDetector(BaseDetector):
 
     # --- inference --------------------------------------------------------
 
-    def predict(self, samples, *, weights: Path, config: Config) -> dict:
+    def load(self, weights: Path, config: Config):
+        from testbank.models.train import load_model
+
+        return load_model(weights)
+
+    def predict(self, samples, *, weights: Path, config: Config, model=None) -> dict:
         """`sample_id -> [Prediction]` in NORMALIZED coordinates.
 
         Predictions are decoded in the network's INPUT space (`image_size`),
@@ -140,13 +145,13 @@ class YoloxObbDetector(BaseDetector):
 
         from testbank.models.data import image_to_input
         from testbank.models.decode import detections
-        from testbank.models.train import load_model
 
         samples = list(samples)
         sizes = SizeIndex.for_samples(
             samples, cache_path=config.data.derived_dir / "image_sizes.json"
         )
-        model = load_model(weights)
+        if model is None:
+            model = self.load(weights, config)
         device = next(model.parameters()).device
         side = config.detector.image_size
 

@@ -54,7 +54,7 @@ class Detector(Protocol):
 
     def train(self, samples, config: Config, *, output_dir: Path) -> TrainResult: ...
 
-    def predict(self, samples, *, weights: Path, config: Config) -> dict: ...
+    def predict(self, samples, *, weights: Path, config: Config, model=None) -> dict: ...
 
     def evaluate(self, samples, config: Config, *, weights: Path) -> dict: ...
 
@@ -78,8 +78,22 @@ class BaseDetector:
     def train(self, samples, config: Config, *, output_dir: Path) -> TrainResult:
         raise NotImplementedError
 
-    def predict(self, samples, *, weights: Path, config: Config) -> dict:
-        """`sample_id -> list of Prediction`, in normalized coordinates."""
+    def load(self, weights: Path, config: Config):
+        """The model behind `weights`, ready for repeated `predict` calls
+        (`predict(..., model=loaded)`), for a caller that serves many images
+        one at a time and cannot pay the load each time (the app).
+
+        None means the adapter does not support it and `predict` loads on
+        every call, which is what evaluation does anyway. Thresholds that the
+        framework bakes into the loaded object (RTMDet-R's `test_cfg`) are
+        those of `config` at load time: reload when they change.
+        """
+        return
+
+    def predict(self, samples, *, weights: Path, config: Config, model=None) -> dict:
+        """`sample_id -> list of Prediction`, in normalized coordinates.
+
+        `model`: what `load` returned, to skip the load; None loads here."""
         raise NotImplementedError
 
     def evaluate(self, samples, config: Config, *, weights: Path) -> dict:

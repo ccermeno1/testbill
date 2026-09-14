@@ -216,7 +216,9 @@ class PpyoloeRDetector(BaseDetector):
 
     # --- inference --------------------------------------------------------
 
-    def predict(self, samples, *, weights: Path, config: Config) -> dict:
+    def predict(self, samples, *, weights: Path, config: Config, model=None) -> dict:
+        # `model` is ignored: PaddleDetection's Trainer is built per call
+        # (`load` stays None), so the app reloads this one every photo.
         """`sample_id -> [Prediction]` in NORMALIZED coordinates.
 
         PaddleDetection returns `[class, score, x1, y1, ..., x4, y4]` per box,

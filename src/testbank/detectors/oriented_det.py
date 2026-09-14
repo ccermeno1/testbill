@@ -376,7 +376,20 @@ class RotatedFcosDetector(BaseDetector):
 
     # --- inference --------------------------------------------------------
 
-    def predict(self, samples, *, weights: Path, config: Config) -> dict:
+    def load(self, weights: Path, config: Config):
+        _, torch, _ = _import_oriented_det()
+
+        from testbank.models.train import pick_device
+
+        payload = torch.load(str(weights), map_location="cpu", weights_only=False)
+        if payload.get("arch") != "rotated_fcos":
+            raise DetectorError(f"{weights} is not a rotated_fcos checkpoint of testbank")
+        model = build_model(config, backbone=payload.get("backbone", self.backbone), imagenet_backbone=False)
+        model.load_state_dict(payload["model"])
+        model.to(pick_device()).eval()
+        return model
+
+    def predict(self, samples, *, weights: Path, config: Config, model=None) -> dict:
         """`sample_id -> [Prediction]` in NORMALIZED coordinates.
 
         Their boxes come out in the INPUT space (`image_size` square); the
@@ -396,17 +409,13 @@ class RotatedFcosDetector(BaseDetector):
         )
         from testbank.metrics.core import Prediction
         from testbank.models.data import image_to_input
-        from testbank.models.train import pick_device
 
-        payload = torch.load(str(weights), map_location="cpu", weights_only=False)
-        if payload.get("arch") != "rotated_fcos":
-            raise DetectorError(f"{weights} is not a rotated_fcos checkpoint of testbank")
-        model = build_model(config, backbone=payload.get("backbone", self.backbone), imagenet_backbone=False)
-        model.load_state_dict(payload["model"])
-        device = pick_device()
-        model.to(device).eval()
+        if model is None:
+            model = self.load(weights, config)
+        device = next(model.parameters()).device
         # The thresholds are attributes of their model, set at build; they
-        # follow our config, like every other candidate at inference.
+        # follow our config at every call, like every other candidate at
+        # inference, so a loaded model serves any operating point.
         model.score_threshold = config.detector.confidence_threshold
         model.final_nms_iou_threshold = config.detector.nms_iou
 

@@ -1257,6 +1257,57 @@ And after several runs:
 testbank compare --csv-out runs/table.csv
 ```
 
+### Trying a run on your own photos — `testbank app`
+
+A Streamlit page to upload photos (or take one with the webcam), pick any run
+in `runs/` and see the detections and the rectified crops. Streamlit lives in
+its own optional group so nothing in the library depends on it:
+
+```bash
+uv pip install -e .[app]
+testbank app                      # http://localhost:8501
+testbank app --runs-dir other/runs --port 8600
+```
+
+What it shows and where it comes from:
+
+* **Run selector**: every folder in `runs/` with `run.json`, `config.yaml`
+  and weights, most recent first, labelled with its adapter and its `valid`
+  numbers (mAP50, mAP50-95, coverage p5). `best.pt` is preferred, then
+  `last.pt`, then the highest-numbered epoch of a foreign framework.
+* **Inference through the adapter's own `predict`**, with the run's frozen
+  config (same `image_size`, same everything): what you see is what the
+  table measured, not a second implementation. The image goes through a
+  temporary file; nothing lands in `data/derived/`.
+* **Sliders** start at the run's own operating point: confidence at
+  `metrics.report_confidence` (0.25, where P and R are read), the NMS the run
+  trained with, and `crop.margin` (0.05). Move them and you are at a
+  different operating point than the table.
+* **Crops**: each detection rectified by homography onto an upright
+  rectangle with the quad's own side lengths (landscape, anchor top-left),
+  expanded by the margin exactly as `metrics.core.expand` does before scoring
+  coverage. Downloadable as PNG.
+
+A run trained in another environment lists but cannot predict from `.venv`:
+the page says so (`DetectorError`) instead of crashing. To serve RTMDet-R,
+Rotated FCOS or PP-YOLOE-R, install Streamlit in that environment and start
+the app from there — **repeating that environment's numpy pin**, or `uv`
+upgrades it to numpy 2 and torch 2.0 answers `RuntimeError: Numpy is not
+available` at the first `from_numpy` (it happened):
+
+```bash
+VIRTUAL_ENV=.venv-rtmdet uv pip install streamlit "numpy==1.26.4"
+.venv-rtmdet/Scripts/testbank app
+```
+
+The page keeps the loaded model per (run, confidence, NMS) — three at most —
+so only the first photo, or moving a slider, pays the load (RTMDet-R: ~5 s;
+then ~0.2 s per photo). It goes through `Detector.load` + `predict(...,
+model=loaded)`, the same `predict` evaluation uses; PP-YOLOE-R has no
+`load` and reloads on every photo. The page code is `src/testbank/app.py`;
+everything it computes is in `src/testbank/serve.py`, tested without a
+browser (`tests/test_serve.py`; the page itself with Streamlit's `AppTest`).
+
 ### RTMDet-R — `.venv-rtmdet`, separate
 
 It requires torch 2.0 and a chain of versions that does not coexist with the

@@ -405,6 +405,27 @@ def cmd_plot_training(args, config: Config) -> int:
     return 0
 
 
+def cmd_app(args, config: Config) -> int:
+    """Starts the Streamlit front end in this interpreter's environment, so
+    the runs it can predict with are the ones whose adapter imports here."""
+    import subprocess
+    import sys
+
+    try:
+        import streamlit  # noqa: F401
+    except ImportError:
+        print("Streamlit is not installed: `uv pip install -e .[app]`", file=sys.stderr)
+        return 2
+    from testbank import app
+
+    runs_dir = Path(args.runs_dir or config.runs_dir)
+    command = [sys.executable, "-m", "streamlit", "run", app.__file__]
+    if args.port:
+        command += ["--server.port", str(args.port)]
+    command += ["--", "--runs-dir", str(runs_dir)]
+    return subprocess.call(command)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="testbank", description=__doc__)
     parser.add_argument("--config", type=Path, default=None)
@@ -619,6 +640,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", default=None, help="PNG path; default <run>/viz/training.png"
     )
 
+    app = subparsers.add_parser(
+        "app", help="Streamlit front end: upload or take photos, pick a run, see crops"
+    )
+    app.add_argument("--runs-dir", default=None, help="where the trained runs are")
+    app.add_argument("--port", type=int, default=None, help="Streamlit's server port")
+
     inspect = subparsers.add_parser("inspect", help="inspection visualization")
     inspect.add_argument("--split", default="valid")
     inspect.add_argument("--count", type=int, default=None)
@@ -638,6 +665,7 @@ _COMMANDS = {
     "list": cmd_list,
     "compare": cmd_compare,
     "plot-training": cmd_plot_training,
+    "app": cmd_app,
     "inspect": cmd_inspect,
 }
 

@@ -100,7 +100,11 @@ class UltralyticsObb(BaseDetector):
 
     # --- inference --------------------------------------------------------
 
-    def predict(self, samples, *, weights: Path, config: Config) -> dict:
+    def load(self, weights: Path, config: Config):
+        YOLO = _import_ultralytics()
+        return YOLO(str(weights))
+
+    def predict(self, samples, *, weights: Path, config: Config, model=None) -> dict:
         """Returns `sample_id -> [Prediction]` in NORMALIZED coordinates.
 
         Ultralytics gives the quads in pixels (`obb.xyxyxyxy`), so they are
@@ -109,12 +113,12 @@ class UltralyticsObb(BaseDetector):
         in the middle of the pipeline is the mistake that has already bitten
         us twice.
         """
-        YOLO = _import_ultralytics()
         samples = list(samples)
         sizes = SizeIndex.for_samples(
             samples, cache_path=config.data.derived_dir / "image_sizes.json"
         )
-        model = YOLO(str(weights))
+        if model is None:
+            model = self.load(weights, config)
         trained_padded = (
             OutOfBoundsPolicy(config.detector.out_of_bounds) is OutOfBoundsPolicy.PAD
         )
