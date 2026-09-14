@@ -188,6 +188,63 @@ class RotatedFcosDetector(BaseDetector):
         return out
 
 
+    def explain(
+        self, image, prediction, *, weights: Path, config: Config, model=None, method: str = "gradcam"
+    ):
+        """Grad-CAM on the FPN levels their head reads. The target is
+        `sigmoid(cls) * sigmoid(centerness)` at the cell nearest the
+        detection, which is their score before NMS."""
+        _, torch, _ = _import_oriented_det()
+        import cv2
+
+        from testbank.models.explain import explain, nearest_cell_score
+        from testbank.models.load import image_to_input
+
+        if model is None:
+            model = self.load(weights, config)
+        device = next(model.parameters()).device
+        side = config.detector.image_size
+        resized = cv2.resize(image, (side, side), interpolation=cv2.INTER_LINEAR)
+        tensor = _to_model_input(image_to_input(resized).to(device))
+
+        target = None
+        if prediction is not None and prediction.quad is not None:
+            pts = [(x * side, y * side) for x, y in prediction.quad.points]
+            cx = sum(p[0] for p in pts) / 4
+            cy = sum(p[1] for p in pts) / 4
+            long_side = ((pts[1][0] - pts[0][0]) ** 2 + (pts[1][1] - pts[0][1]) ** 2) ** 0.5
+
+            def target(seen):
+                cls_scores, _, _, centernesses = seen.outputs
+                scores, centres = [], []
+                for cls, cent in zip(cls_scores, centernesses):
+                    _, _, h, w = cls.shape
+                    stride = side / h
+                    score = (torch.sigmoid(cls[0]).max(dim=0).values * torch.sigmoid(cent[0, 0]))
+                    ys, xs = torch.meshgrid(
+                        torch.arange(h, device=device, dtype=torch.float32),
+                        torch.arange(w, device=device, dtype=torch.float32),
+                        indexing="ij",
+                    )
+                    scores.append(score.reshape(-1))
+                    centres.append(torch.stack(((xs + 0.5) * stride, (ys + 0.5) * stride), dim=-1).reshape(-1, 2))
+                return nearest_cell_score(
+                    torch.cat(scores), torch.cat(centres), (cx, cy), 0.25 * long_side
+                )
+
+        class _Batch(torch.nn.Module):
+            """Their forward takes a list of images; the CAM runner passes a batch tensor."""
+
+            def __init__(self, inner):
+                super().__init__()
+                self.inner = inner
+
+            def forward(self, x):
+                return self.inner([x[0]])
+
+        return explain(_Batch(model).eval(), model.head, tensor.unsqueeze(0), method=method, target=target)
+
+
 @register
 class RotatedFcosR50Detector(RotatedFcosDetector):
     name = "rotated-fcos-r50"

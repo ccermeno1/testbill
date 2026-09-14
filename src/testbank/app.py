@@ -27,6 +27,7 @@ from testbank.serve import (
     decode_image,
     discover_models,
     draw,
+    explain_image,
     load_weights,
     predict_image,
 )
@@ -125,6 +126,7 @@ def _show(model, image, name: str, *, confidence, nms, margin) -> None:
     left, right = st.columns([3, 2])
     with left:
         st.image(_rgb(draw(image, predictions)), caption=f"{name}: {len(predictions)} banknote(s)")
+        _explain(model, image, predictions, name, confidence=confidence, nms=nms, loaded=loaded)
     with right:
         if not predictions:
             st.info("No banknote above the confidence threshold.")
@@ -135,6 +137,39 @@ def _show(model, image, name: str, *, confidence, nms, margin) -> None:
                 file_name=f"{Path(name).stem}_{index + 1}.png", mime="image/png",
                 key=f"dl-{name}-{index}",
             )
+
+
+def _explain(model, image, predictions, name: str, *, confidence, nms, loaded) -> None:
+    """Grad-CAM of one detection, or EigenCAM of the whole image: which
+    parts of the photo push the score up. Blobs at the stride's resolution,
+    about the score only, never about the angle or the box's tightness."""
+    with st.expander("What drives the detection (CAM)"):
+        options = ["EigenCAM: what the network looks at (no detection needed)"] + [
+            f"Grad-CAM of #{i + 1} (score {p.score:.2f})" for i, p in enumerate(predictions) if p.quad is not None
+        ]
+        choice = st.selectbox("Map", options, key=f"cam-{name}")
+        if not st.checkbox("Compute", key=f"cam-go-{name}"):
+            st.caption("Ticks the box to run it: a second forward pass with gradients.")
+            return
+        index = options.index(choice)
+        method = "eigencam" if index == 0 else "gradcam"
+        prediction = None if index == 0 else [p for p in predictions if p.quad is not None][index - 1]
+        try:
+            with st.spinner("Computing the map..."):
+                heat = explain_image(
+                    model, image, prediction, method=method,
+                    confidence=confidence, nms_iou=nms, loaded=loaded,
+                )
+        except DetectorError as exc:
+            st.error(str(exc))
+            return
+        if heat is None:
+            st.info(f"`{model.detector}` does not expose its feature maps; no map for this adapter.")
+            return
+        st.image(_rgb(draw(heat, [prediction] if prediction else [])), caption=(
+            "red raises the score, blue is indifferent; resolution is the feature stride (8-32 px). "
+            "It explains the score only, not the angle or the box."
+        ))
 
 
 def main() -> None:

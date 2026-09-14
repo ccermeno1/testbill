@@ -40,7 +40,7 @@ One venv for the own candidates and the app:
 ```bash
 uv venv --python 3.11
 uv pip install -e ".[torch,app,dev]"      # base + torch (CPU) + streamlit + pytest
-pytest -q                                 # 86 tests, no run needed
+pytest -q                                 # 99 tests, no run needed
 ```
 
 The `torch` it installs is CPU. On a Mac with M-series the adapters pick
@@ -92,6 +92,32 @@ the right each banknote rectified by homography onto an upright rectangle
 with the quad's own side lengths, downloadable as PNG. The loaded model is
 kept per (run, confidence, NMS), three at most, so only the first photo or
 a slider move pays the load.
+
+### What drives a detection (CAM)
+
+Under each photo, an expander *What drives the detection (CAM)* draws a heat
+map over it (`models/explain.py`; own models and Rotated FCOS, which expose
+their feature maps):
+
+* **Grad-CAM of #k**: which parts of the photo push *that* box's score up.
+  The score of the cell the detection came from is differentiated w.r.t.
+  the FPN feature maps the head reads, and the map is gradient × activation
+  summed over channels (HiResCAM, the element-wise form — the original
+  spatial averaging gives an all-zero map for a single-box target, measured).
+  Red raised the score, blue is indifferent.
+* **EigenCAM**: no detection needed — the projection of the feature maps on
+  their first singular vector, i.e. what the network looks at at all. The
+  one to use when nothing was detected.
+
+Read it for what it is: the resolution is the feature stride (blobs of
+8–32 px, not edges), and it explains the **score only** — nothing about the
+angle or the box's tightness. With Rotated FCOS the Grad-CAM sits on the
+banknote's centre, which is where its centerness-weighted score lives. It is
+most useful on a webcam photo that fails: if the map goes to the background
+or the hand, the problem is the domain, not the geometry. A second forward
+pass with gradients (~0.2 s for the nano, ~3 s for FCOS R50 on CPU); the
+model is left untouched (tested: same predictions after, no gradients on
+the weights).
 
 ## Adding a run
 

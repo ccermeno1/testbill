@@ -33,6 +33,10 @@ class Detector(Protocol):
 
     def predict(self, samples, *, weights: Path, config: Config, model=None) -> dict: ...
 
+    def explain(
+        self, image, prediction, *, weights: Path, config: Config, model=None, method: str = "gradcam"
+    ): ...
+
 
 class BaseDetector:
     """Adapters inherit from here."""
@@ -59,6 +63,17 @@ class BaseDetector:
         `image_path`; `model` is what `load` returned, or None to load here.
         """
         raise NotImplementedError
+
+    def explain(
+        self, image, prediction, *, weights: Path, config: Config, model=None, method: str = "gradcam"
+    ):
+        """A class-activation map for `prediction` on `image` (BGR array):
+        `(H, W)` in [0, 1] at the network's input size, or None when the
+        adapter cannot (no access to its feature maps). `method` is
+        `gradcam` (needs a prediction) or `eigencam` (prediction ignored).
+        See `models/explain.py`.
+        """
+        return
 
 
 REGISTRY: dict[str, BaseDetector] = {}

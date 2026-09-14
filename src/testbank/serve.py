@@ -219,6 +219,33 @@ def predict_image(
     return sorted(predictions.get("image", []), key=lambda p: -p.score)
 
 
+def explain_image(
+    model: TrainedModel,
+    image: np.ndarray,
+    prediction: Prediction | None,
+    *,
+    method: str = "gradcam",
+    confidence: float | None = None,
+    nms_iou: float | None = None,
+    loaded=None,
+) -> np.ndarray | None:
+    """The heat map of `prediction` on `image` blended over it (BGR), or
+    None when the adapter has no access to its feature maps. `gradcam`
+    explains one detection's score; `eigencam` needs no detection and shows
+    what the network looks at. See `models/explain.py` for what the map does
+    and does not say."""
+    from testbank.models.explain import overlay
+
+    config = inference_config(model, confidence=confidence, nms_iou=nms_iou)
+    detector = get_detector(model.detector)
+    cam = detector.explain(
+        image, prediction, weights=model.weights, config=config, model=loaded, method=method
+    )
+    if cam is None:
+        return None
+    return overlay(image, cam)
+
+
 def _pixels(quad: Quad, width: int, height: int) -> np.ndarray:
     return np.array([(x * width, y * height) for x, y in quad.points], dtype=np.float32)
 
@@ -285,6 +312,7 @@ __all__ = [
     "discover_models",
     "draw",
     "expand_quad",
+    "explain_image",
     "inference_config",
     "load_model",
     "load_weights",

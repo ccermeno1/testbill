@@ -95,6 +95,48 @@ class YoloxObbDetector(BaseDetector):
                 )
         return out
 
+    def explain(
+        self, image, prediction, *, weights: Path, config: Config, model=None, method: str = "gradcam"
+    ):
+        _import_torch()
+        if model is None:
+            model = self.load(weights, config)
+        return _explain_yolox(model, image, prediction, config=config, method=method)
+
+
+def _head_module(model):
+    """The module that reads the FPN levels: `head` on the own network,
+    the last yaml layer on the DDGRCF port."""
+    return model.head if hasattr(model, "head") else model.model[-1]
+
+
+def _explain_yolox(model, image, prediction, *, config: Config, method: str):
+    """Shared by the own variants and the port: same head output shape."""
+    import cv2
+
+    from testbank.dataio.image_sizes import ImageSize
+    from testbank.models.decode import decode_outputs
+    from testbank.models.explain import explain, nearest_cell_score
+    from testbank.models.load import image_to_input
+
+    device = next(model.parameters()).device
+    side = config.detector.image_size
+    resized = cv2.resize(image, (side, side), interpolation=cv2.INTER_LINEAR)
+    tensor = image_to_input(resized).unsqueeze(0).to(device)
+
+    target = None
+    if prediction is not None and prediction.quad is not None:
+        pts = [(x * side, y * side) for x, y in prediction.quad.points]
+        cx = sum(p[0] for p in pts) / 4
+        cy = sum(p[1] for p in pts) / 4
+        long_side = ((pts[1][0] - pts[0][0]) ** 2 + (pts[1][1] - pts[0][1]) ** 2) ** 0.5
+
+        def target(seen):
+            boxes, scores = decode_outputs(seen.outputs, ImageSize(side, side))
+            return nearest_cell_score(scores, boxes[:, :2], (cx, cy), 0.25 * long_side)
+
+    return explain(model, _head_module(model), tensor, method=method, target=target)
+
 
 def _recanonicalize(predictions, aspect: float):
     """Reorders the vertices with the REAL aspect of the image.
