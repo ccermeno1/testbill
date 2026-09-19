@@ -5,7 +5,7 @@
 Runs on every push/PR to `main` / `master`:
 
 - `make check-configs`
-- `pytest tests/`
+- `pytest tests/ export/tests/` (installs `oriented-det[dev,export]` so ONNX checker / ORT tests run)
 
 ## `publish.yml`
 

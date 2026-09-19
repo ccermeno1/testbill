@@ -178,6 +178,8 @@ Typical published baselines use **SGD** \(momentum 0.9, weight decay 1e-4\), **b
 | [`hrsc2016_le90_1x.json`](./hrsc2016_le90_1x.json) | **1× HRSC2016** — native XML, single-class ship, `keep_ratio` + pad-32, H+V+diagonal flips (rotate **off**), same ProbIoU main + Smooth L1 aux as DOTA; model/eval-val/production NMS **0.1**, `max_detections_per_image` **2000**. Deploy `production.score_threshold` **0.85** (eval-val F1 0.90 − 0.05). |
 | [`hrsc2016_le90_3x.json`](./hrsc2016_le90_3x.json) | **3× HRSC2016** — inherits 1×; 36 epochs, milestones [24, 33], `lr_scheduler_gamma` 0.1, random rotate p=0.5 **±20°**. Hub: `rotated_faster_rcnn_hrsc2016_le90_3x`. |
 | [`fair1m_le90_1x.json`](./fair1m_le90_1x.json) | **1× FAIR1M** — tiled 1024/200, finetune `hf://rotated_faster_rcnn_dota_le90_1x` (37-way cls re-init). Local tiled-val mAP50 **36.70%** (`runs/rotated_faster_rcnn/20260910-072116`). No Hub. |
+| [`ssdd_le90_1x.json`](./ssdd_le90_1x.json) | **1× SSDD** — native SAR chips, keep-ratio 608, finetune `hf://rotated_faster_rcnn_dota_le90_1x` (1-way ship re-init). Held-out test **90.34%**. No Hub. |
+| [`hrsid_le90_1x.json`](./hrsid_le90_1x.json) | **1× HRSID** — native COCO, keep-ratio 800, finetune `hf://rotated_faster_rcnn_dota_le90_1x`. Held-out test **78.55%**. No Hub. |
 
 ### First run (1× / Hub)
 
@@ -250,4 +252,14 @@ FAIR1M (official **train** tiles / **held-out val** tiles after `odet fair1m-to-
 
 ```bash
 odet train --config configs/rotated_faster_rcnn/fair1m_le90_1x.json
+```
+
+HRSID (official **train** / **held-out test**, no val; keep-ratio 800). 12-epoch 1×. `make eval-val` **78.55%** — [`docs/eval-reports/rotated_faster_rcnn_hrsid_le90_1x/`](../../docs/eval-reports/rotated_faster_rcnn_hrsid_le90_1x/model_analysis.md). Wei et al. HBB AP50 **>84.7%** (not a drop-in match). Protocol: [Data guide — HRSID](../../docs/user-guide/data.md#hrsid-1x).
+
+SSDD (official last-digit **train** / **held-out test**, keep-ratio 608). 12-epoch 1×. `make eval-val` **90.34%** — [`docs/eval-reports/rotated_faster_rcnn_ssdd_le90_1x/`](../../docs/eval-reports/rotated_faster_rcnn_ssdd_le90_1x/model_analysis.md). Protocol: [Data guide — SSDD](../../docs/user-guide/data.md#ssdd-1x-faster-rcnn).
+
+```bash
+odet train --config configs/rotated_faster_rcnn/hrsid_le90_1x.json
+odet train --config configs/rotated_faster_rcnn/ssdd_le90_1x.json
+make eval-val EXPERIMENT=runs/rotated_faster_rcnn/<timestamp>
 ```

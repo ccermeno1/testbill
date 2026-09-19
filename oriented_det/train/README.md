@@ -160,7 +160,7 @@ Epochs 0–23 → **0.1**, 24–27 → **0.05**, 28+ → **0.0** (display epochs
 
 Two independent thresholds (0-based loop epoch, same as checkpoint `epoch`): `freeze_backbone_epochs` freezes `backbone.*`; `freeze_rpn_epochs` freezes `rpn_head.*` on two-stage models. The ROI head always trains. Helpers: `set_backbone_requires_grad`, `set_rpn_requires_grad`, `model_has_rpn_head` in `oriented_det/train/utils.py`. With `use_lr_param_groups: true` and either threshold \(>0\), `tools/train.py` builds optimizer param groups with `include_frozen_parameters=True` so frozen weights stay in the optimizer until unfrozen.
 
-**DDP:** Multi-GPU training wraps the model with `find_unused_parameters=True` whenever either freeze threshold is \(>0\) (frozen parameters skip the loss graph; `False` would break the reducer). That wrap is kept for the rest of training: rebuilding with `find_unused_parameters=False` after unfreeze deadlocks the NCCL reducer when a batch skips a head (empty / lookalike-only). Leftover hangs die when `TORCH_DIST_TIMEOUT_SECONDS` elapses (default 24h; `make train-multi-gpu` and odet-planes set 30 min).
+**DDP:** Multi-GPU training wraps the model with `find_unused_parameters=True` whenever either freeze threshold is \(>0\) (frozen parameters skip the loss graph; `False` would break the reducer). That wrap is kept for the rest of training: rebuilding with `find_unused_parameters=False` after unfreeze deadlocks the NCCL reducer when a batch skips a head (empty / lookalike-only). Leftover hangs die when `TORCH_DIST_TIMEOUT_SECONDS` elapses (default 24h; `make train-multi-gpu` sets 30 min).
 
 ## Capping train/val size
 

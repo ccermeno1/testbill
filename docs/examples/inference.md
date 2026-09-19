@@ -25,7 +25,7 @@ odet preds --experiment-dir runs/oriented_rcnn/<timestamp> --data-split val --no
 ## Behavior
 
 - Thresholds, NMS, and sliding-window overlap come from **`production.*`** in the experiment `config.json`
-- Images larger than the model canvas use **sliding-window** tiling when `resize_mode` is `fixed` or `crop` (DOTA). **`pad`** (HRSC2016) always runs one training-style whole-image forward (scale long edge to the canvas, then pad).
+- Images larger than the model canvas use **sliding-window** tiling when `resize_mode` is `fixed` or `crop` (DOTA). **`pad`** (HRSC2016) always runs one training-style whole-image forward (scale long edge to the canvas, then pad). Walkthrough: [sliding-window inference on `demo/large.jpg`](https://deeplearning.earth/posts/2026-06-29_announcing_the_final_oriented_det_pretrained_model/).
 
 ## Output artifacts
 
@@ -50,3 +50,7 @@ odet preds --metrics-from-json predictions/<timestamp> --config runs/.../config.
 Re-runs mAP and writes fresh `analysis_iou*.json` / `model_analysis_*.md` from an existing `predictions.json` without re-inference.
 
 See the [tools reference on GitHub](https://github.com/DL4EO/oriented-det/blob/main/tools/README.md) and [Getting Started: Tools](../getting-started/tools.md).
+
+## ONNX Runtime (no PyTorch)
+
+To ship a checkpoint as ONNX + Python NMS, see [ONNX export](export.md).

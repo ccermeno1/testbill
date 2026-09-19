@@ -32,6 +32,10 @@ def detect_tier(class_names: List[str], dataset_format: str) -> str:
         return "hrsc2016"
     if fmt == "fair1m":
         return "fair1m"
+    if fmt == "ssdd":
+        return "ssdd"
+    if fmt == "hrsid":
+        return "hrsid"
     if fmt == "dota":
         if list(class_names) == list(DOTA_V1_CLASSES):
             return "dota_v1_full"

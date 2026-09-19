@@ -60,4 +60,4 @@ python tools/image_demo.py \
 
 **Runtime:** ~1–2 min per tile on CPU at 4× (64 windows). On Apple Silicon use `--device mps`.
 
-See also [tools/README.md](../../tools/README.md) (`image_demo.py` options).
+See also [tools/README.md](../../tools/README.md) (`image_demo.py` options) and the [Sentinel-2 ship walkthrough](https://deeplearning.earth/posts/2026-06-25_zero-shot_ship_detection_on_a_copernicus_sentinel-2_tile_with_oriented_rcnn/).

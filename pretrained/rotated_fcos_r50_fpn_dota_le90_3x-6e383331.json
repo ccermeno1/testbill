@@ -2,7 +2,7 @@
   "model_type": "rotated_fcos",
   "experiment_timestamp": "20260831-052647",
   "source_recipe": "configs/rotated_fcos/dota_le90_3x.json",
-  "source_code_root": "/home/jeffaudi/oriented-det",
+  "source_code_root": "/path/to/oriented-det",
   "git_commit": "86c10c6310fb620308c36f34c4f4efa423a0994c",
   "git_describe": "v0.2.0-dirty",
   "git_dirty": true,

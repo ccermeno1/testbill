@@ -97,8 +97,8 @@ from oriented_det.utils import viz, DrawingSpec
 
 # Custom drawing specs
 specs = [
-    DrawingSpec(outline=(255, 0, 0), width=3),  # Red, thick
-    DrawingSpec(outline=(0, 255, 0), width=2),  # Green, medium
+    DrawingSpec(outline=(255, 0, 0)),  # predictions: default line width
+    DrawingSpec(outline=(0, 255, 0), width=2),  # thinner, e.g. ground truth
 ]
 
 result = viz.draw_polygons(image, polygons, specs=specs)

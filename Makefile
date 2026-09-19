@@ -1,5 +1,6 @@
 .PHONY: help install check-install docs-deps train wizard train-wizard train-multi-gpu train-help lr-finder stats tensorboard free-gpu clean \
-	preds metrics eval-val dota-submit train-preds viewer demo test docs docs-serve sync-configs check-configs build twine-check publish-deps publish-testpypi publish-pypi upload-pretrained
+	preds metrics eval-val dota-submit train-preds viewer demo test docs docs-serve sync-configs check-configs build twine-check publish-deps publish-testpypi publish-pypi upload-pretrained \
+	export-onnx export-demo export-zip export-verify export-preds export-metrics export-test
 
 .DEFAULT_GOAL := help
 
@@ -39,6 +40,12 @@ METRICS_PRED_DIR ?=
 IMAGE_DEMO_DEVICE ?= cuda:0
 IMAGE_DEMO_OUT_DIR ?= demo/out
 DEMO_DIR ?= demo
+
+# ONNX export (python -m export; see export/README.md). Independent of CONFIG used by make train.
+EXPORT_CONFIG ?= configs/rotated_fcos/dota_le90_1x.json
+EXPORT_CKPT ?= pretrained/rotated_fcos_r50_fpn_dota_le90_1x-a87b6dba.pth
+EXPORT_MODE ?= rotated_fcos_pre_nms
+EXPORT_ARTIFACTS ?= onnx_export
 
 # Learning rate finder default batch size (lr-finder target also accepts BATCH_SIZE=).
 LR_FINDER_BATCH_SIZE ?= 8
@@ -84,7 +91,7 @@ help:
 	@echo "  make train-help             - Raw python training command examples (fine-tuning, overrides)"
 	@echo ""
 	@echo "=== Tiled val: predictions & offline metrics ==="
-	@echo "  make eval-val               - preds then metrics on recipe val (DOTA: leaky; real test is Task 1 / make dota-submit)"
+	@echo "  make eval-val               - preds then metrics on latest run val (or EXPERIMENT=; CONFIG= is make train only). DOTA: leaky; real test is Task 1"
 	@echo "  make preds                  - Val inference → predictions/<ts>/predictions.json (eval NMS via evaluation.final_nms_iou_threshold; no GPU mAP)"
 	@echo "  make metrics                - Offline mAP/PR on METRICS_PRED_DIR or latest predictions/"
 	@echo "  make train-preds            - Train split + tile_metrics.csv (latest exp; SAVE_TRAIN_PRED_OUT= optional)"
@@ -94,6 +101,16 @@ help:
 	@echo "  make tensorboard            - TensorBoard for all experiments under runs/"
 	@echo "  make viewer                 - Gradio viewer (VIEWER_PRED_DIR= or latest predictions/; see docs/eval-reports/)"
 	@echo "  make demo                   - image_demo on all top-level images in DEMO_DIR ($(DEMO_DIR)) → $(IMAGE_DEMO_OUT_DIR)/"
+	@echo ""
+	@echo "=== ONNX export (python -m export; not an odet subcommand) ==="
+	@echo "  make export-onnx            - checkpoint → onnx_export/model.onnx + consumer sidecars"
+	@echo "  make export-demo            - bundled plane image + NMS assertions"
+	@echo "  make export-verify          - ORT zeros smoke on onnx_export/model.onnx"
+	@echo "  make export-zip             - zip onnx_export/ → onnx_export.zip"
+	@echo "  make export-preds           - val inference with the ONNX bundle"
+	@echo "  make export-metrics         - offline mAP on newest onnx_export/predictions/"
+	@echo "  make export-test            - pytest export/tests/"
+	@echo "    EXPERIMENT=runs/<model>/<ts>  EXPORT_MODE=rotated_fcos_pre_nms|oriented_rcnn_pre_nms|faster_rcnn_pre_nms"
 	@echo ""
 	@echo "=== Docs & tests ==="
 	@echo "  make docs-deps              - pip install -e \".[docs]\" (MkDocs + mkdocstrings)"
@@ -112,6 +129,7 @@ help:
 	@echo "  Pin experiment when newest run is wrong or has no checkpoint:"
 	@echo "    EXPERIMENT=runs/<model>/<timestamp>     (preds, train-preds)"
 	@echo "  Pin directories: METRICS_PRED_DIR=  SAVE_TRAIN_PRED_OUT=  FROM_JSON=  CHECKPOINT=  TEST_DIR=  OUT="
+	@echo "  ONNX export defaults: EXPORT_CONFIG=$(EXPORT_CONFIG)  EXPORT_MODE=$(EXPORT_MODE)"
 	@echo "  Newest experiment dir: latest timestamp under runs/<model>/<timestamp>/ (sort by timestamp, not model name)"
 	@echo "  Checkpoint pick order: checkpoint_best.pth → best_*.pth → newest checkpoint_epoch_*.pth"
 	@echo "  DOTA_DATA_ROOT: if unset for preds / train-preds, data paths come from experiment config.json"
@@ -337,7 +355,7 @@ metrics: check-install
 # Hub zoo (sidecar config; unlabeled official test):
 #   make dota-submit CHECKPOINT=hf://oriented_rcnn_dota_le90_3x TEST_DIR=/path/to/data/DOTA-v1.0/test OUT=work_dirs/Task1_orcnn
 # Or a local training run:
-#   make dota-submit EXPERIMENT=runs/oriented_rcnn/<id> TEST_DIR=/path/to/DOTA/test OUT=work_dirs/Task1_orcnn
+#   make dota-submit EXPERIMENT=runs/oriented_rcnn/<id> TEST_DIR=/path/to/data/DOTA-v1.0/test OUT=work_dirs/Task1_orcnn
 dota-submit: check-install
 	@if [ -z "$(OUT)" ]; then \
 		echo "Error: set OUT= to a Task1 output directory (e.g. work_dirs/Task1_orcnn)."; \
@@ -494,6 +512,22 @@ clean:
 # Run tests
 test:
 	PYTHONPATH=$(PYTHONPATH) $(PYTEST) $(TESTS)
+
+# --- ONNX export (python -m export; artifacts in onnx_export/) ---
+# Usage:
+#   make export-onnx
+#   make export-onnx EXPERIMENT=runs/rotated_fcos/<timestamp>
+#   make export-onnx EXPERIMENT=runs/oriented_rcnn/<timestamp> EXPORT_MODE=oriented_rcnn_pre_nms
+export-onnx export-demo export-zip export-verify export-preds export-metrics:
+	@$(MAKE) -C export $@ \
+	  EXPERIMENT="$(EXPERIMENT)" \
+	  CONFIG="$(abspath $(EXPORT_CONFIG))" \
+	  CKPT="$(abspath $(EXPORT_CKPT))" \
+	  MODE="$(EXPORT_MODE)" \
+	  ARTIFACTS="$(abspath $(EXPORT_ARTIFACTS))"
+
+export-test:
+	@$(MAKE) -C export test
 
 # MkDocs + mkdocstrings (optional extra; not required for training)
 docs-deps: check-install

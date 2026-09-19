@@ -5,8 +5,5 @@
   "training": {
     "num_epochs": 36,
     "lr_scheduler_milestones": [24, 33]
-  },
-  "production": {
-    "score_threshold": 0.7
   }
 }

@@ -145,7 +145,7 @@ def test_resolve_preds_model_paths_hub_sidecar():
     )
     assert exp == ""
     assert ckpt == "hf://oriented_rcnn_dota_le90_3x"
-    assert Path(cfg).name == "oriented_rcnn_r50_fpn_dota_le90_3x-68957f98.json"
+    assert Path(cfg).name == "oriented_rcnn_r50_fpn_dota_le90_3x-3730d3a9.json"
     assert Path(cfg).is_file()
 
 

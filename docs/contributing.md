@@ -28,6 +28,12 @@ CI runs `pytest tests/` on GitHub Actions (CPU PyTorch). Locally:
 # Run all tests
 pytest
 
+# Library tests only
+pytest tests/
+
+# ONNX export tests (optional onnx/ort tests skip unless oriented-det[export] is installed)
+pytest export/tests/
+
 # Run specific test file
 pytest tests/test_geometry.py
 
@@ -41,10 +47,10 @@ We use `black` for formatting and `ruff` for linting:
 
 ```bash
 # Format code
-black oriented_det/ tests/
+black oriented_det/ tests/ export/
 
 # Lint
-ruff check oriented_det/ tests/
+ruff check oriented_det/ tests/ export/
 ```
 
 ## Contribution Guidelines
@@ -98,6 +104,7 @@ Aligned with the [Roadmap](roadmap.md):
 - **v0.4:** RTMDet-R and native YOLO-OBB (clean-room, no Ultralytics)
 - **v0.5+:** Swin-FPN backbone
 - **Docs:** Tutorials, hosted MkDocs, eval reports
+- **Export:** ONNX head wrappers + postprocess parity for new detectors
 - **Ops:** Fused CUDA rotated IoU/NMS kernels
 - Bug fixes and tool scripts
 

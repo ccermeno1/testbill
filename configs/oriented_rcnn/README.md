@@ -123,9 +123,10 @@ Our implementation is compatible with MMRotate's Oriented R-CNN implementation:
 | File | Purpose |
 |------|---------|
 | [`dota_le90_1x.json`](./dota_le90_1x.json) | **Full DOTA 1× recipe** — Smooth L1 main + ProbIoU aux (`roi_box_reg_aux_weight` 0.1). Official Task 1 **76.73%** (AP75 50.24). Deploy `production.score_threshold` **0.55** (eval-val F1 0.60 − 0.05). Hub: `oriented_rcnn_dota_le90_1x`. |
-| [`dota_le90_3x.json`](./dota_le90_3x.json) | **3× DOTA pretrain** — inherits 1×; 36 epochs, milestones [24, 33]; pins deploy `production.score_threshold` **0.7** (Hub F1 0.75 − 0.05). Hub: `oriented_rcnn_dota_le90_3x`. |
+| [`dota_le90_3x.json`](./dota_le90_3x.json) | **3× DOTA pretrain** — inherits 1×; 36 epochs, milestones [24, 33]. Deploy `production.score_threshold` **0.55** (eval-val F1 0.60 − 0.05). Hub: `oriented_rcnn_dota_le90_3x`. **Advertised zoo / finetune init is 1×** — see [1x vs 3x](#1x-vs-3x). |
 | [`hrsc2016_le90_1x.json`](./hrsc2016_le90_1x.json) | **1× HRSC2016** — native XML loader, single-class ship, `keep_ratio` + pad-32, H+V+diagonal flips (random rotate **off**), Smooth L1 + ProbIoU aux (`roi_box_reg_aux_weight` 0.1); model/eval-val/production NMS **0.1**, `max_detections_per_image` **2000**. Deploy `production.score_threshold` **0.85** (eval-val F1 0.90 − 0.05). |
 | [`hrsc2016_le90_3x.json`](./hrsc2016_le90_3x.json) | **3× HRSC2016** — inherits 1×; 36 epochs, milestones [24, 33], `lr_scheduler_gamma` 0.1, random rotate p=0.5 **±20°**. Hub: `oriented_rcnn_hrsc2016_le90_3x`. |
+| [`hrsid_le90_1x.json`](./hrsid_le90_1x.json) | **1× HRSID** — native COCO, keep-ratio 800 + pad-32, finetune `hf://oriented_rcnn_dota_le90_1x` (1-way ship re-init). 12 epochs. Wei HBB AP50 **>84.7%**; OrientedDet OBB not yet run. No Hub. |
 
 ### Loss Functions
 
@@ -219,32 +220,49 @@ The method achieves state-of-the-art accuracy while maintaining competitive effi
 
 ### OrientedDet
 
-`dota_le90_1x.json` trained on DOTA train+val tiles reaches **76.73%** official DOTA v1.0 Task 1 (AP75 50.24, COCO mAP 46.59); leaky eval-val is **77.66% mAP50**. Hub slug: `oriented_rcnn_dota_le90_1x`; eval report: [`docs/eval-reports/oriented_rcnn_dota_le90_1x/model_analysis.md`](../../docs/eval-reports/oriented_rcnn_dota_le90_1x/model_analysis.md).
+`dota_le90_1x.json` trained on DOTA train+val tiles reaches **76.73%** official DOTA v1.0 Task 1 (AP75 50.24, COCO mAP 46.59); leaky eval-val is **77.66% mAP50**. This is the **advertised DOTA slug and the finetune init**. Hub slug: `oriented_rcnn_dota_le90_1x`; eval report: [`docs/eval-reports/oriented_rcnn_dota_le90_1x/model_analysis.md`](../../docs/eval-reports/oriented_rcnn_dota_le90_1x/model_analysis.md).
 
-`dota_le90_3x.json` (36 epochs, LR milestones at 24 and 33) reaches **79.40%** leaky eval-val mAP50 (val tiles are in train). Official Task 1 is the real DOTA test; the interim June report stays until the 3× retrain. Hub slug: `oriented_rcnn_dota_le90_3x`; eval report: [`docs/eval-reports/oriented_rcnn_dota_le90_3x/model_analysis.md`](../../docs/eval-reports/oriented_rcnn_dota_le90_3x/model_analysis.md).
+`dota_le90_3x.json` (36 epochs, LR milestones at 24 and 33, September retrain `20260911-102320` with the diagonal-flip θ fix) reaches **74.88%** official Task 1 (AP75 51.23, COCO mAP 46.91); leaky eval-val is **82.92%**. Hub slug: `oriented_rcnn_dota_le90_3x`; eval report: [`docs/eval-reports/oriented_rcnn_dota_le90_3x/model_analysis.md`](../../docs/eval-reports/oriented_rcnn_dota_le90_3x/model_analysis.md).
 
 `hrsc2016_le90_3x.json` (keep-ratio + pad-32, Smooth L1 + ProbIoU aux, rotate p=0.5 ±20°) reaches **90.41% mAP50** on held-out HRSC2016 ImageSets **test** (`make eval-val`, 453 images; train is trainval only). Hub slug: `oriented_rcnn_hrsc2016_le90_3x`; eval report: [`docs/eval-reports/oriented_rcnn_hrsc2016_le90_3x/model_analysis.md`](../../docs/eval-reports/oriented_rcnn_hrsc2016_le90_3x/model_analysis.md).
 
-| Config | Final config | Final log | Schedule | Training run | Checkpoint | eval-val mAP50 | Hub slug |
-|--------|--------------|-----------|----------|--------------|------------|----------------|----------|
+| Config | Final config | Final log | Schedule | Training run | Checkpoint | mAP50 | Hub slug |
+|--------|--------------|-----------|----------|--------------|------------|-------|----------|
 | [`dota_le90_1x.json`](./dota_le90_1x.json) | [`oriented_rcnn_r50_fpn_dota_le90_1x-725c244f.json`](../../pretrained/oriented_rcnn_r50_fpn_dota_le90_1x-725c244f.json) | [`oriented_rcnn_r50_fpn_dota_le90_1x-725c244f.log`](../../pretrained/oriented_rcnn_r50_fpn_dota_le90_1x-725c244f.log) | 1× (12 ep) | `runs/oriented_rcnn/20260908-144807` | `best_mAP_0.80.pth` | **76.73%** Task 1 (eval-val 77.66%) | `oriented_rcnn_dota_le90_1x` |
-| [`dota_le90_3x.json`](./dota_le90_3x.json) | [`oriented_rcnn_r50_fpn_dota_le90_3x-68957f98.json`](../../pretrained/oriented_rcnn_r50_fpn_dota_le90_3x-68957f98.json) | [`oriented_rcnn_r50_fpn_dota_le90_3x-68957f98.log`](../../pretrained/oriented_rcnn_r50_fpn_dota_le90_3x-68957f98.log) | 3× (36 ep) | `runs/oriented_rcnn/20260621-092802` | `best_mAP_0.82.pth` | 79.40% leaky eval-val | `oriented_rcnn_dota_le90_3x` |
+| [`dota_le90_3x.json`](./dota_le90_3x.json) | [`oriented_rcnn_r50_fpn_dota_le90_3x-3730d3a9.json`](../../pretrained/oriented_rcnn_r50_fpn_dota_le90_3x-3730d3a9.json) | [`oriented_rcnn_r50_fpn_dota_le90_3x-3730d3a9.log`](../../pretrained/oriented_rcnn_r50_fpn_dota_le90_3x-3730d3a9.log) | 3× (36 ep) | `runs/oriented_rcnn/20260911-102320` | `best_mAP_0.80.pth` | **74.88%** Task 1 (eval-val 82.92%) | `oriented_rcnn_dota_le90_3x` |
 | [`hrsc2016_le90_3x.json`](./hrsc2016_le90_3x.json) | [`oriented_rcnn_r50_fpn_hrsc2016_le90_3x-dd8a195b.json`](../../pretrained/oriented_rcnn_r50_fpn_hrsc2016_le90_3x-dd8a195b.json) | [`oriented_rcnn_r50_fpn_hrsc2016_le90_3x-dd8a195b.log`](../../pretrained/oriented_rcnn_r50_fpn_hrsc2016_le90_3x-dd8a195b.log) | 3× (36 ep) | `runs/oriented_rcnn/20260830-163857` | `best_mAP_0.90.pth` | 90.41% held-out test | `oriented_rcnn_hrsc2016_le90_3x` |
+
+### 1x vs 3x
+
+Use **1×** (`hf://oriented_rcnn_dota_le90_1x`) as the advertised DOTA checkpoint and the finetune init. The extra 24 epochs overfit the train+val *tiles*; they do not buy official Task 1 AP50.
+
+| Checkpoint | Leaky eval-val | Official AP50 | Official AP75 | eval-val − Task 1 |
+|------------|----------------|---------------|---------------|-------------------|
+| 1× | 77.66 | **76.73** | 50.24 | **0.93** |
+| 3× | 82.92 | 74.88 | **51.23** | **8.04** |
+
+Train-time mAP on 3× still climbs after the 1× schedule. Official AP50 does not — 3× is **1.85 points below** 1× on the hidden test (and below the paper R50-FPN 75.87). AP75 **did** generalize (+0.99): localization got slightly better; ranking at IoU 0.5 did not. Rare classes pay the most (helicopter Task 1 57.52 vs 1× 64.58; eval-val 90.72).
+
+- **Default:** 1×. Better held-out AP50, less tile specialization. FAIR1M / HRSID recipes already load this slug.
+- **Try 3×** only if the target needs **tight boxes** (high IoU / AP75) and you have a real holdout. Do not pick it because 82.92% eval-val looks better.
 
 ## Usage
 
 ### Training
 
 ```bash
-# Edit dataset paths in the config, then:
+# Advertised DOTA pretrain (12 epochs):
 odet train --config configs/oriented_rcnn/dota_le90_1x.json
 
-# Primary benchmark (36 epochs):
+# Long schedule (36 epochs) — AP75, not AP50; see 1x vs 3x above:
 odet train --config configs/oriented_rcnn/dota_le90_3x.json
 
 # HRSC2016 (set dataset.data_root to the official FullDataSet layout):
 odet train --config configs/oriented_rcnn/hrsc2016_le90_1x.json
 odet train --config configs/oriented_rcnn/hrsc2016_le90_3x.json
+
+# HRSID 12-epoch 1× (held-out test; see docs/user-guide/data.md#hrsid-1x):
+odet train --config configs/oriented_rcnn/hrsid_le90_1x.json
 ```
 
 ### Override Parameters

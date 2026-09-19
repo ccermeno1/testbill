@@ -1,6 +1,6 @@
 # Roadmap
 
-High-level plan for Oriented-Det after **v0.2** (geometry, IoU/NMS, DOTA, four ResNet-FPN detectors including Rotated FCOS, config training, Hub weights).
+High-level plan for Oriented-Det after **v0.3** (four ResNet-FPN detectors, DOTA Task 1 zoo, HRSC Hub 3×, FAIR1M / SSDD / HRSID loaders, ONNX pre-NMS for FCOS / Oriented R-CNN / Faster R-CNN).
 
 > **Maintainers:** a longer planning doc lives at `docs/roadmap-detailed.md` (gitignored, local only).
 
@@ -11,7 +11,7 @@ High-level plan for Oriented-Det after **v0.2** (geometry, IoU/NMS, DOTA, four R
 | **v0.1** | Shipped — Oriented R-CNN, Rotated Faster R-CNN, Rotated RetinaNet; DOTA; `odet train`; Hub |
 | **v0.1.1** | Shipped — ProbIoU Faster R-CNN on Hub (DOTA zoo is now 1×: **74.42%** official Task 1) |
 | **v0.2** | Shipped — **Rotated FCOS** (anchor-free single-stage); DOTA le90 Hub `rotated_fcos_dota_le90_1x` (73.07% official Task 1) |
-| **v0.3** | **HRSC2016** loader + Hub 3× zoo (shipped); **FAIR1M** loader + 1× recipes + tutorial (**finetune DOTA 1× Hub; no FAIR1M zoo**) |
+| **v0.3** | Shipped — **HRSC2016** loader + Hub 3× zoo; **FAIR1M** loader + 1× recipes + tutorial; **SSDD** + **HRSID** native loaders + 1× recipes (**finetune DOTA 1× Hub; no SAR zoo**); **ONNX** pre-NMS restore (`python -m export`; DOTA 1024 tiles) |
 | **v0.4** | Production speed tier: **RTMDet-R**, then **native YOLO-OBB** |
 | **v0.5–v0.8** | **Swin-FPN** backbone; Oriented R-CNN + Swin-T on Hub; extend to FCOS / speed models |
 | **v1.0** | Stable API, hosted docs, complete model zoo (accuracy / balanced / speed tiers) |
@@ -24,7 +24,7 @@ High-level plan for Oriented-Det after **v0.2** (geometry, IoU/NMS, DOTA, four R
 | **Balanced** | Rotated FCOS |
 | **Speed** | RTMDet-R, native Rotated YOLO-OBB |
 | **Legacy** | Rotated RetinaNet (L1; MMRotate parity) |
-| **Datasets** | DOTA, HRSC2016, FAIR1M |
+| **Datasets** | DOTA, HRSC2016, FAIR1M, SSDD, HRSID |
 
 ## Closed ablations (not Hub)
 
@@ -34,9 +34,9 @@ High-level plan for Oriented-Det after **v0.2** (geometry, IoU/NMS, DOTA, four R
 
 ## Ongoing
 
-- Hosted MkDocs site and dataset tutorials
-- Optional GPU / fused CUDA rotated IoU/NMS (profiling-driven; unblocked now that FCOS shipped)
-- Export parity for new detectors (ONNX head wrappers + postprocess)
+- **Ongoing:** Hosted MkDocs site and dataset tutorials
+- **Ongoing:** Optional GPU / fused CUDA rotated IoU/NMS (profiling-driven; unblocked now that FCOS shipped)
+- **Ongoing:** ONNX remaining scope — RetinaNet pre-NMS detect graph; `keep_ratio` + pad canvas (HRSC / SSDD / HRSID); sliding-window tiling. Three-detector DOTA-tile export shipped in v0.3 (`python -m export`; see [ONNX export](examples/export.md)).
 
 ## Out of scope (for now)
 

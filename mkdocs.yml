@@ -81,6 +81,7 @@ nav:
   - Examples:
     - Training: examples/training.md
     - Inference: examples/inference.md
+    - ONNX export: examples/export.md
   - Contributing: contributing.md
   - Roadmap: roadmap.md
   - Documentation Guide: documentation.md

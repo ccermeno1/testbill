@@ -886,6 +886,8 @@ def test_horizontal_roi_loss_uses_hbb_style_matching(monkeypatch):
         min_pos_iou=0.5,
         gt_boxes_ignore=None,
         ignore_iou_threshold=None,
+        gt_boxes_lookalike=None,
+        lookalike_iou_threshold=None,
     ):
         called["use_hbb"] = use_hbb_for_matching
         called["match_low_quality"] = match_low_quality

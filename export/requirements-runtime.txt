@@ -1,0 +1,6 @@
+# Consumer path: python -m export demo / infer (no oriented-det, no torch).
+numpy>=1.24
+pillow>=9.0
+onnxruntime>=1.16.0
+# GPU: replace onnxruntime with onnxruntime-gpu[cuda,cudnn] (do not install both).
+# Optional exact CPU polygon IoU: pip install shapely  then  --nms-backend shapely

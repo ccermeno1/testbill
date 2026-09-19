@@ -12,11 +12,12 @@
       "eval_report": "docs/eval-reports/rotated_retinanet_dota_le90_1x/model_analysis.md"
     },
     "rotated_retinanet_dota_le90_3x": {
-      "filename": "rotated_retinanet_r50_fpn_dota_le90_3x-8decc6f1.pth",
-      "sha256": "8decc6f13b6611e403d4806d1f860ccb094132bde24f95d341b07e8e618cf566",
+      "filename": "rotated_retinanet_r50_fpn_dota_le90_3x-42968545.pth",
+      "sha256": "429685453dc18b03d7ec659643fc3419745a361bd8d947a0cb98a88bb562ba9a",
       "source_recipe": "configs/rotated_retinanet/dota_le90_3x.json",
-      "experiment_dir": "runs/rotated_retinanet/20260612-121232",
-      "eval_map50": 0.7152,
+      "experiment_dir": "runs/rotated_retinanet/20260913-031811",
+      "eval_map50": 0.7651,
+      "eval_task1_map50": 0.7070,
       "eval_report": "docs/eval-reports/rotated_retinanet_dota_le90_3x/model_analysis.md"
     },
     "rotated_faster_rcnn_dota_le90_3x": {
@@ -47,11 +48,12 @@
       "eval_report": "docs/eval-reports/oriented_rcnn_dota_le90_1x/model_analysis.md"
     },
     "oriented_rcnn_dota_le90_3x": {
-      "filename": "oriented_rcnn_r50_fpn_dota_le90_3x-68957f98.pth",
-      "sha256": "68957f98c3ec4b9f4eb5bf1903cf341409f1a5679af4a052d7dbb15550c2b10d",
+      "filename": "oriented_rcnn_r50_fpn_dota_le90_3x-3730d3a9.pth",
+      "sha256": "3730d3a924a5e7e381db0290f7591d63dc843d00c78d14a9b22c57850b4bb970",
       "source_recipe": "configs/oriented_rcnn/dota_le90_3x.json",
-      "experiment_dir": "runs/oriented_rcnn/20260621-092802",
-      "eval_map50": 0.7940,
+      "experiment_dir": "runs/oriented_rcnn/20260911-102320",
+      "eval_map50": 0.8292,
+      "eval_task1_map50": 0.7488,
       "eval_report": "docs/eval-reports/oriented_rcnn_dota_le90_3x/model_analysis.md"
     },
     "oriented_rcnn_hrsc2016_le90_3x": {

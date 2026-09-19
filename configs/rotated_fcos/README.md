@@ -9,6 +9,7 @@ Anchor-free single-stage oriented detector (v0.2). **DistanceAnglePointCoder** (
 | [`dota_le90_1x_l1_kfiou_aux.json`](./dota_le90_1x_l1_kfiou_aux.json) | **1× L1 + KFIoU aux 0.1** — overrides 1× to L1 + aux; lr **2.5e-4**. |
 | [`hrsc2016_le90_1x.json`](./hrsc2016_le90_1x.json) | **1× HRSC2016 rIoU** (native XML, single-class ship, `keep_ratio` + pad-32, H+V+diagonal flips + random rotate p=0.5 **±20°**, trainval/test). Same head/lr as DOTA 1× rIoU. Deploy `production.score_threshold` **0.2** (eval-val F1 0.25 − 0.05). |
 | [`hrsc2016_le90_3x.json`](./hrsc2016_le90_3x.json) | **3× HRSC2016 rIoU** — inherits 1×; 36 epochs, milestones `[24, 33]`, `lr_scheduler_gamma` `[0.1, 0.5]`, same lr **2.5e-3**. Hub: `rotated_fcos_hrsc2016_le90_3x`. |
+| [`hrsid_le90_1x.json`](./hrsid_le90_1x.json) | **1× HRSID rIoU** — native COCO, keep-ratio 800, finetune `hf://rotated_fcos_dota_le90_1x`. 12 epochs. No Hub. |
 
 Former recipe filenames `dota_le90_1x_riou.json`, `dota_le90_*_kfiou_aux.json`, and `dota_le90_3x_l1.json` were renamed/folded into the table above (1× rIoU is now `dota_le90_1x.json`; KFIoU aux 1× is `dota_le90_1x_l1_kfiou_aux.json`).
 
@@ -29,7 +30,7 @@ Eval report: [`docs/eval-reports/rotated_fcos_dota_le90_1x/`](../../docs/eval-re
 
 ```bash
 odet pretrained download rotated_fcos_dota_le90_1x
-make viewer VIEWER_PRED_DIR=predictions/20260908_132129 DOTA_DATA_ROOT=/path/to/DOTA-v1.0-tiled
+make viewer VIEWER_PRED_DIR=predictions/20260908_132129 DOTA_DATA_ROOT=/path/to/data/DOTA-v1.0-tiled
 ```
 
 HRSC2016 (ImageSets **trainval / held-out test**, 453 images). Test is **not** in training. Whole-image `keep_ratio` + pad-32, decoded rIoU, rotate p=0.5 ±20°.

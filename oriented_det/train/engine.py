@@ -299,7 +299,7 @@ def _visualize_predictions(
         # The polygon points are the actual rotated corners, not axis-aligned bounds
         gt_polygons = [gt.rbox.to_polygon().points for gt in ground_truths]
         gt_specs = [
-            viz.DrawingSpec(outline=(0, 255, 0), width=2)  # Green for ground truth
+            viz.DrawingSpec(outline=(0, 255, 0), width=2)  # Green for ground truth (thinner than preds)
             for _ in ground_truths
         ]
         image = viz.draw_polygons(image, gt_polygons, specs=gt_specs)
@@ -310,7 +310,7 @@ def _visualize_predictions(
         # The polygon points represent the actual rotated rectangle corners
         pred_polygons = [det.rbox.to_polygon().points for det in predictions]
         pred_specs = [
-            viz.DrawingSpec(outline=(255, 0, 0), width=2)  # Red for predictions
+            viz.DrawingSpec(outline=(255, 0, 0), width=viz.DEFAULT_LINE_WIDTH)  # Red for predictions
             for _ in predictions
         ]
         pred_labels = [
@@ -2247,7 +2247,7 @@ def train(
         # freeze_backbone_epochs or freeze_rpn_epochs > 0). Rebuilding with False after
         # unfreeze deadlocks NCCL when a batch skips a head (empty / lookalike-only).
         # Leftover hangs die when TORCH_DIST_TIMEOUT_SECONDS elapses (default 24h;
-        # odet-planes sets 30 min).
+        # make train-multi-gpu sets 30 min).
 
         # Update NMS IoU threshold from schedule (e.g. Rotated RetinaNet: lower = more suppression)
         if hasattr(train_model, "set_final_nms_iou_for_epoch"):

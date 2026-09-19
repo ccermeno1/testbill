@@ -5,7 +5,7 @@ Loads the train split, applies the same collate path as training (Albumentations
 random flips, random rotate, resize), and writes comparison grids so you can sanity-check
 augmentation.json / recipe overrides before a long run.
 
-Usage (from odet-planes/, with oriented-det venv active):
+Usage (from the oriented-det repo root, with the project venv active):
 
     python tools/preview_augmentation.py --config configs/oriented_rcnn/dota_le90_1x.json
     python tools/preview_augmentation.py --config runs/oriented_rcnn/20260616-030231/config.json --num-images 4 --variants 6

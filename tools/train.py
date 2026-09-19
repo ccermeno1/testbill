@@ -84,6 +84,8 @@ from oriented_det.data import (
     format_dota_empty_gt_filter_log,
     format_fair1m_empty_gt_filter_log,
     format_hrsc_empty_gt_filter_log,
+    format_hrsid_empty_gt_filter_log,
+    format_ssdd_empty_gt_filter_log,
     split_class_names,
 )
 from oriented_det.train import train, CheckpointManager, WarmupScheduler, OneCycleWrapper, get_best_checkpoint_path
@@ -1481,6 +1483,26 @@ def main():
             print("FAIR1M filter_empty_gt:")
             print(format_fair1m_empty_gt_filter_log(train_dataset, split="train"))
             print(format_fair1m_empty_gt_filter_log(val_dataset, split="val"))
+    elif rank == 0 and dataset_format == "ssdd":
+        print(
+            f"\nUsing SSDD dataset: {config.dataset.data_root} "
+            f"(train split={getattr(train_dataset, 'split', 'train')}, "
+            f"val split={getattr(val_dataset, 'split', 'test')})"
+        )
+        if train_filter_empty:
+            print("SSDD filter_empty_gt:")
+            print(format_ssdd_empty_gt_filter_log(train_dataset, split="train"))
+            print(format_ssdd_empty_gt_filter_log(val_dataset, split="val"))
+    elif rank == 0 and dataset_format == "hrsid":
+        print(
+            f"\nUsing HRSID dataset: {config.dataset.data_root} "
+            f"(train split={getattr(train_dataset, 'split', 'train')}, "
+            f"val split={getattr(val_dataset, 'split', 'test')})"
+        )
+        if train_filter_empty:
+            print("HRSID filter_empty_gt:")
+            print(format_hrsid_empty_gt_filter_log(train_dataset, split="train"))
+            print(format_hrsid_empty_gt_filter_log(val_dataset, split="val"))
     elif rank == 0 and train_filter_empty:
         print("DOTA filter_empty_gt (MMRotate-style):")
         print(format_dota_empty_gt_filter_log(train_dataset, split="train"))

@@ -87,6 +87,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from oriented_det.geometry import RBox
 from oriented_det.data import DOTAAnnotation
+from oriented_det.utils import viz
 
 
 # Image extensions to scan in dataset mode
@@ -96,7 +97,7 @@ _IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'}
 def detect_data_root() -> str:
     """Detect the data root directory - placeholder for now."""
     # Try to detect from common locations or use environment variable
-    data_root = os.environ.get('DOTA_DATA_ROOT', '/mnt/data/share/DOTA-v2.0')
+    data_root = os.environ.get('DOTA_DATA_ROOT', '/path/to/data/DOTA-v1.0-tiled')
     return data_root
 
 
@@ -107,7 +108,7 @@ def list_dota_images(data_root: str, tiles_dir: Optional[str] = None) -> List[Di
     (e.g. train/images or train/ with images directly inside).
 
     Args:
-        data_root: Root path of the dataset (e.g. /path/to/dota).
+        data_root: Root path of the dataset (e.g. /path/to/data/DOTA-v1.0-tiled).
         tiles_dir: Optional subpath (e.g. 'train', 'val', 'train/tiles_1024').
             If None, scans data_root directly.
 
@@ -752,7 +753,13 @@ class SimpleViewer:
                             pred_font_thickness,
                         )
                 for points, color_bgr in pred_draw_items:
-                    cv2.polylines(out_bgr, [points], isClosed=True, color=color_bgr, thickness=2)
+                    cv2.polylines(
+                        out_bgr,
+                        [points],
+                        isClosed=True,
+                        color=color_bgr,
+                        thickness=viz.DEFAULT_LINE_WIDTH,
+                    )
 
             out_rgb = cv2.cvtColor(out_bgr, cv2.COLOR_BGR2RGB)
 

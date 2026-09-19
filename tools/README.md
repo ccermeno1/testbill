@@ -10,6 +10,8 @@ This directory holds the **Python modules** that implement `odet` subcommands an
 
 **Thin compatibility modules:** `tools/inference.py` and `tools/helpers.py` re-export `oriented_det.runtime` and emit a deprecation warning; new code should import from `oriented_det.runtime.inference` and `oriented_det.runtime.collate` directly.
 
+**ONNX export** is not in `tools/`. Use `python -m export` / `make export-onnx` ([export/README.md](../export/README.md), [docs/examples/export.md](../docs/examples/export.md)).
+
 ## Quick Start with Makefile
 
 From the **repository root**, the Makefile calls **`odet`** under the hood. Run `make help` for targets; defaults (`CONFIG`, DOTA paths) are at the top of the Makefile. Use **`make train-multi-gpu`** (not a raw `odet train` in a misconfigured shell) so `torchrun -m oriented_det.cli.train` and pip cuDNN on `LD_LIBRARY_PATH` are applied.
@@ -170,7 +172,7 @@ Prepare a training checkpoint for Hub distribution: strip optimizer state, save 
 
 ```bash
 python tools/publish_checkpoint.py \\
-  runs/oriented_rcnn/20260621-092802/checkpoints/best_mAP_0.82.pth \\
+  runs/oriented_rcnn/20260911-102320/checkpoints/best_mAP_0.80.pth \\
   pretrained/oriented_rcnn_r50_fpn_dota_le90_3x
 # -> pretrained/oriented_rcnn_r50_fpn_dota_le90_3x-<hash8>.pth
 ```
@@ -260,7 +262,7 @@ Hub zoo (no `runs/` directory):
 ```bash
 odet preds --checkpoint hf://oriented_rcnn_dota_le90_3x --data-split val --no-diagnostics
 odet preds --checkpoint hf://oriented_rcnn_dota_le90_3x --data-split test \
-  --test-dir /path/to/DOTA-v1.0/test --no-diagnostics
+  --test-dir /path/to/data/DOTA-v1.0/test --no-diagnostics
 ```
 
 ### `oriented_det.runtime.inference`
@@ -319,7 +321,7 @@ Run inference on a validation (or train) split, save predictions to JSON, and op
 python tools/save_predictions.py
 
 # Override val folder (e.g. non-tiled DOTA val with full-size images)
-python tools/save_predictions.py --config runs/.../config.json --val-dir /path/to/dota/val
+python tools/save_predictions.py --config runs/.../config.json --val-dir /path/to/data/DOTA-v1.0-tiled/val
 # Pad/tile windows always; mAP compares predictions to labels in the images' pixel space (labels must match each image file).
 
 # Overlap ratio between windows when the image needs multiple tiles (default 0.2)
@@ -375,19 +377,19 @@ Sweep controls:
 
 ### `app.py`
 
-Gradio app to browse **predictions** from `save_predictions.py`, explore a DOTA dataset, or **edit OBB CSV annotations** with an optional read-only reference overlay.
+Gradio app to browse **predictions** from `save_predictions.py`, explore a DOTA dataset, or **edit OBB CSV annotations** with an optional read-only reference overlay. Prediction boxes use `oriented_det.utils.viz.DEFAULT_LINE_WIDTH` (4); ground-truth overlays stay thinner (thickness 2).
 
 The app includes a small Gradio 6.8 compatibility patch so cleared/null slider payloads fall back to the slider default instead of crashing during slider preprocessing.
 
 Predictions mode (requires a predictions directory from `save_predictions.py`):
 ```bash
 python tools/app.py --mode predictions --predictions-dir predictions/20250101_120000
-# Optional: --data-root /path/to/dota --threshold 0.3 --port 7860
+# Optional: --data-root /path/to/data/DOTA-v1.0-tiled --threshold 0.3 --port 7860
 ```
 
 Dataset mode (browse DOTA labels without predictions):
 ```bash
-python tools/app.py --mode dataset --data-root /path/to/dota --tiles-dir train/tiles_1024
+python tools/app.py --mode dataset --data-root /path/to/data/DOTA-v1.0-tiled --tiles-dir train/tiles_1024
 ```
 
 CSV annotation editor (finalize HBB→OBB conversions or manual QA):
@@ -520,8 +522,8 @@ Export official **HRSC2016** XML/BMP splits to DOTA-format PNG + `.txt` folders.
 
 **Usage:**
 ```bash
-odet hrsc-to-dota --data-root /path/to/HRSC2016 --output-dir /path/to/HRSC2016-dota
-python tools/hrsc_to_dota.py --data-root /path/to/HRSC2016 --output-dir /tmp/hrsc_dota --splits trainval,test
+odet hrsc-to-dota --data-root /path/to/data/HRSC2016 --output-dir /path/to/data/HRSC2016-dota
+python tools/hrsc_to_dota.py --data-root /path/to/data/HRSC2016 --output-dir /tmp/hrsc_dota --splits trainval,test
 ```
 
 See [Data guide — HRSC2016](../docs/user-guide/data.md#hrsc2016).
@@ -540,6 +542,30 @@ odet tile-dota /path/to/data/FAIR1M-dota/val --tile-size 1024 --overlap 200 --mi
 
 See [Data guide — FAIR1M](../docs/user-guide/data.md#fair1m).
 
+### `coco_to_dota.py`
+
+Export **COCO instance polygons** to DOTA-format image + `.txt` folders. n-gons become a min-area rectangle (OBB only). Native HRSID/SSDD training does **not** require this.
+
+**Usage:**
+```bash
+odet coco-to-dota --ann-file train2017.json --image-dir images --output-dir /tmp/coco_dota --output-split train
+odet coco-to-dota --data-root /path/to/data/HRSID_JPG --output-dir /path/to/data/HRSID-dota --splits train,test
+```
+
+See [Data guide — HRSID](../docs/user-guide/data.md#hrsid).
+
+### `ssdd_to_dota.py`
+
+Export **SSDD** (VOC XML, COCO, or DOTA layouts) to DOTA-format image + `.txt` folders. Native training uses `dataset.format: ssdd`. XML `robndbox` angles are degrees. Grayscale SAR is written as RGB.
+
+**Usage:**
+```bash
+odet ssdd-to-dota --data-root /path/to/data/Official-SSDD-OPEN --output-dir /path/to/data/SSDD-dota
+python tools/ssdd_to_dota.py --data-root /path/to/data/Official-SSDD-OPEN --output-dir /tmp/ssdd_dota --splits train,test
+```
+
+See [Data guide — SSDD](../docs/user-guide/data.md#ssdd).
+
 ### `dota_task1_submit.py`
 
 Write **DOTA v1.0 Task 1** `Task1_{class}.txt` files + a zip for the [official evaluation server](https://captain-whu.github.io/DOTA/evaluation.html). Test **labels are not public**; there is no local test mAP.
@@ -550,20 +576,20 @@ Convert an existing `predictions.json` (from `odet preds --data-split test --no-
 ```bash
 # Hub zoo (recommended): sidecar config, unlabeled official test
 odet dota-submit --checkpoint hf://oriented_rcnn_dota_le90_3x \
-  --test-dir /path/to/DOTA-v1.0/test --output-dir work_dirs/Task1_orcnn
+  --test-dir /path/to/data/DOTA-v1.0/test --output-dir work_dirs/Task1_orcnn
 make dota-submit CHECKPOINT=hf://oriented_rcnn_dota_le90_3x \
-  TEST_DIR=/path/to/DOTA-v1.0/test OUT=work_dirs/Task1_orcnn
+  TEST_DIR=/path/to/data/DOTA-v1.0/test OUT=work_dirs/Task1_orcnn
 
 # Other DOTA slugs: hf://rotated_faster_rcnn_dota_le90_1x hf://rotated_faster_rcnn_dota_le90_3x
 #   hf://rotated_fcos_dota_le90_1x  hf://rotated_retinanet_dota_le90_3x
 
 # Local training run
 odet dota-submit --experiment-dir runs/oriented_rcnn/<id> \
-  --test-dir /path/to/DOTA-v1.0/test --output-dir work_dirs/Task1_orcnn
+  --test-dir /path/to/data/DOTA-v1.0/test --output-dir work_dirs/Task1_orcnn
 
 # Existing predictions.json
 odet preds --checkpoint hf://oriented_rcnn_dota_le90_3x --data-split test \
-  --test-dir /path/to/DOTA-v1.0/test --no-diagnostics
+  --test-dir /path/to/data/DOTA-v1.0/test --no-diagnostics
 odet dota-submit --from-json predictions/<ts>/predictions.json --output-dir work_dirs/Task1_orcnn
 make dota-submit FROM_JSON=predictions/<ts> OUT=work_dirs/Task1_orcnn
 ```

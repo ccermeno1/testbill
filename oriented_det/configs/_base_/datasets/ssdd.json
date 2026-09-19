@@ -1,0 +1,16 @@
+{
+  "dataset": {
+    "format": "ssdd",
+    "data_root": "/path/to/data/Official-SSDD-OPEN",
+    "train_split": "train",
+    "val_split": "test",
+    "overlap": 0,
+    "difficult_strategy": "keep",
+    "filter_empty_gt": true
+  },
+  "preprocessing": {
+    "resize_mode": "keep_ratio",
+    "target_size": [608, 608],
+    "pad_size_divisor": 32
+  }
+}

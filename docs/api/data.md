@@ -31,6 +31,14 @@ The DOTA loader supports three modes for organizing your dataset:
 
 `FAIR1MDataset` reads Pascal-VOC-like XML (`points` polygons + `possibleresult/name`) for **37** fine-grained classes (`FAIR1M_CLASSES`). Config: `dataset.format: fair1m`. Tiled training uses `odet fair1m-to-dota` then `format: dota`. Local Faster R-CNN 1× tiled-val mAP50 is **36.70%** (expected FAIR1M band, not DOTA-scale). See [Data loading](../user-guide/data.md#fair1m).
 
+### SSDD
+
+`SSDDDataset` reads VOC XML (`robndbox` in degrees), COCO polygons, or DOTA labels. Official last-digit train/test. Config: `dataset.format: ssdd`. 12-epoch recipe and expected AP: [Data loading — SSDD](../user-guide/data.md#ssdd-1x-faster-rcnn).
+
+### HRSID
+
+`HRSIDDataset` reads MS COCO polygons → le90 (n-gons via min-area rectangle). Official train/test, no val. Config: `dataset.format: hrsid`. 12-epoch recipes and expected AP: [Data loading — HRSID](../user-guide/data.md#hrsid-1x).
+
 ### Data Augmentation
 
 OrientedDet supports two types of data augmentation:

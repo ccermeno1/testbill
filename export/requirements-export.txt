@@ -1,0 +1,7 @@
+# Producer path: python -m export onnx (needs oriented-det + torch).
+# Infer/demo without oriented-det: pip install -r export/requirements-runtime.txt
+#
+# GPU: replace onnxruntime with onnxruntime-gpu[cuda,cudnn] (do not install both).
+
+onnx>=1.14.0,<2
+onnxruntime>=1.16.0

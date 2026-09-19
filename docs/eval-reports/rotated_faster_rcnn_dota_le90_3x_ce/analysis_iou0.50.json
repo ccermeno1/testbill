@@ -92847,7 +92847,7 @@
     "experiment_dir": "runs/rotated_faster_rcnn/20260530-012517",
     "checkpoint": "runs/rotated_faster_rcnn/20260530-012517/checkpoints/best_mAP_0.81.pth",
     "config_file": "runs/rotated_faster_rcnn/20260530-012517/config.json",
-    "data_root": "/home/jeffaudi/data/DOTA-v1.0-tiled",
+    "data_root": "/path/to/data/DOTA-v1.0-tiled",
     "data_split": "val",
     "total_images": 7669
   },

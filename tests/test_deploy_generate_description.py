@@ -51,6 +51,14 @@ def test_detect_tier_fair1m():
     assert detect_tier(["Boeing737", "Small Car"], "fair1m") == "fair1m"
 
 
+def test_detect_tier_ssdd():
+    assert detect_tier(["ship"], "ssdd") == "ssdd"
+
+
+def test_detect_tier_hrsid():
+    assert detect_tier(["ship"], "hrsid") == "hrsid"
+
+
 def test_detect_tier_generic():
     assert detect_tier(["x"], "custom") == "generic"
 

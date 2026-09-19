@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oriented-det"
-version = "0.2.0"
+version = "0.3.0"
 description = "A lightweight, modern PyTorch library for rotated object detection in aerial and satellite imagery"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -60,6 +60,10 @@ dependencies = [
 viewer = [
     "gradio==6.8.0",
 ]
+export = [
+    "onnx>=1.14.0,<2",
+    "onnxruntime>=1.16.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.0",
@@ -85,14 +89,16 @@ Repository = "https://github.com/DL4EO/oriented-det"
 Issues = "https://github.com/DL4EO/oriented-det/issues"
 "Bug Tracker" = "https://github.com/DL4EO/oriented-det/issues"
 DL4EO = "https://dl4eo.com"
+Blog = "https://deeplearning.earth"
 
 [project.scripts]
 odet = "oriented_det.cli:main"
 
 [tool.setuptools]
-# Ship oriented_det and tools. Makefile/docs are checkout-only.
+# Ship oriented_det, tools, and the ONNX export producer CLI. Makefile/docs are checkout-only.
 [tool.setuptools.packages.find]
-include = ["oriented_det*", "tools*"]
+include = ["oriented_det*", "tools*", "export*"]
+exclude = ["export.tests*"]
 
 
 [tool.setuptools.package-data]

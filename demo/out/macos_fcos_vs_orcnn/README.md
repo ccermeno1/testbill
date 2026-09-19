@@ -9,3 +9,5 @@ Local MPS smoke outputs from comparing Hub 3× DOTA checkpoints on Apple Silicon
 | `cli_demo_fcos.png` | `odet image-demo` smoke on `demo/demo.jpg` |
 
 Protocol: `--device mps`, `score>=0.3`, `nms<=0.1`, slugs `oriented_rcnn_dota_le90_3x` and `rotated_fcos_dota_le90_3x`.
+
+Write-up: [Rotated FCOS vs Oriented R-CNN on macOS](https://deeplearning.earth/posts/2026-09-02_rotated_fcos_vs_oriented_rcnn_on_macos/).

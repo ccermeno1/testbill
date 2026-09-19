@@ -83,8 +83,8 @@
         "format": {
           "type": "string",
           "default": "dota",
-          "enum": ["dota", "airbus_playground", "hrsc2016", "fair1m"],
-          "description": "Dataset format. 'dota' expects train_tiles_dir/val_tiles_dir or train_tiles_dirs/val_tiles_dirs. 'airbus_playground' expects annotations_file/split_file. 'hrsc2016' expects official FullDataSet + ImageSets under data_root. 'fair1m' expects official train/validation (+ labelXml) or Kaggle Dataset/Images under data_root; tiled DOTA recipes use format dota after odet fair1m-to-dota."
+          "enum": ["dota", "airbus_playground", "hrsc2016", "fair1m", "ssdd", "hrsid"],
+          "description": "Dataset format. 'dota' expects train_tiles_dir/val_tiles_dir or train_tiles_dirs/val_tiles_dirs. 'airbus_playground' expects annotations_file/split_file. 'hrsc2016' expects official FullDataSet + ImageSets under data_root. 'fair1m' expects official train/validation (+ labelXml) or Kaggle Dataset/Images under data_root; tiled DOTA recipes use format dota after odet fair1m-to-dota. 'ssdd' expects official last-digit train/test (VOC XML, COCO, or DOTA). 'hrsid' expects COCO train2017/test2017 (or trainsplit/testsplit)."
         },
         "data_root": { "type": "string", "description": "Root directory of the dataset." },
         "train_tiles_dir": { "type": "string", "description": "Directory containing training tiles (DOTA format)." },

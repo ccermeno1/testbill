@@ -22,6 +22,7 @@ from annotation_csv import (
     save_annotation_csv,
 )
 from oriented_det import RBox
+from oriented_det.utils import viz
 
 # Reuse slider helpers from the main viewer when launched via app.py
 try:
@@ -71,7 +72,7 @@ def _draw_rboxes(
             dtype=np.int32,
         )
         is_selected = selected_id is not None and rec.ann_id == selected_id
-        thickness = 3 if is_selected else 2
+        thickness = (viz.DEFAULT_LINE_WIDTH + 1) if is_selected else viz.DEFAULT_LINE_WIDTH
         color = SELECT_COLOR_BGR if is_selected else color_bgr
         if overlay is not None and fill_alpha > 0:
             cv2.fillPoly(overlay, [points], color)

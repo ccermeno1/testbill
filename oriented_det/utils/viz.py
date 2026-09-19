@@ -31,6 +31,9 @@ DEFAULT_PALETTE = [
     (23, 190, 207),
 ]
 
+# Outline width for prediction boxes (`odet image-demo`, Gradio viewer, eval overlays).
+DEFAULT_LINE_WIDTH = 4
+
 
 def as_polygon(obj) -> Polygon:
     if isinstance(obj, Polygon):
@@ -65,7 +68,7 @@ class DrawingSpec:
 
     outline: Color = (255, 255, 255)
     fill: Color | None = None
-    width: int = 2
+    width: int = DEFAULT_LINE_WIDTH
 
 
 def _ensure_pil_image(image):
@@ -175,6 +178,7 @@ __all__ = [
     "cycle_palette",
     "random_palette",
     "format_label",
+    "DEFAULT_LINE_WIDTH",
     "DrawingSpec",
     "draw_polygons",
     "draw_boxes",

@@ -17,11 +17,10 @@ shapely>=2.0.0
 # Viewer dependencies
 gradio==6.8.0
 
-# Export dependencies
-onnx>=1.14.0
+# Export dependencies (optional extra: uv pip install -e ".[export]")
+onnx>=1.14.0,<2
 onnxruntime>=1.16.0
-onnx2tf>=1.22.0
-tensorflow>=2.14.0
+# GPU: replace onnxruntime with onnxruntime-gpu[cuda,cudnn] (do not install both).
 
 # Development dependencies
 pytest>=8.0

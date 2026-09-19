@@ -34,3 +34,12 @@ make demo              # all *.jpg / *.jpeg / *.png directly under demo/ → dem
 ```
 
 Only images **directly inside** `DEMO_DIR` are used (not subfolders such as `demo/out/`). See `tools/README.md` for more options (`--score-thr`, `--nms-thr`, `--classes`, `--zoom`, `--device`, `--overlap-pixels` / `--overlap-ratio`). If the image size matches the model input from your config (e.g. 1024×1024), inference uses a single forward pass; otherwise images are padded or tiled to that size. With `--zoom 2` or `--zoom 4`, inference runs on the zoomed image and the final visualization remains at the original size.
+
+## Example outputs
+
+| File | What it shows |
+|------|----------------|
+| [`out/demo_detections.png`](out/demo_detections.png) | Oriented R-CNN 1× on `demo/demo.jpg` (diagonal bus parking lot). This is the [repository README](../README.md) hero image. |
+| [`out/large_detections.png`](out/large_detections.png) | Sliding-window inference on `demo/large.jpg` (image larger than the 1024×1024 DOTA canvas). |
+
+Write-ups: [macOS `odet image-demo`](https://deeplearning.earth/posts/2026-06-25_oriented_object_detection_on_macos_in_pure_python/) · [sliding-window (`demo/large.jpg`)](https://deeplearning.earth/posts/2026-06-29_announcing_the_final_oriented_det_pretrained_model/) · [Sentinel-2 ships](https://deeplearning.earth/posts/2026-06-25_zero-shot_ship_detection_on_a_copernicus_sentinel-2_tile_with_oriented_rcnn/) ([`copernicus/`](copernicus/)) · [FCOS vs Oriented R-CNN on macOS](https://deeplearning.earth/posts/2026-09-02_rotated_fcos_vs_oriented_rcnn_on_macos/) ([`out/macos_fcos_vs_orcnn/`](out/macos_fcos_vs_orcnn/)).

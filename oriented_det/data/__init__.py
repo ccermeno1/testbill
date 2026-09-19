@@ -39,6 +39,23 @@ from .fair1m import (
     export_fair1m_to_dota,
     format_fair1m_empty_gt_filter_log,
 )
+from .coco_obb import (
+    annotation_from_polygon_coords,
+    export_coco_json_to_dota,
+    parse_coco_instances,
+)
+from .ssdd import (
+    SSDD_CLASSES,
+    SSDDDataset,
+    export_ssdd_to_dota,
+    format_ssdd_empty_gt_filter_log,
+)
+from .hrsid import (
+    HRSID_CLASSES,
+    HRSIDDataset,
+    export_hrsid_to_dota,
+    format_hrsid_empty_gt_filter_log,
+)
 from .dota_task1 import (
     dummy_task1_line,
     format_task1_line,
@@ -116,6 +133,17 @@ __all__ = [
     "FAIR1MDataset",
     "export_fair1m_to_dota",
     "format_fair1m_empty_gt_filter_log",
+    "annotation_from_polygon_coords",
+    "export_coco_json_to_dota",
+    "parse_coco_instances",
+    "SSDD_CLASSES",
+    "SSDDDataset",
+    "export_ssdd_to_dota",
+    "format_ssdd_empty_gt_filter_log",
+    "HRSID_CLASSES",
+    "HRSIDDataset",
+    "export_hrsid_to_dota",
+    "format_hrsid_empty_gt_filter_log",
     "SUPPORTED_DATASET_FORMATS",
     "build_split_dataset",
     "collect_split_images",

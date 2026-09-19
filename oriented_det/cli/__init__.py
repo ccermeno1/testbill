@@ -22,6 +22,8 @@ _COMMANDS: Dict[str, Tuple[str, str]] = {
     "playground-to-dota": ("tools.playground_to_dota", "odet-playground-to-dota"),
     "hrsc-to-dota": ("tools.hrsc_to_dota", "odet-hrsc-to-dota"),
     "fair1m-to-dota": ("tools.fair1m_to_dota", "odet-fair1m-to-dota"),
+    "coco-to-dota": ("tools.coco_to_dota", "odet-coco-to-dota"),
+    "ssdd-to-dota": ("tools.ssdd_to_dota", "odet-ssdd-to-dota"),
     "dota-submit": ("tools.dota_task1_submit", "odet-dota-submit"),
     "labels-to-comma": ("tools.dota_labels_to_comma", "odet-labels-to-comma"),
     "free-gpu": ("tools.free_gpu", "odet-free-gpu"),

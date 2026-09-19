@@ -4,8 +4,8 @@
 Usage:
     odet dota-submit --from-json predictions/<ts>/predictions.json --output-dir work_dirs/Task1
     odet dota-submit --checkpoint hf://oriented_rcnn_dota_le90_3x \\
-        --test-dir /path/to/DOTA/test --output-dir work_dirs/Task1
-    odet dota-submit --experiment-dir runs/oriented_rcnn/<id> --test-dir /path/to/DOTA/test \\
+        --test-dir /path/to/data/DOTA-v1.0/test --output-dir work_dirs/Task1
+    odet dota-submit --experiment-dir runs/oriented_rcnn/<id> --test-dir /path/to/data/DOTA-v1.0/test \\
         --output-dir work_dirs/Task1
 
 Official test labels are not public. Upload the zip to the DOTA v1.0 Task 1 server.

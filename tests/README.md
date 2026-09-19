@@ -26,7 +26,7 @@ With coverage:
 pytest --cov=oriented_det tests/
 ```
 
-CI runs `pytest tests/` on push/PR (see `.github/workflows/test.yml`).
+CI runs `pytest tests/ export/tests/` on push/PR (see `.github/workflows/test.yml`). Export tests that need `onnx` / `onnxruntime` skip unless `oriented-det[export]` is installed (CI installs it).
 
 ## Test modules
 
@@ -41,8 +41,13 @@ CI runs `pytest tests/` on push/PR (see `.github/workflows/test.yml`).
 - **test_airbus_playground.py** — Airbus Playground CSV dataset
 - **test_hrsc2016.py** — HRSC2016 XML loader, ImageSets splits, DOTA export
 - **test_fair1m.py** — FAIR1M XML loader, holdout split, DOTA export, 1× recipes
+- **test_coco_obb.py** — COCO polygon → le90 rbox (quads and n-gons), DOTA export
+- **test_ssdd.py** — SSDD official 1/9 split, XML/COCO layouts, DOTA export, 1× recipe; skips HRSID_JPG; `python -m oriented_det.cli`
+- **test_hrsid.py** — HRSID COCO loader, train/test, DOTA export, 1× recipes
 - **test_pretrained_hub.py** — Hugging Face Hub manifest and download helpers
 - **test_sliding_window_margin.py**, **test_metrics_margin_filter.py** — Inference margin helpers; last-tile flush to image edge; pad vs DOTA native sliding-window routing; window micro-batch default (8 GPU / no auto-probe)
 - **test_deploy_generate_description.py** — Deploy script smoke
+
+Export tests live under [`export/tests/`](../export/tests/README.md) (`make export-test`).
 
 See the [main README](../README.md) for installation and [docs/contributing.md](../docs/contributing.md) for contribution guidelines.

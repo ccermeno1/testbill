@@ -5,7 +5,7 @@ It focuses on clean geometry, reliable operators, simple datasets, and practical
 
 OrientedDet is designed for researchers, practitioners, and geospatial developers who need **accurate rotation-aware detectors** with a clean and minimal API.
 
-For a quick overview and installation on GitHub, see the [repository README](https://github.com/DL4EO/oriented-det/blob/main/README.md).
+For a quick overview and installation on GitHub, see the [repository README](https://github.com/DL4EO/oriented-det/blob/main/README.md). Write-ups with code, metrics, and inference knobs: [DeepLearning.Earth](https://deeplearning.earth). For consulting, training workshops, or custom development, see [DL4EO](https://dl4eo.com).
 
 ## 🚀 Features
 
@@ -26,6 +26,7 @@ For a quick overview and installation on GitHub, see the [repository README](htt
 
 ### 🔸 Remote-Sensing Datasets
 - DOTA polygon loader → rbox/qbox conversion
+- **HRSC2016**, **FAIR1M**, **SSDD**, and **HRSID** native loaders (SSDD / HRSID finetune DOTA 1× Hub locally; no SAR zoo)
 - **Three loading modes**: Pattern matching, split file, separate folders
 - Image tiling / patch generation with configurable overlap
 - Label filtering, edge handling, ignore masks
@@ -78,12 +79,12 @@ See [Installation](getting-started/installation.md) for CUDA, macOS, and CPU set
 - **[Getting Started](getting-started/installation.md)** - Installation and quick start guides
 - **[User Guide](user-guide/geometry.md)** - Detailed usage for each module
 - **[API Reference](api/geometry.md)** - Complete API documentation
-- **[Examples](examples/inference.md)** - Ready-to-use inference and training examples
-- **[Roadmap](roadmap.md)** - Planned releases (v0.3–v1.0)
+- **[Examples](examples/inference.md)** - Training, inference, and [ONNX export](examples/export.md)
+- **[Roadmap](roadmap.md)** - Planned releases (v0.4–v1.0)
 
 ## Roadmap
 
-**v0.2** is shipped (four ResNet detectors including Rotated FCOS, DOTA, Hub). **v0.3** datasets: HRSC2016 Hub 3× zoo + FAIR1M loader/recipes (train locally, no Hub). Next: RTMDet-R + native YOLO-OBB (v0.4), Swin-FPN backbones (v0.5+). Details: **[Roadmap](roadmap.md)**.
+**v0.3** is shipped (HRSC2016 Hub 3× zoo; FAIR1M / SSDD / HRSID loaders and 1× recipes — train SAR locally, no SAR Hub; ONNX pre-NMS for three detectors). Next: RTMDet-R + native YOLO-OBB (v0.4), Swin-FPN backbones (v0.5+). Details: **[Roadmap](roadmap.md)**.
 
 ## Important Notes
 
@@ -116,3 +117,5 @@ See [Installation](getting-started/installation.md) for CUDA, macOS, and CPU set
 ## License
 
 Apache-2.0 — Copyright © Jeff Faudi and [DL4EO](https://dl4eo.com). See [LICENSE](https://github.com/DL4EO/oriented-det/blob/main/LICENSE) for details.
+
+The framework license does not grant rights to the **DOTA** or **HRSC** datasets. See [Apache 2.0 vs DOTA / HRSC dataset terms](https://deeplearning.earth/posts/2026-09-10_oriented_det_apache_license_versus_dota/). For consulting, training workshops, or custom development, see [DL4EO](https://dl4eo.com).

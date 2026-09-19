@@ -31,6 +31,11 @@ docs/eval-reports/**/predictions.json
 **/*.pt
 **/*.pth
 
+# ONNX export artifacts (keep README; Python runtime copies come from export/)
+onnx_export/**
+!onnx_export/README.md
+onnx_export.zip
+
 # Technical documentation (for comprehensive technical document writing)
 #techdocs/
 

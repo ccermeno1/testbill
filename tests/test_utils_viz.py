@@ -61,4 +61,5 @@ def test_drawing_spec():
     assert spec.outline == (255, 0, 0)
     assert spec.fill == (10, 20, 30)
     assert spec.width == 2
+    assert viz.DrawingSpec().width == viz.DEFAULT_LINE_WIDTH
 

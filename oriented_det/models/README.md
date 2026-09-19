@@ -28,6 +28,8 @@ Regression guards: `tests/test_roi.py` (eager vs ONNX-export RoIAlign), `tests/t
 
 `RotatedFCOS` ONNX export uses `rotated_fcos_inference_pre_nms_padded`: backbone + head + decode, padded to `nms_pre ×` FPN levels.
 
+Producer CLI: `python -m export` ([export/README.md](../../export/README.md)).
+
 ## Rotated Faster R-CNN Proposal Filtering
 
 `RotatedFasterRCNN` defaults (RPN/ROI IoU assign thresholds, ROI `target_stds`, post-RPN caps, final rotated NMS IoU) follow MMRotate’s DOTA le90 Faster R-CNN config unless overridden.

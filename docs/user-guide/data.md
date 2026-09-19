@@ -11,8 +11,10 @@ The data module provides dataset loading, image tiling, data augmentation, and e
 | **DOTA v1.0** | train **+ val** tiles (`train_tiles_dirs`; MMRotate pretrain) | **Leaky** — those val tiles are also in train | **Official Task 1** (`make dota-submit`; labels not public) |
 | **HRSC2016** | ImageSets **trainval** | ImageSets **test** (453 images) | Same as eval-val — test is **not** in train |
 | **FAIR1M** | official **train** tiles only | official **val** tiles | Gaofen test labels are not public; val is **not** in train |
+| **SSDD** | official last-digit **train** (~928) | official last-digit **test** (~232) | Same as eval-val — test is **not** in train |
+| **HRSID** | official **train** (65%) | official **test** (35%) | Same as eval-val — no official val; test is **not** in train |
 
-Do **not** call HRSC or FAIR1M `make eval-val` leaky. That word is DOTA-only. For DOTA, quote **Task 1** as the real test; eval-val is a convenience metric on tiles the model already saw.
+Do **not** call HRSC, FAIR1M, SSDD, or HRSID `make eval-val` leaky. That word is DOTA-only. For DOTA, quote **Task 1** as the real test; eval-val is a convenience metric on tiles the model already saw.
 
 ## DOTA Dataset
 
@@ -187,7 +189,7 @@ dataset = DOTADataset(
 
 ```python
 # Custom structure with separate folders:
-# /mnt/data/
+# /path/to/data/
 #   ├── dota_train/
 #   │   ├── images/
 #   │   └── labels/
@@ -196,10 +198,10 @@ dataset = DOTADataset(
 #       └── labels/
 
 train_dataset = DOTADataset(
-    root_dir="/mnt/data",  # Not used when label_dir/image_dir specified
+    root_dir="/path/to/data",  # Not used when label_dir/image_dir specified
     split="train",
-    label_dir="/mnt/data/dota_train/labels",
-    image_dir="/mnt/data/dota_train/images",
+    label_dir="/path/to/data/dota_train/labels",
+    image_dir="/path/to/data/dota_train/images",
     difficult_strategy="drop"
 )
 ```
@@ -277,12 +279,12 @@ This is the **real DOTA test**. Test **images** are public; test **labels are no
 # Official download layout: test/images/*.png (no labelTxt)
 # Hub zoo (sidecar config; no local runs/ needed)
 odet dota-submit --checkpoint hf://oriented_rcnn_dota_le90_3x \
-  --test-dir /path/to/DOTA-v1.0/test --output-dir work_dirs/Task1_orcnn
+  --test-dir /path/to/data/DOTA-v1.0/test --output-dir work_dirs/Task1_orcnn
 # Upload work_dirs/Task1_orcnn.zip (15 Task1_*.txt at the zip root)
 
 # Or a local training run / existing predictions.json
 odet preds --experiment-dir runs/oriented_rcnn/<id> \
-  --data-split test --test-dir /path/to/DOTA-v1.0/test --no-diagnostics
+  --data-split test --test-dir /path/to/data/DOTA-v1.0/test --no-diagnostics
 odet dota-submit --from-json predictions/<ts>/predictions.json --output-dir work_dirs/Task1_orcnn
 ```
 
@@ -389,7 +391,7 @@ HRSC2016/
 - Default ImageSets mapping (MMRotate): train → **`trainval`**, val → **`test`**. Override with `dataset.train_split` / `dataset.val_split`. Test images are **not** in training; `make eval-val` is held-out ImageSets test (unlike leaky DOTA eval-val).
 - Oriented R-CNN, Faster R-CNN, and FCOS 1×/3× use **`keep_ratio`** (long edge 800) + `pad_size_divisor` 32. FCOS HRSC 1×/3× and Oriented R-CNN / Faster R-CNN 3× enable random rotate at p=0.5 **±20°**. Two-stage 1× recipes leave rotate off. Oriented R-CNN uses Smooth L1 + ProbIoU aux; Faster R-CNN keeps ProbIoU main + Smooth L1 aux. `make eval-val` / `odet preds` use the same whole-image path for `pad` / `keep_ratio` (no native sliding windows). DOTA eval-val stays on `fixed` pre-tiled rasters.
 - HRSC / DOTA final NMS: train `model`, eval-val `evaluation.final_nms_iou_threshold`, and deploy `production.final_nms_iou_threshold` are all **0.1** (MMRotate test parity). Two-stage HRSC keeps max **2000** dets/image and score **0.05**.
-- Optional DOTA export (for `odet tile-dota`): `odet hrsc-to-dota --data-root /path/to/HRSC2016 --output-dir /path/to/HRSC2016-dota`.
+- Optional DOTA export (for `odet tile-dota`): `odet hrsc-to-dota --data-root /path/to/data/HRSC2016 --output-dir /path/to/data/HRSC2016-dota`.
 
 ```json
 {
@@ -469,6 +471,99 @@ Literature (different test sets; cited as a band only):
 The bottleneck is **class ID, not boxes**. Epoch 12 mean best IoU vs any detection was **0.62**, same-class **0.50**, GT cover **62%** (DOTA ~88%). ~32.6k GTs had IoU ≥ 0.5 with a **wrong-class** box. Train imbalance is **1038×** (Small Car 143,249 vs C919 138); the 1× recipe uses unweighted CE (`roi_grouped_ce` off). Rare subtypes stay near 0 AP (Tractor, other-vehicle, other-ship, Trailer, Boeing777, ARJ21, C919, Truck Tractor). Sports fields are easy (Baseball Field 88.5%, Tennis Court 81%). Loss and mAP were still climbing at epoch 12 (horizontal RPN priors, 37-way head randomly initialized).
 
 Do **not** compare this number to DOTA Hub tables. To raise it: resume / 3× from this checkpoint; train Oriented R-CNN 1× (rotated proposals); enable `loss.roi_grouped_ce_*` or class weights for airplane / ship / vehicle subtypes. The Kaggle notebook is a **1-epoch smoke** and will not reproduce 36.7%.
+
+## SSDD
+
+SAR ship chips (Zhang et al., *On the Ship Detection Performance of SAR with Different Polarizations and Resolutions*, Remote Sensing 2021 / Official-SSDD). **1,160** images (~190–688 px), **2,456** ships, RadarSat-2 / TerraSAR-X / Sentinel-1, 1–15 m. Single class `ship`. Official split: file numbers whose last digit is **1 or 9** are **test** (~232); the rest are **train** (~928). Inshore/offshore test subsets are `JPEGImages_test_inshore` (46) / `JPEGImages_test_offshore` (186).
+
+Native loader (`dataset.format: ssdd`) discovers, in order: official `JPEGImages_train` / `JPEGImages_test` VOC XML (`rotated_bndbox` 4-corners or `robndbox` degrees), then COCO JSON, then DOTA `labelTxt`. Point `data_root` at `Official-SSDD-OPEN` (or `.../RBox_SSDD/voc_style`). Grayscale SAR is loaded as RGB (channel repeat). Chips fit a **608** keep-ratio canvas — **do not tile**. Polygons are converted to OBBs only.
+
+### Download
+
+| Source | Notes |
+|--------|--------|
+| [Official-SSDD](https://github.com/TianwenZhang/Official-SSDD) | Authors’ Google Drive (RBox VOC and/or COCO). This repo does **not** vendor chips. |
+
+```json
+"dataset": {
+  "format": "ssdd",
+  "data_root": "/path/to/data/Official-SSDD-OPEN",
+  "train_split": "train",
+  "val_split": "test"
+}
+```
+
+Recipe (1× Faster R-CNN, **12 epochs**, finetune DOTA Hub, no SSDD zoo): [`configs/rotated_faster_rcnn/ssdd_le90_1x.json`](https://github.com/DL4EO/oriented-det/blob/main/configs/rotated_faster_rcnn/ssdd_le90_1x.json). Notebook: [`notebooks/ssdd_finetune_tutorial.ipynb`](https://github.com/DL4EO/oriented-det/blob/main/notebooks/ssdd_finetune_tutorial.ipynb) (1-epoch smoke **and** full 1×). Optional DOTA export: `odet ssdd-to-dota --data-root /path/to/data/Official-SSDD-OPEN --output-dir /path/to/data/SSDD-dota`.
+
+```bash
+odet train --config configs/rotated_faster_rcnn/ssdd_le90_1x.json
+make eval-val EXPERIMENT=runs/rotated_faster_rcnn/<timestamp>
+```
+
+`make eval-val` uses the **newest** `runs/<model>/<ts>` unless `EXPERIMENT=` is set. `CONFIG=` is only for `make train`. Optional inshore / offshore test (same checkpoint): set `dataset.val_split` to `"inshore"` or `"offshore"` in a local JSON override, then `make eval-val EXPERIMENT=...`.
+
+### Local 1× Faster R-CNN (held-out test) {: #ssdd-1x-faster-rcnn }
+
+A full 12-epoch finetune of [`ssdd_le90_1x.json`](https://github.com/DL4EO/oriented-det/blob/main/configs/rotated_faster_rcnn/ssdd_le90_1x.json) from `hf://rotated_faster_rcnn_dota_le90_1x` (1-way `ship` head re-init) reached **90.34%** mAP50 on official last-digit **test** (`runs/rotated_faster_rcnn/20260918-130546`, RTX 3090 Ti, 15 m). `make eval-val` is **held-out** (232 chips, 546 ships) — not leaky. Score ≥ 0.05, rotated IoU 0.50, NMS IoU 0.10. Report: [`docs/eval-reports/rotated_faster_rcnn_ssdd_le90_1x/`](https://github.com/DL4EO/oriented-det/blob/main/docs/eval-reports/rotated_faster_rcnn_ssdd_le90_1x/model_analysis.md). No SSDD Hub weights.
+
+| Epoch | Train loss | In-train val mAP50 (score ≥ 0.3) |
+|------:|-----------:|----------------------------------:|
+| 4 | 0.292 | 79.86% |
+| 8 | 0.260 | 80.73% |
+| 12 | 0.235 | **90.41%** |
+
+`make eval-val` (score ≥ 0.05) is **90.34%** — same checkpoint, slightly different floor than in-train mAP. Best-F1 deploy threshold on that sweep is **0.40** (P 0.94 / R 0.91 / F1 0.93). Mean best IoU vs GT is **0.74**. Inshore / offshore subsets were not scored separately on this run.
+
+Literature (different protocol; band only):
+
+- Guo et al., *Sensors* 2021, Faster R-CNN: **88.96%** overall / **86.98%** inshore / **90.05%** offshore
+- Zhang et al. 2021 (Official-SSDD) **do not** publish an RBox Faster R-CNN AP50
+
+This run is **in band** (~89% Faster R-CNN). Treat **<80%** overall as a failed train. The notebook 1-epoch subset smoke will **not** hit 90%. Do not compare to DOTA 70%+ Task 1.
+
+## HRSID
+
+High-Resolution SAR Images Dataset (Wei et al., IEEE Access 2020). **5,604** 800×800 chips, **16,951** ships, Sentinel-1B / TerraSAR-X / TanDEM-X, 0.5–3 m. MS COCO **polygons** → le90 rbox (n-gons use min-area rectangle). Official **65/35 train/test**; **no val** — recipes evaluate on test. `make eval-val` is held-out.
+
+Native loader (`dataset.format: hrsid`) reads `annotations/train2017.json` + `test2017.json` next to `JPEGImages/` (or MMRotate `trainsplit` / `testsplit`). Point `data_root` at `HRSID_JPG`. Whole-image keep-ratio **800** + pad-32. **No tiling** (chips are already 800×800). **No HRSID Hub weights** in v0.3.
+
+### Download
+
+| Source | Notes |
+|--------|--------|
+| [HRSID](https://github.com/chaozhong2010/HRSID) | Authors’ release (COCO JSON + JPEG). |
+
+Native training does **not** need `odet coco-to-dota`. Optional export: `odet coco-to-dota --data-root /path/to/data/HRSID_JPG --output-dir /path/to/data/HRSID-dota`.
+
+### 12-epoch 1× train {: #hrsid-1x }
+
+```bash
+odet train --config configs/rotated_faster_rcnn/hrsid_le90_1x.json
+odet train --config configs/oriented_rcnn/hrsid_le90_1x.json
+odet train --config configs/rotated_fcos/hrsid_le90_1x.json
+```
+
+Each recipe is **12 epochs** (milestones 8/11), keep-ratio **800** + pad-32, official **train / test** (no val, no tiling). Recipes finetune the matching **DOTA 1× Hub** checkpoint (1-way `ship` head re-init). **No HRSID Hub slug in v0.3.** `make eval-val` is **held-out official test** (1,962 chips; `filter_empty_gt` may drop empty images). Faster R-CNN is the published HRSID detection baseline.
+
+```bash
+make eval-val EXPERIMENT=runs/rotated_faster_rcnn/<timestamp>
+```
+
+### Local 1× Faster R-CNN (held-out test) {: #hrsid-expected }
+
+A full 12-epoch finetune of [`hrsid_le90_1x.json`](https://github.com/DL4EO/oriented-det/blob/main/configs/rotated_faster_rcnn/hrsid_le90_1x.json) from `hf://rotated_faster_rcnn_dota_le90_1x` (1-way `ship` head re-init) reached **78.55%** mAP50 on official **test** (`runs/rotated_faster_rcnn/20260918-134544`, RTX 3090 Ti, 1h 32m). `make eval-val` is **held-out** (1,962 chips, 5,918 ships; train-time val dropped one empty image). Score ≥ 0.05, rotated IoU 0.50, NMS IoU 0.10. Report: [`docs/eval-reports/rotated_faster_rcnn_hrsid_le90_1x/`](https://github.com/DL4EO/oriented-det/blob/main/docs/eval-reports/rotated_faster_rcnn_hrsid_le90_1x/model_analysis.md). No HRSID Hub weights.
+
+| Epoch | Train loss | In-train val mAP50 (score ≥ 0.3) |
+|------:|-----------:|----------------------------------:|
+| 4 | 0.290 | 70.71% |
+| 8 | 0.270 | 69.94% |
+| 12 | 0.245 | **71.53%** |
+
+`make eval-val` (score ≥ 0.05) is **78.55%** — same checkpoint; the 0.3 in-train floor drops many true positives (recall 0.83 at 0.05 vs GT cover 79% at 0.3). Best-F1 deploy threshold on that sweep is **0.60** (P 0.90 / R 0.74 / F1 0.81). Mean best IoU vs GT is **0.68**.
+
+Wei et al. (IEEE Access 2020, Table 4) report **horizontal** bbox AP on official 65/35 test: SOTA two-stage **>84.7%** AP50 and **>67.2%** AP75. That protocol is COCO **HBB**, not OrientedDet rotated IoU on min-area rectangles. A later Detectron2 Faster R-CNN reimplementation reported 71.88% AP50 on a **different** split — not the paper baseline.
+
+This run is **in band** (healthy rotated AP50: high 70s–mid 80s). Treat **<70%** eval-val as a failed train. Oriented R-CNN / FCOS 1× on HRSID are **not yet run**. No inshore/offshore split (unlike SSDD).
 
 ## Image Tiling
 
@@ -609,7 +704,7 @@ augmented_image = transform(image)
 
 ## Evaluation
 
-Split protocol (DOTA leaky eval-val vs HRSC/FAIR1M held-out): see [Train / eval splits](#train--eval-splits).
+Split protocol (DOTA leaky eval-val vs HRSC/FAIR1M/SSDD/HRSID held-out): see [Train / eval splits](#train--eval-splits).
 
 ### Oriented mAP
 

@@ -26,7 +26,7 @@ def test_list_assets():
         "oriented_rcnn_r50_fpn_dota_le90_1x-725c244f.pth"
     )
     assert assets["oriented_rcnn_dota_le90_3x"] == (
-        "oriented_rcnn_r50_fpn_dota_le90_3x-68957f98.pth"
+        "oriented_rcnn_r50_fpn_dota_le90_3x-3730d3a9.pth"
     )
     assert assets["oriented_rcnn_hrsc2016_le90_3x"] == (
         "oriented_rcnn_r50_fpn_hrsc2016_le90_3x-dd8a195b.pth"
@@ -50,7 +50,7 @@ def test_list_assets():
         "rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.pth"
     )
     assert assets["rotated_retinanet_dota_le90_3x"] == (
-        "rotated_retinanet_r50_fpn_dota_le90_3x-8decc6f1.pth"
+        "rotated_retinanet_r50_fpn_dota_le90_3x-42968545.pth"
     )
     assert assets["rotated_fcos_dota_le90_1x"] == (
         "rotated_fcos_r50_fpn_dota_le90_1x-a87b6dba.pth"
@@ -240,16 +240,16 @@ def test_manifest_eval_map50_is_eval_val_not_task1():
     assets = json.loads(manifest_path.read_text(encoding="utf-8"))["assets"]
     expected = {
         "oriented_rcnn_dota_le90_1x": (0.7766, 0.7673),
+        "oriented_rcnn_dota_le90_3x": (0.8292, 0.7488),
         "rotated_faster_rcnn_dota_le90_1x": (0.7755, 0.7442),
         "rotated_faster_rcnn_dota_le90_3x": (0.8346, 0.7448),
         "rotated_fcos_dota_le90_1x": (0.7513, 0.7307),
         "rotated_fcos_dota_le90_3x": (0.8232, 0.7291),
         "rotated_retinanet_dota_le90_1x": (0.6820, 0.6787),
+        "rotated_retinanet_dota_le90_3x": (0.7651, 0.7070),
     }
     for slug, (eval_val, task1) in expected.items():
         entry = assets[slug]
         assert entry["eval_map50"] == eval_val
         assert entry["eval_task1_map50"] == task1
         assert entry["eval_map50"] != entry["eval_task1_map50"]
-    assert "eval_task1_map50" not in assets["oriented_rcnn_dota_le90_3x"]
-    assert "eval_task1_map50" not in assets["rotated_retinanet_dota_le90_3x"]

@@ -179,16 +179,16 @@ def test_oriented_rcnn_dota_3x_config_loads():
     assert cfg.training.num_epochs == 36
     assert cfg.training.lr_scheduler_milestones == [24, 33]
     assert cfg.model.rpn_nms_threshold == pytest.approx(0.8)
-    assert cfg.production.score_threshold == pytest.approx(0.7)
+    assert cfg.production.score_threshold == pytest.approx(0.55)
 
 
 def test_dota_3x_recipes_are_1x_plus_36_epochs():
     """DOTA 3× is 1× + 36-epoch milestones; no FCOS warmup 2000 or RetinaNet train max_dets 300."""
     root = Path(__file__).resolve().parents[1]
     pairs = [
-        ("oriented_rcnn", 0.55, 0.7),
+        ("oriented_rcnn", 0.55, 0.55),
         ("rotated_faster_rcnn", 0.6, 0.6),
-        ("rotated_retinanet", 0.45, 0.45),
+        ("rotated_retinanet", 0.35, 0.35),
         ("rotated_fcos", 0.2, 0.2),
     ]
     for name, one_score, three_score in pairs:

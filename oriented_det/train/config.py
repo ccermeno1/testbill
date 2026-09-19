@@ -233,7 +233,7 @@ def _normalize_legacy_cosine_t_max(config_dict: Dict[str, Any]) -> None:
 class DatasetConfig:
     """Dataset configuration."""
     data_root: Path
-    format: str = "dota"  # Options: "dota", "airbus_playground", "hrsc2016", "fair1m"
+    format: str = "dota"  # Options: "dota", "airbus_playground", "hrsc2016", "fair1m", "ssdd", "hrsid"
     train_tiles_dir: Optional[Path] = None
     val_tiles_dir: Optional[Path] = None
     # Optional list of tile roots (MMRotate trainval-style union without on-disk merge).
@@ -271,9 +271,10 @@ class DatasetConfig:
     # instead of the first N in dataset order (see capped_subset_indices in train.utils).
     max_samples_shuffle_seed: Optional[int] = None
     allowed_classes: Optional[List[str]] = None
-    # HRSC2016 / FAIR1M split name used for the training-loop train/val roles.
+    # HRSC2016 / FAIR1M / SSDD / HRSID split name used for the training-loop train/val roles.
     # HRSC defaults (when null): train → trainval, val → test (MMRotate).
     # FAIR1M defaults (when null): train → train, val → val.
+    # SSDD / HRSID defaults (when null): train → train, val → test (no official val).
     train_split: Optional[str] = None
     val_split: Optional[str] = None
     # Optional CSV from tools/save_predictions (--save-tile-metrics-csv); join on image_id / stem
@@ -1141,6 +1142,12 @@ class TrainingExperimentConfig:
                 print(f"  Val Split: {self.dataset.val_split or 'val'}")
                 if self.dataset.map_labels:
                     print(f"  Map Labels: {len(self.dataset.map_labels)} key(s)")
+            elif self.dataset.format == "ssdd":
+                print(f"  Train Split: {self.dataset.train_split or 'train'}")
+                print(f"  Val Split: {self.dataset.val_split or 'test'}")
+            elif self.dataset.format == "hrsid":
+                print(f"  Train Split: {self.dataset.train_split or 'train'}")
+                print(f"  Val Split: {self.dataset.val_split or 'test'}")
             else:
                 if self.dataset.train_tiles_dirs:
                     print(f"  Train Tiles: {self.dataset.train_tiles_dirs}")

@@ -1,6 +1,6 @@
 # odet CLI
 
-Install the package (`uv pip install -e .` or `pip install oriented-det`), then run subcommands via the **`odet`** entry point (see [`pyproject.toml`](../../pyproject.toml)).
+Install the package (`uv pip install -e .` or `pip install oriented-det`), then run subcommands via the **`odet`** entry point (see [`pyproject.toml`](../../pyproject.toml)). `python -m oriented_det.cli <command>` is equivalent.
 
 | Command | Role |
 |---------|------|
@@ -11,7 +11,9 @@ Install the package (`uv pip install -e .` or `pip install oriented-det`), then 
 | `playground-csv`, `playground-to-dota` | Playground CSV / DOTA export |
 | `hrsc-to-dota` | HRSC2016 XML → DOTA PNG + labels |
 | `fair1m-to-dota` | FAIR1M XML → DOTA images + labels (optional holdout) |
+| `coco-to-dota` | COCO polygons (or HRSID dump) → DOTA images + labels |
+| `ssdd-to-dota` | SSDD XML/COCO/DOTA → DOTA images + labels |
 | `dota-submit` | DOTA v1.0 Task 1 zip from Hub `hf://` weights, a training run, or `predictions.json` |
 | `labels-to-comma` | Convert DOTA label files to comma-separated format |
 
-Subcommands load implementations from [`tools/`](../../tools/) (train, preds, tiling, …). Reusable inference, checkpoint, and collate helpers live in [`oriented_det/runtime/`](../runtime/). See the main [README](../../README.md#repository-layout).
+Subcommands load implementations from [`tools/`](../../tools/) (train, preds, tiling, …). Reusable inference, checkpoint, and collate helpers live in [`oriented_det/runtime/`](../runtime/). ONNX export is a separate CLI: `python -m export` (see [`export/README.md`](../../export/README.md)). See the main [README](../../README.md#repository-layout).

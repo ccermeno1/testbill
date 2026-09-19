@@ -61,7 +61,7 @@ from oriented_det.train.config import (
     resolve_preds_final_nms_iou_threshold,
     resolve_inference_sliding_window_overlap_pixels,
 )
-from oriented_det.utils import tqdm_progress_stream
+from oriented_det.utils import tqdm_progress_stream, viz
 
 # For diagnostics: raw inference + threshold + NMS; pad/tile path when image size ≠ model input
 from oriented_det.runtime.inference import (
@@ -824,7 +824,7 @@ def draw_rotated_boxes(img: np.ndarray, rboxes: List[RBox], scores: np.ndarray,
         
         # Draw rotated rectangle (cv2 expects BGR, so green is (0, 255, 0) in BGR)
         color = (0, 255, 0)  # Green for detections (BGR format for cv2)
-        cv2.polylines(img_show, [points], isClosed=True, color=color, thickness=2)
+        cv2.polylines(img_show, [points], isClosed=True, color=color, thickness=viz.DEFAULT_LINE_WIDTH)
         
         # Add label and score (labels are 1-indexed from model; use 0-based index for class_names)
         idx = label - 1 if class_names and 1 <= label <= len(class_names) else None
@@ -1643,11 +1643,11 @@ def run_inference_and_save(experiment_dir: str, checkpoint_path: str, config_pat
     data_root = Path(data_root)
     
     dataset_format = dataset_format_name(getattr(config, "dataset", None))
-    gt_by_image_path = None  # For Airbus / HRSC: path -> list of GroundTruth; for DOTA stays None
+    gt_by_image_path = None  # Native loaders: path -> GroundTruth list; DOTA stays None
     label_dir = None
     same_folder = False
 
-    if dataset_format in ("airbus_playground", "hrsc2016", "fair1m"):
+    if dataset_format in ("airbus_playground", "hrsc2016", "fair1m", "ssdd", "hrsid"):
         from dataclasses import replace
 
         ds_config = config.dataset
@@ -1678,6 +1678,16 @@ def run_inference_and_save(experiment_dir: str, checkpoint_path: str, config_pat
         elif dataset_format == "fair1m":
             print(
                 f"Using FAIR1M dataset: {data_root} "
+                f"(split={getattr(native_dataset, 'split', data_split)})"
+            )
+        elif dataset_format == "ssdd":
+            print(
+                f"Using SSDD dataset: {data_root} "
+                f"(split={getattr(native_dataset, 'split', data_split)})"
+            )
+        elif dataset_format == "hrsid":
+            print(
+                f"Using HRSID dataset: {data_root} "
                 f"(split={getattr(native_dataset, 'split', data_split)})"
             )
         else:

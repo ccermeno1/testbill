@@ -2,7 +2,7 @@
   "model_type": "oriented_rcnn",
   "experiment_timestamp": "20260908-144807",
   "source_recipe": "configs/oriented_rcnn/dota_le90_1x.json",
-  "source_code_root": "/home/jeffaudi/oriented-det",
+  "source_code_root": "/path/to/oriented-det",
   "git_commit": "b242d27292e1bede8c98260e9105dd59e34af383",
   "git_describe": "v0.2.0-4-gb242d27-dirty",
   "git_dirty": true,

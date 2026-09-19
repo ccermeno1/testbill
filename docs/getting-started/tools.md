@@ -23,10 +23,14 @@ After `uv pip install -e .`, use the **`odet`** CLI (`odet --help`). Script impl
 | `playground-to-dota` | Export Playground annotations to DOTA layout |
 | `hrsc-to-dota` | Export HRSC2016 XML/BMP to DOTA PNG + labels |
 | `fair1m-to-dota` | Export FAIR1M XML to DOTA images + labels |
+| `coco-to-dota` | Export COCO polygons (or HRSID) to DOTA images + labels |
+| `ssdd-to-dota` | Export SSDD XML/COCO/DOTA to DOTA images + labels |
 | `dota-submit` | DOTA v1.0 Task 1 zip (`hf://` zoo, a run, or `predictions.json`) |
 | `pretrained` | `list` / `download` Hub checkpoints (`hf://` slugs) |
 | `labels-to-comma` | Convert DOTA label files to comma-separated format |
 | `free-gpu` | Kill GPU processes (dev utility) |
+
+ONNX export is **not** an `odet` subcommand. Use `python -m export` / `make export-onnx` after `uv pip install -e ".[export]"`. See [ONNX export](../examples/export.md).
 
 Common commands:
 
@@ -152,10 +156,10 @@ odet viewer
 python tools/app.py
 
 # Published Hub eval (reports only — use predictions/ for viewer JSON)
-make viewer VIEWER_PRED_DIR=predictions/20260627_082942 DOTA_DATA_ROOT=/path/to/DOTA-v1.0-tiled
+make viewer VIEWER_PRED_DIR=predictions/20260627_082942 DOTA_DATA_ROOT=/path/to/data/DOTA-v1.0-tiled
 
 # Local scratch run
-python tools/app.py --predictions-dir predictions/20260602_120000 --data-root /path/to/DOTA
+python tools/app.py --predictions-dir predictions/20260602_120000 --data-root /path/to/data/DOTA-v1.0-tiled
 ```
 
 **Features:**

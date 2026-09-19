@@ -6,8 +6,8 @@ conversion. Use this tool when you want DOTA loaders or ``odet tile-dota``
 (images larger than the training canvas).
 
 Usage:
-    odet hrsc-to-dota --data-root /path/to/HRSC2016 --output-dir /path/to/HRSC2016-dota
-    python tools/hrsc_to_dota.py --data-root /path/to/HRSC2016 --output-dir /tmp/hrsc_dota --splits trainval,test
+    odet hrsc-to-dota --data-root /path/to/data/HRSC2016 --output-dir /path/to/data/HRSC2016-dota
+    python tools/hrsc_to_dota.py --data-root /path/to/data/HRSC2016 --output-dir /tmp/hrsc_dota --splits trainval,test
 """
 
 from __future__ import annotations

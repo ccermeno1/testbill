@@ -2,7 +2,7 @@
   "model_type": "oriented_rcnn",
   "experiment_timestamp": "20260830-163857",
   "source_recipe": "configs/oriented_rcnn/hrsc2016_le90_3x.json",
-  "source_code_root": "/home/jeffaudi/oriented-det",
+  "source_code_root": "/path/to/oriented-det",
   "git_commit": "86c10c6310fb620308c36f34c4f4efa423a0994c",
   "git_describe": "v0.2.0-dirty",
   "git_dirty": true,

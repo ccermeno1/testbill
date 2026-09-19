@@ -94,9 +94,8 @@ Full key lists, types, and defaults: **`configs/config.schema.json`**. Below: be
 
 | Key | Default | Notes |
 |-----|---------|--------|
-| `format` | `dota` | `dota` → `train_tiles_dir` / `val_tiles_dir`; `airbus_playground` → `annotations_file` + `split_file`; `hrsc2016` → official `FullDataSet` + `ImageSets` under `data_root`; `fair1m` → official / Kaggle FAIR1M under `data_root` (tiled recipes use `dota` after convert) |
-| `format` | `dota` | `dota` → `train_tiles_dir` / `val_tiles_dir`; `airbus_playground` → `annotations_file` + `split_file`; `hrsc2016` → official `FullDataSet` + `ImageSets` under `data_root`; `fair1m` → official / Kaggle FAIR1M under `data_root` (tiled recipes use `dota` after convert) |
-| `train_split` / `val_split` | null | HRSC2016 ImageSets names for the train/val roles. null → `trainval` / `test` |
+| `format` | `dota` | `dota` → `train_tiles_dir` / `val_tiles_dir`; `airbus_playground` → `annotations_file` + `split_file`; `hrsc2016` → official `FullDataSet` + `ImageSets` under `data_root`; `fair1m` → official / Kaggle FAIR1M under `data_root` (tiled recipes use `dota` after convert); `ssdd` → official last-digit train/test; `hrsid` → COCO train2017/test2017 |
+| `train_split` / `val_split` | null | Native split names for the train/val roles. HRSC null → `trainval` / `test`; FAIR1M null → `train` / `val`; SSDD/HRSID null → `train` / `test` |
 | `same_folder` | `false` | If true, images and `.txt` labels live directly under tile dirs |
 | `overlap` | `16` | Tile overlap (px, even); `0` = none. Deploy margin defaults to `overlap/2` when `production.ignore_margin_pixels` is null |
 | `difficult_strategy` | `drop` | `drop` \| `ignore` \| `keep` for DOTA difficult flag |
@@ -182,7 +181,7 @@ For **ProbIoU (or rIoU/KFIoU) as primary** ROI loss on Rotated Faster R-CNN, set
 
 Preds resolver: CLI → `preds_score_threshold` if set → **0.05**. It ignores both `evaluation.train_val_score_threshold` and `production.score_threshold`. Deploy still uses `production.score_threshold`.
 
-DOTA 1× recipes set `production.score_threshold` to the eval-val global F1 threshold minus **0.05** (Oriented R-CNN **0.55**, Faster R-CNN **0.6**, RetinaNet **0.35**, FCOS **0.2**). 3× inherits those floors except Oriented R-CNN 3×, which pins **0.7** (Hub F1 0.75 − 0.05). HRSC 1× recipes use the same rule (Oriented R-CNN / Faster R-CNN **0.85**, FCOS **0.2**). On DOTA, that F1 sweep is leaky eval-val; the real test is Task 1. On HRSC, eval-val is held-out ImageSets test.
+DOTA 1× recipes set `production.score_threshold` to the eval-val global F1 threshold minus **0.05** (Oriented R-CNN **0.55**, Faster R-CNN **0.6**, RetinaNet **0.35**, FCOS **0.2**). 3× inherits those floors. HRSC 1× recipes use the same rule (Oriented R-CNN / Faster R-CNN **0.85**, FCOS **0.2**). On DOTA, that F1 sweep is leaky eval-val; the real test is Task 1. On HRSC, eval-val is held-out ImageSets test.
 
 `production.overlap_pixels` (default 200 when null) and `ignore_margin_pixels` (default `dataset.overlap / 2`) control native sliding-window overlap and the optional **full-image** deploy edge filter for `fixed`/`crop` in `oriented_det.runtime.inference` (`odet preds`, `save_predictions`, deploy). Last tiles flush to the image edge (same as `tile_dota.py`). Per-window stitch margin default is **0** (keep overlap copies, then NMS); pass `--window-margin-pixels` to drop the overlap band. `resize_mode: pad` / `keep_ratio` do not native-tile; they use the training whole-image scale path (`keep_ratio` then `pad_size_divisor`).
 `production.overlap_pixels` (default 200 when null) and `ignore_margin_pixels` (default `dataset.overlap / 2`) control native sliding-window overlap and the optional **full-image** deploy edge filter for `fixed`/`crop` in `oriented_det.runtime.inference` (`odet preds`, `save_predictions`, deploy). Last tiles flush to the image edge (same as `tile_dota.py`). Per-window stitch margin default is **0** (keep overlap copies, then NMS); pass `--window-margin-pixels` to drop the overlap band. `resize_mode: pad` / `keep_ratio` do not native-tile; they use the training whole-image scale path (`keep_ratio` then `pad_size_divisor`).
@@ -218,6 +217,10 @@ Top-level configs (inherit bases under `configs/_base_/`):
 | `configs/oriented_rcnn/fair1m_le90_1x.json` | Oriented R-CNN | 1× FAIR1M tiled (init `hf://oriented_rcnn_dota_le90_1x`) |
 | `configs/rotated_faster_rcnn/fair1m_le90_1x.json` | Rotated Faster R-CNN | 1× FAIR1M tiled (init `hf://rotated_faster_rcnn_dota_le90_1x`; local tiled-val **36.70%**) |
 | `configs/rotated_fcos/fair1m_le90_1x.json` | Rotated FCOS | 1× FAIR1M tiled rIoU (init `hf://rotated_fcos_dota_le90_1x`) |
+| `configs/rotated_faster_rcnn/ssdd_le90_1x.json` | Rotated Faster R-CNN | 1× SSDD keep-ratio 608, 12 epochs (init `hf://rotated_faster_rcnn_dota_le90_1x`; held-out **90.34%**) |
+| `configs/oriented_rcnn/hrsid_le90_1x.json` | Oriented R-CNN | 1× HRSID keep-ratio 800, 12 epochs (init `hf://oriented_rcnn_dota_le90_1x`; not yet run) |
+| `configs/rotated_faster_rcnn/hrsid_le90_1x.json` | Rotated Faster R-CNN | 1× HRSID keep-ratio 800, 12 epochs (init `hf://rotated_faster_rcnn_dota_le90_1x`; held-out **78.55%**) |
+| `configs/rotated_fcos/hrsid_le90_1x.json` | Rotated FCOS | 1× HRSID rIoU, 12 epochs (init `hf://rotated_fcos_dota_le90_1x`; not yet run) |
 
 **Bases (not run directly):** `configs/_base_/datasets/`, `configs/_base_/schedules/{1x,3x,6x}.json`, `fp16`, `preprocessing`, `augmentation`.
 

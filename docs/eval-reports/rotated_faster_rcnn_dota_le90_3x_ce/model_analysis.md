@@ -9,7 +9,7 @@
 - Config: `runs/rotated_faster_rcnn/20260530-012517/config.json`
 
 ## Source data
-- Data root: `/home/jeffaudi/data/DOTA-v1.0-tiled`
+- Data root: `/path/to/data/DOTA-v1.0-tiled`
 - Data split: `val`
 - Total images: `7669`
 - Total ground truth objects: `57768`

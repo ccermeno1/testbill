@@ -163,27 +163,6 @@ def test_create_model_retinanet_converts_anchor_angles_degrees_to_radians():
     assert angles[2] == pytest.approx(math.pi / 4)
 
 
-def test_retinanet_1x_resume_recipe_pins_failed_run():
-    from pathlib import Path
-
-    from oriented_det.train.config import TrainingExperimentConfig
-
-    root = Path(__file__).resolve().parents[1]
-    cfg = TrainingExperimentConfig.load(
-        root / "configs" / "rotated_retinanet" / "dota_le90_1x_resume.json"
-    )
-    assert Path(cfg.checkpoint.load_from_experiment) == Path(
-        "runs/rotated_retinanet/20260909-120457"
-    )
-    assert cfg.checkpoint.discover_previous_run is False
-    assert cfg.checkpoint.resume_from_checkpoint_epoch is True
-    assert cfg.checkpoint.load_optimizer_state is True
-    assert cfg.checkpoint.load_scheduler_state is True
-    assert cfg.training.num_epochs == 1
-    assert cfg.evaluation.compute_map_every_n_epochs == 1
-    assert cfg.preprocessing.enable_random_rotate is False
-
-
 def test_retinanet_1x_rr_recipe_enables_pm180_rotate():
     from pathlib import Path
 

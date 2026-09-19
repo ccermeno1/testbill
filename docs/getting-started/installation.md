@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python >= 3.9
+- Python >= 3.10
 - [uv](https://docs.astral.sh/uv/) (recommended for Python versions, virtualenv, and installs)
 - PyTorch >= 2.4.0 and TorchVision >= 0.19.0 (see below)
 - Pillow >= 9.0
@@ -46,6 +46,8 @@ uv pip install torch torchvision
 
 Then install oriented-det (see below). The library auto-detects MPS and uses the Apple GPU when available. If you hit mixed-precision (AMP) errors on older PyTorch, train with `--no-amp`. For best MPS and AMP support, use PyTorch 2.5 or newer.
 
+Hands-on: [`odet image-demo` on Apple Silicon](https://deeplearning.earth/posts/2026-06-25_oriented_object_detection_on_macos_in_pure_python/) (no CUDA toolchain) and [Rotated FCOS vs Oriented R-CNN on macOS](https://deeplearning.earth/posts/2026-09-02_rotated_fcos_vs_oriented_rcnn_on_macos/) (MPS latency and score thresholds).
+
 ## Install OrientedDet (after PyTorch)
 
 If you already cloned the repo and installed PyTorch (e.g. via the steps above or for macOS/CPU):
@@ -69,6 +71,15 @@ uv pip install -e ".[dev]"
 ```
 
 This adds pytest, pytest-cov, black, and ruff.
+
+For ONNX export (checkpoint → ONNX, plus ONNX Runtime infer):
+
+```bash
+uv pip install -e ".[export]"
+python -m export --help
+```
+
+See [ONNX export](../examples/export.md).
 
 ## Verify Installation
 

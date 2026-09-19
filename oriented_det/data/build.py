@@ -20,8 +20,16 @@ from .hrsc2016 import (
     HRSC2016Dataset,
     resolve_hrsc2016_imageset_split,
 )
+from .hrsid import (
+    HRSIDDataset,
+    resolve_hrsid_imageset_split,
+)
+from .ssdd import (
+    SSDDDataset,
+    resolve_ssdd_imageset_split,
+)
 
-SUPPORTED_DATASET_FORMATS = ("dota", "airbus_playground", "hrsc2016", "fair1m")
+SUPPORTED_DATASET_FORMATS = ("dota", "airbus_playground", "hrsc2016", "fair1m", "ssdd", "hrsid")
 
 
 def dataset_format_name(dataset_cfg) -> str:
@@ -38,8 +46,8 @@ def build_split_dataset(
 
     ``split`` is the training-loop role (``train`` / ``val``). For HRSC2016 this
     is mapped through ``dataset.train_split`` / ``dataset.val_split`` (defaults
-    ``trainval`` / ``test``). ImageSets names (``trainval``, ``test``, …) are
-    also accepted directly.
+    ``trainval`` / ``test``). SSDD / HRSID default to ``train`` / ``test``.
+    ImageSets names (``trainval``, ``test``, …) are also accepted directly.
     """
     fmt = dataset_format_name(dataset_cfg)
     if filter_empty_gt is None:
@@ -94,6 +102,30 @@ def build_split_dataset(
             ignore_labels=dataset_cfg.ignore_labels,
             lookalike_labels=getattr(dataset_cfg, "lookalike_labels", None),
             map_labels=getattr(dataset_cfg, "map_labels", None),
+            filter_empty_gt=filter_empty_gt,
+        )
+
+    if fmt == "ssdd":
+        imageset = resolve_ssdd_imageset_split(dataset_cfg, split)
+        return SSDDDataset(
+            data_root=dataset_cfg.data_root,
+            split=imageset,
+            difficult_strategy=dataset_cfg.difficult_strategy,
+            allowed_classes=dataset_cfg.allowed_classes,
+            ignore_labels=dataset_cfg.ignore_labels,
+            lookalike_labels=getattr(dataset_cfg, "lookalike_labels", None),
+            filter_empty_gt=filter_empty_gt,
+        )
+
+    if fmt == "hrsid":
+        imageset = resolve_hrsid_imageset_split(dataset_cfg, split)
+        return HRSIDDataset(
+            data_root=dataset_cfg.data_root,
+            split=imageset,
+            difficult_strategy=dataset_cfg.difficult_strategy,
+            allowed_classes=dataset_cfg.allowed_classes,
+            ignore_labels=dataset_cfg.ignore_labels,
+            lookalike_labels=getattr(dataset_cfg, "lookalike_labels", None),
             filter_empty_gt=filter_empty_gt,
         )
 
@@ -165,7 +197,7 @@ def collect_split_images(
     dataset_format = dataset_format_name(getattr(config, "dataset", None))
     data_root = Path(data_root)
 
-    if dataset_format in ("airbus_playground", "hrsc2016", "fair1m"):
+    if dataset_format in ("airbus_playground", "hrsc2016", "fair1m", "ssdd", "hrsid"):
         ds_config = config.dataset
         if dataset_format == "airbus_playground":
             if not getattr(ds_config, "annotations_file", None) or not getattr(ds_config, "split_file", None):

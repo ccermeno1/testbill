@@ -1,0 +1,50 @@
+{
+  "version": 6,
+  "description": "ONNX export: pre-NMS graph plus Python preprocess and postprocess.",
+  "onnx": {
+    "build": "python -m export onnx",
+    "infer": "python -m export infer --onnx ./onnx_export/model.onnx --images DIR",
+    "input": {
+      "name": "images",
+      "dtype": "float32",
+      "layout": "NCHW",
+      "color": "RGB",
+      "value_range": "already (x/255 - mean) / std using training normalize_mean / normalize_std",
+      "spatial": "Fixed H,W from export (1024x1024 for this repo)."
+    },
+    "outputs": {
+      "pre_nms_boxes": "[max_pre_nms_candidates, 5]  cx,cy,w,h,angle_rad (canvas pixels)",
+      "pre_nms_scores": "[max_pre_nms_candidates]",
+      "pre_nms_labels": "[max_pre_nms_candidates]  1-based class ids",
+      "pre_nms_count": "scalar live count (includes zeroed invalid slots)"
+    }
+  },
+  "preprocess": {
+    "module": "export.preprocess",
+    "steps": "RGB uint8 → bilinear resize to target_size → /255 → subtract mean / divide std → NCHW"
+  },
+  "postprocess": {
+    "module": "export.postprocess",
+    "impl": "export.nms (copied to onnx_export/ at export; python clip or shapely)",
+    "steps": "score floor → rotated NMS → max_detections_per_image; then scale boxes to original image size"
+  },
+  "export_modes": {
+    "rotated_fcos_pre_nms": {
+      "models": ["rotated_fcos"],
+      "default": true,
+      "notes": "Primary delivery. GroupNorm stays in the graph. NMS is Python."
+    },
+    "faster_rcnn_pre_nms": {
+      "models": ["rotated_faster_rcnn"],
+      "notes": "ROI decode in ONNX. NMS in Python."
+    },
+    "oriented_rcnn_pre_nms": {
+      "models": ["oriented_rcnn"],
+      "notes": "Same as Faster R-CNN."
+    },
+    "rotated_fcos_heads": {
+      "models": ["rotated_fcos"],
+      "notes": "Head maps only (no decode). Prefer rotated_fcos_pre_nms."
+    }
+  }
+}

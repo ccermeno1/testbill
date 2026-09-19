@@ -13,7 +13,7 @@ See the [main README](../../README.md) for installation and [configs/README.md](
 | [`dota_le90_1x.json`](./dota_le90_1x.json) | **1× DOTA pretrain** (12 epochs, lr 0.0025, batch 2, train+val tiles, H+V+diagonal flips). Inherits [`dota_le90.json`](../_base_/datasets/dota_le90.json) (DOTA `odet stats` mean/std, not ImageNet). Circum-HBB matching; mAP every **4** epochs at `evaluation.train_val_score_threshold` **0.3** (eval-val / Task 1 stay **0.05**). Horizontal priors (`θ = 0`). Deploy `production.score_threshold` **0.35** (eval-val F1 0.40 − 0.05; leaky val **68.20%**, `20260912-105343`). |
 | [`dota_le90_1x_obb.json`](./dota_le90_1x_obb.json) | **1× OBB** (not Hub): same as 1× with `use_hbb_for_matching: false` (`RBboxOverlaps2D`). Same SS 1024/200 tiles and `θ = 0` priors (MMRotate `…_obb_r50_fpn_1x_dota_le90`). |
 | [`dota_le90_1x_rr.json`](./dota_le90_1x_rr.json) | **1× + RR** (not Hub): same as 1× plus `PolyRandomRotate` p=0.5 **±180°** after flips (`auto_bound=False`). Same SS 1024/200 tiles and `θ = 0` priors. |
-| [`dota_le90_3x.json`](./dota_le90_3x.json) | **3× DOTA pretrain** — inherits 1×; 36 epochs, milestones [24, 33]. Hub: `rotated_retinanet_dota_le90_3x`. |
+| [`dota_le90_3x.json`](./dota_le90_3x.json) | **3× DOTA pretrain** — inherits 1×; 36 epochs, milestones [24, 33]. Hub: `rotated_retinanet_dota_le90_3x` (**70.70%** Task 1; leaky eval-val **76.51%**, `20260913-031811`). |
 
 Recipes keep `loss.loss_type: focal` (unweighted). Set `focal_weighted` to apply `loss.class_weight_*` to sigmoid-focal class columns; `background_weight` is ignored.
 
@@ -57,7 +57,7 @@ We ran a **1× ProbIoU primary** ablation (decoded ProbIoU + encoded L1 aux **0.
 python tools/train.py --config configs/rotated_retinanet/dota_le90_3x.json
 ```
 
-Same train-val decode as 1× (`evaluation.train_val_score_threshold: 0.3` for in-train mAP, `preds_score_threshold: 0.05` for eval-val / Task 1, `model.max_detections_per_image: 2000`). Deploy `production.score_threshold` inherits 1× (**0.35**). Hub 3× sidecar may still say **0.45** until refresh.
+Same train-val decode as 1× (`evaluation.train_val_score_threshold: 0.3` for in-train mAP, `preds_score_threshold: 0.05` for eval-val / Task 1, `model.max_detections_per_image: 2000`). Deploy `production.score_threshold` inherits 1× (**0.35**; eval-val F1 0.40 − 0.05). Hub sidecar matches.
 
 **TensorBoard:** The focal classification loss is logged as `train/loss_classifier` (same tag as Rotated Faster R-CNN), alongside `train/loss_box_reg`.
 
@@ -227,12 +227,12 @@ See **Results and models** below for this repo’s Task 1 / eval-val numbers. Ro
 
 ## Results and models
 
-DOTA1.0 (pretrain: **train+val / val**). Advertised **1×** mAP is official **Task 1**. Leaky `make eval-val` is noted in the report. 3× still quotes leaky eval-val until Task 1 lands. Hub 1× is **circum-HBB** (`use_hbb_for_matching: true`); OBB ablation is [`dota_le90_1x_obb.json`](./dota_le90_1x_obb.json) (not Hub yet).
+DOTA1.0 (pretrain: **train+val / val**). Advertised **1× / 3×** mAP is official **Task 1**. Leaky `make eval-val` is noted in the report. Hub 1×/3× are **circum-HBB** (`use_hbb_for_matching: true`); OBB ablation is [`dota_le90_1x_obb.json`](./dota_le90_1x_obb.json) (not Hub yet).
 
 | Backbone | mAP | Angle | lr schd | Aug | BS | Config | Final config | Final log | Download |
 | :----------------------: | :---: | :---: | :-----: | :-: | :--: | :----: | :----------: | :-------: | :----: |
 | ResNet50 (1024,1024,200) | **67.87** Task 1 (HBB; eval-val 68.20) | le90 | 1× | H+V+D | 2 | [`dota_le90_1x.json`](./dota_le90_1x.json) | [`rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.json`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.json) | [`rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.log`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.log) | `hf://rotated_retinanet_dota_le90_1x` |
-| ResNet50 (1024,1024,200) | 71.52 leaky eval-val | le90 | 3× | H+V+D | 2 | [`dota_le90_3x.json`](./dota_le90_3x.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x-8decc6f1.json`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_3x-8decc6f1.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x-8decc6f1.log`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_3x-8decc6f1.log) | `hf://rotated_retinanet_dota_le90_3x` |
+| ResNet50 (1024,1024,200) | **70.70** Task 1 (HBB; eval-val 76.51) | le90 | 3× | H+V+D | 2 | [`dota_le90_3x.json`](./dota_le90_3x.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x-42968545.json`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_3x-42968545.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x-42968545.log`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_3x-42968545.log) | `hf://rotated_retinanet_dota_le90_3x` |
 
 Eval reports: [`docs/eval-reports/rotated_retinanet_dota_le90_1x/`](../../docs/eval-reports/rotated_retinanet_dota_le90_1x/model_analysis.md), [`docs/eval-reports/rotated_retinanet_dota_le90_3x/`](../../docs/eval-reports/rotated_retinanet_dota_le90_3x/model_analysis.md).
 
