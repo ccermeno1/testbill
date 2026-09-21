@@ -61,7 +61,7 @@ def main():
     for d, a, b, k in pairs[:40]:
         print(f"  {d:2d} {k:11s} {os.path.basename(a)[:45]:45s} <-> {os.path.basename(b)[:45]}")
     with open(os.path.join(args.out, "pairs.json"), "w", encoding="utf-8") as f:
-        json.dump([{"dist": d, "a": a, "b": b, "kind": k} for d, a, b, k in pairs], f, indent=1)
+        json.dump([{"dist": d, "a": a.replace("\\", "/"), "b": b.replace("\\", "/"), "kind": k} for d, a, b, k in pairs], f, indent=1)
     # hoja de contacto: pares en filas
     T = 200
     show = pairs[:60]

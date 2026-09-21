@@ -53,7 +53,7 @@ def main():
     excluded = set()
     if args.exclude:
         with open(args.exclude, encoding="utf-8") as f:
-            excluded = {os.path.normpath(os.path.abspath(p)) for p in json.load(f)["exclude_dup"]}
+            excluded = {os.path.normpath(os.path.abspath(p.replace("\\", "/"))) for p in json.load(f)["exclude_dup"]}
 
     src_names = read_class_names(os.path.join(args.src, "data.yaml"))
     if not src_names:
