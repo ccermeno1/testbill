@@ -1,0 +1,576 @@
+# Selección del dataset externo *Euro Banknote Detection* para train
+
+Origen: `Euro Banknote Detection.yolov8-obb` (551 fotos, 12 clases de billete + `hand`). Criterios:
+
+1. **Duplicados**: hash perceptual (pHash/dHash, distancia de Hamming ≤ 8) contra `dataset/banknotes_obb` (train/valid/test)
+   y `dataset/billetesprueba`, y entre las propias fotos nuevas (se conserva una).
+2. **Primeros planos**: un solo billete que ocupa > 50 % de la imagen (ya tenemos muchos).
+3. **Sin billetes**: fotos con solo `hand`.
+4. Las 12 clases de billete se fusionan en `euro_banknote`; las cajas `hand` se descartan.
+
+**Incluidas en train: 304** (como `dataset/banknotes_obb/images/ebd_<nombre>.jpg`, en `annotations/train_plus_extra.json`).
+**Excluidas: 247** — primer plano (1 billete, >50% de la imagen): 96, duplicado: 142, sin billetes (solo mano): 9.
+Duplicados por dataset de referencia: nuevo: 4, nuevo (mismo dataset): 31, test: 12, train: 84, valid: 11.
+
+Detalle completo (todas las fotos, con distancia y foto emparejada) en `eurobanknotes_extra_selection.csv`.
+
+## Incluidas
+
+| foto original | split Roboflow | billetes | nombre en train |
+|---|---|---|---|
+| 100Euro_127_JPEG_jpg.rf.o3EHt7mvV3HZLRtTaBQ1.jpg | train | 2 | ebd_100Euro_127_JPEG.jpg |
+| 100Euro_148_JPEG_jpg.rf.7AXiNH4PllUFP0txkMHB.jpg | train | 2 | ebd_100Euro_148_JPEG.jpg |
+| 100Euro_161_JPEG_jpg.rf.uHLG2OV7X67yb9w5ENJl.jpg | train | 2 | ebd_100Euro_161_JPEG.jpg |
+| 100Euro_170_JPEG_jpg.rf.jvEQiFpLRAT2TxS4b7ib.jpg | train | 2 | ebd_100Euro_170_JPEG.jpg |
+| 100Euro_182_JPEG_jpg.rf.CMyokDLoQqKqpR7xblGX.jpg | train | 2 | ebd_100Euro_182_JPEG.jpg |
+| 100Euro_38_JPEG_jpg.rf.x2DNlONIlTnmGpvqEoC3.jpg | train | 1 | ebd_100Euro_38_JPEG.jpg |
+| 100Euro_77_JPEG_jpg.rf.YStGgtbTNWmzf7jeh6gh.jpg | train | 2 | ebd_100Euro_77_JPEG.jpg |
+| 10Euro_101_jpg.rf.dxWH3XJD4YUIYtsv0rYJ.jpg | train | 1 | ebd_10Euro_101.jpg |
+| 10Euro_128_jpg.rf.DnyDe1gqMQYIEi0TUTzN.jpg | train | 1 | ebd_10Euro_128.jpg |
+| 10Euro_141_jpg.rf.OWzrv7RUJ8dylRKSMkkj.jpg | train | 1 | ebd_10Euro_141.jpg |
+| 10Euro_142_jpg.rf.tYqaNIMcrlsHeRn84259.jpg | train | 1 | ebd_10Euro_142.jpg |
+| 10Euro_151_jpg.rf.6CmLEwPgv4Czih4kMAHi.jpg | train | 1 | ebd_10Euro_151.jpg |
+| 10Euro_172_jpeg_jpg.rf.6eQA5nvJQ5eTenJI8rkh.jpg | train | 1 | ebd_10Euro_172_jpeg.jpg |
+| 10Euro_178_jpg.rf.NooWzfFt0NqsiEfVISJl.jpg | train | 1 | ebd_10Euro_178.jpg |
+| 10Euro_23_jpg.rf.tE3Hswo3EWWCaYyXP8IN.jpg | train | 1 | ebd_10Euro_23.jpg |
+| 10Euro_60_jpg.rf.gWGvLzLSvh37wqfiyfkL.jpg | train | 2 | ebd_10Euro_60.jpg |
+| 10Euro_75_jpg.rf.YMCX5T0k0UiZr8fBNJen.jpg | train | 1 | ebd_10Euro_75.jpg |
+| 20230330_215519_jpg.rf.RrXGNIg0DyAfg4DgPbMX.jpg | train | 3 | ebd_20230330_215519.jpg |
+| 20230330_215524_jpg.rf.pFfhle6z9vJmfUFTsjqn.jpg | train | 3 | ebd_20230330_215524.jpg |
+| 20230330_215527_jpg.rf.INIcYnK21AZsLuPBh4Fr.jpg | train | 3 | ebd_20230330_215527.jpg |
+| 20230330_215531_jpg.rf.GdW8RtCBRr4dlPOietxH.jpg | train | 3 | ebd_20230330_215531.jpg |
+| 20230330_215535_jpg.rf.SviBd5keP7ygeIWrqDN7.jpg | train | 3 | ebd_20230330_215535.jpg |
+| 20230330_215540_jpg.rf.FCka0AKHptzzWcurrESZ.jpg | train | 3 | ebd_20230330_215540.jpg |
+| 20230330_215606_jpg.rf.w6yKZCm5EOLoGRj52s4V.jpg | train | 3 | ebd_20230330_215606.jpg |
+| 20230330_215614_jpg.rf.dsrwiOhOXsJZ7smQ2Ve8.jpg | train | 3 | ebd_20230330_215614.jpg |
+| 20230330_215620_jpg.rf.YVvrY7ty0HLntDKo4Spi.jpg | train | 3 | ebd_20230330_215620.jpg |
+| 20230330_215654_jpg.rf.BNbDHKA94kTyEoOe6Muy.jpg | train | 3 | ebd_20230330_215654.jpg |
+| 20230330_215656_jpg.rf.BP4wjppCegPZfRmZefsh.jpg | train | 3 | ebd_20230330_215656.jpg |
+| 20230330_220535_jpg.rf.O4gXOg7iuVKYOEnRYDWg.jpg | train | 2 | ebd_20230330_220535.jpg |
+| 20230330_220538_jpg.rf.jwwR36C6NW76TdoOqzTr.jpg | train | 2 | ebd_20230330_220538.jpg |
+| 20230330_220541_jpg.rf.YPkCN9qvqoM6jeZMnyu5.jpg | train | 2 | ebd_20230330_220541.jpg |
+| 20230330_220543_jpg.rf.5LsOBUlodaj3Dd7Oeb9K.jpg | train | 2 | ebd_20230330_220543.jpg |
+| 20230330_220604_jpg.rf.lGXd7G0BZKMiWtlV0iKi.jpg | train | 2 | ebd_20230330_220604.jpg |
+| 20230330_220606_jpg.rf.FayLC3NnkMqBKYXqsCGI.jpg | train | 2 | ebd_20230330_220606.jpg |
+| 20230330_220608_jpg.rf.DO2PhPrYGHyseddPIUxR.jpg | train | 2 | ebd_20230330_220608.jpg |
+| 20230330_220609_jpg.rf.rEs1rmQ2niq35z0U6FnM.jpg | train | 2 | ebd_20230330_220609.jpg |
+| 20230330_220835_jpg.rf.zjjNkSpBAIKFCn5u5ART.jpg | train | 7 | ebd_20230330_220835.jpg |
+| 20230330_220838_jpg.rf.3J7NfV44NPvZJtdzycBy.jpg | train | 7 | ebd_20230330_220838.jpg |
+| 20230330_220840_jpg.rf.iW29E7xn1uazdIdmfNJ1.jpg | train | 7 | ebd_20230330_220840.jpg |
+| 20230330_220848_jpg.rf.DG0oyTiKWW6u5oiRBavk.jpg | train | 7 | ebd_20230330_220848.jpg |
+| 20230330_220850_jpg.rf.uO5QVLGIFmamzEqlc6kh.jpg | train | 7 | ebd_20230330_220850.jpg |
+| 20230330_220859_jpg.rf.eftEzALKaUjX4BsxWvwZ.jpg | train | 7 | ebd_20230330_220859.jpg |
+| 20230330_220903_jpg.rf.1F5jjBVackszRvcIXzGI.jpg | train | 7 | ebd_20230330_220903.jpg |
+| 20230330_220905_jpg.rf.3ZOLcOMb2LmLXpRxmW6c.jpg | train | 7 | ebd_20230330_220905.jpg |
+| 20230331_212735_jpg.rf.ynvNzTk3Q3vP3HfZSLlY.jpg | train | 2 | ebd_20230331_212735.jpg |
+| 20230331_212736_jpg.rf.adpI9hO0wkA8jLaGH2zA.jpg | train | 2 | ebd_20230331_212736.jpg |
+| 20230331_212737_jpg.rf.3NOsDo1y9iykwW1PKBXQ.jpg | train | 2 | ebd_20230331_212737.jpg |
+| 20230331_212738_jpg.rf.N2GPcofkY79y7mcJ9Acu.jpg | train | 2 | ebd_20230331_212738.jpg |
+| 20230331_212739_jpg.rf.LSOTnFtshYFm2sJYJbJ2.jpg | train | 2 | ebd_20230331_212739.jpg |
+| 20230401_181920_jpg.rf.f2pNB8ckG9h9tr7YiHTs.jpg | train | 1 | ebd_20230401_181920.jpg |
+| 20230401_181929_jpg.rf.BM0MzoarL4wNKMgd2JEa.jpg | train | 1 | ebd_20230401_181929.jpg |
+| 20230401_181930_jpg.rf.Ehf9qIu7bwlAIDOo4tx6.jpg | train | 1 | ebd_20230401_181930.jpg |
+| 20230401_181940_jpg.rf.MOj8MUSa46DDGL4Kn1LT.jpg | train | 1 | ebd_20230401_181940.jpg |
+| 20230401_181943_jpg.rf.BhALMi6PIM6iy3EHH2ON.jpg | train | 1 | ebd_20230401_181943.jpg |
+| 20230403_103233_jpg.rf.wJXDMjuebnmu89dc4v2P.jpg | train | 2 | ebd_20230403_103233.jpg |
+| 20230403_103234_jpg.rf.kvMqkwd7PtuvhIrecEPS.jpg | train | 2 | ebd_20230403_103234.jpg |
+| 20230403_103350_jpg.rf.wG82xgb1xhE2D29Vcfu6.jpg | train | 2 | ebd_20230403_103350.jpg |
+| 20230403_103353_jpg.rf.ocbOe4ujv5VM4fPmY18n.jpg | train | 2 | ebd_20230403_103353.jpg |
+| 20230403_103356_jpg.rf.vXEeilUwjTpwoBJmrfeb.jpg | train | 2 | ebd_20230403_103356.jpg |
+| 20230403_103357_jpg.rf.N3GepFNXKJjz1spQ5JMv.jpg | train | 2 | ebd_20230403_103357.jpg |
+| 20230403_103402_jpg.rf.UICfGm0dSqUpJKFGGknT.jpg | train | 2 | ebd_20230403_103402.jpg |
+| 20230403_103406_jpg.rf.6ppDWQhCYMlePZOhW0ik.jpg | train | 2 | ebd_20230403_103406.jpg |
+| 20230403_103407_jpg.rf.5oAQ2VBZSzqfjD9JryVr.jpg | train | 2 | ebd_20230403_103407.jpg |
+| 20230407_181352_jpg.rf.0gUv1GaTFNxrEGnO63vq.jpg | train | 1 | ebd_20230407_181352.jpg |
+| 20230407_181355_jpg.rf.HS7AFKIOjZJvNqn2A10l.jpg | train | 1 | ebd_20230407_181355.jpg |
+| 20230407_181440_jpg.rf.OJ53J6TUFpqIbFsOFtXw.jpg | train | 1 | ebd_20230407_181440.jpg |
+| 20230407_181756_jpg.rf.ODupzRkvr5mx8S3abUYh.jpg | train | 6 | ebd_20230407_181756.jpg |
+| 20230407_181802_jpg.rf.eowZNoHDtXOEyEZdmTQm.jpg | train | 6 | ebd_20230407_181802.jpg |
+| 20230407_181807_jpg.rf.tpHpgl5Ga1lyzxWJGQAV.jpg | train | 6 | ebd_20230407_181807.jpg |
+| 20230407_181837_jpg.rf.YdyDsxCYhmZo5DlNh8q8.jpg | train | 6 | ebd_20230407_181837.jpg |
+| 20230407_181907_jpg.rf.DxuAJBr4o8159NcawCsq.jpg | train | 6 | ebd_20230407_181907.jpg |
+| 20230407_181916_jpg.rf.46v6RINuIrNEaPvQ2rK2.jpg | train | 6 | ebd_20230407_181916.jpg |
+| 20230412_161357_jpg.rf.65hJkcoFtGXWAuPg0hce.jpg | train | 3 | ebd_20230412_161357.jpg |
+| 20230412_161401_jpg.rf.htWUBEtxqgmhSt4rF6N6.jpg | train | 3 | ebd_20230412_161401.jpg |
+| 20230412_161406_jpg.rf.yBnPLMhwPi9ioKOXk5AE.jpg | train | 3 | ebd_20230412_161406.jpg |
+| 20230412_161410_jpg.rf.S6QmXU9Ak0BUM0uQnrha.jpg | train | 3 | ebd_20230412_161410.jpg |
+| 20230412_161413_jpg.rf.ibaS9fx90XJKn58nA8j5.jpg | train | 3 | ebd_20230412_161413.jpg |
+| 20230412_161416_jpg.rf.bW5dAEPRErWunBnc8L18.jpg | train | 3 | ebd_20230412_161416.jpg |
+| 20230412_161430_jpg.rf.nAvMA7HTaNz41xhWGRpa.jpg | train | 3 | ebd_20230412_161430.jpg |
+| 20230414_114802_jpg.rf.ZUVgizR1otVTWOuZC5r8.jpg | train | 5 | ebd_20230414_114802.jpg |
+| 20230414_114804_jpg.rf.gGE38qT1CdOPZ9mMXQzv.jpg | train | 5 | ebd_20230414_114804.jpg |
+| 20230414_114825_jpg.rf.LhoMHNzTi9D6zeUrGukT.jpg | train | 5 | ebd_20230414_114825.jpg |
+| 20230414_114843_jpg.rf.gVLKaCS7XBhLO6FIkXGY.jpg | train | 5 | ebd_20230414_114843.jpg |
+| 20230414_114902_jpg.rf.sZc1Zt6ftiIMcNYsXMs7.jpg | train | 5 | ebd_20230414_114902.jpg |
+| 20230414_114903_jpg.rf.DLwU1AYpp8peRRP52e4h.jpg | train | 5 | ebd_20230414_114903.jpg |
+| 20230414_114926_jpg.rf.O0fRi145WTgc9SUjpYoK.jpg | train | 5 | ebd_20230414_114926.jpg |
+| 20230414_114932_jpg.rf.6DJuQyDTp4ZqwjK1b9jw.jpg | train | 5 | ebd_20230414_114932.jpg |
+| 20230414_115013_jpg.rf.bjpQk8NB9rLfukAQpJjS.jpg | train | 2 | ebd_20230414_115013.jpg |
+| 20230414_115038_jpg.rf.aLvCERzYoqicwaYD2Pk5.jpg | train | 4 | ebd_20230414_115038.jpg |
+| 20230414_115041_jpg.rf.bf7z80Ot6aIPPZnfmTaf.jpg | train | 3 | ebd_20230414_115041.jpg |
+| 20230414_115129_jpg.rf.HThucr8n6gK8DgTwaajD.jpg | train | 5 | ebd_20230414_115129.jpg |
+| 20230414_115132_jpg.rf.Qiwbt4Fc7qOQ83pYd1fQ.jpg | train | 5 | ebd_20230414_115132.jpg |
+| 20230414_115205_jpg.rf.Dki7DY9h4xpzC3FWoDV7.jpg | train | 4 | ebd_20230414_115205.jpg |
+| 20230414_115208_jpg.rf.nnp65r0NSFZnd0kaL8XB.jpg | train | 3 | ebd_20230414_115208.jpg |
+| 20230414_115213_jpg.rf.Ga5cHMRXbG4cNgH37lsl.jpg | train | 2 | ebd_20230414_115213.jpg |
+| 20230427_220452_jpg.rf.XQR9rKhtnf992NzgIQJK.jpg | train | 4 | ebd_20230427_220452.jpg |
+| 20230427_220454_jpg.rf.OL3zNvJ5TUXPVFMdE2Ny.jpg | train | 4 | ebd_20230427_220454.jpg |
+| 20230427_220458_jpg.rf.eFYEwcKwYzRxikynNi9R.jpg | train | 4 | ebd_20230427_220458.jpg |
+| 20230427_220501_jpg.rf.hSQcROfD0rqLYDRUCdo4.jpg | train | 4 | ebd_20230427_220501.jpg |
+| 20230427_220505_jpg.rf.CmGVrdSMiB1zaaB4Wqz3.jpg | train | 4 | ebd_20230427_220505.jpg |
+| 20230509_221026_jpg.rf.8vfNEHtJHQnEv73KYk4L.jpg | train | 13 | ebd_20230509_221026.jpg |
+| 20230509_221028_jpg.rf.PLXDsjqFSsWz2dyeyhb8.jpg | train | 13 | ebd_20230509_221028.jpg |
+| 20230509_221031_jpg.rf.lF0r7avDbagQAkhocSZN.jpg | train | 13 | ebd_20230509_221031.jpg |
+| 20230509_221033_jpg.rf.yBpGCZDtt4txM5KFboH1.jpg | train | 13 | ebd_20230509_221033.jpg |
+| 20230509_221036_jpg.rf.e5ZreRo7KsrAIQrmAJfc.jpg | train | 13 | ebd_20230509_221036.jpg |
+| 20230509_221042_jpg.rf.LWcOz0qX0VNZsGPNRRlZ.jpg | train | 13 | ebd_20230509_221042.jpg |
+| 20230509_221044_jpg.rf.v83yK5jHNMI7P4hO2w2I.jpg | train | 13 | ebd_20230509_221044.jpg |
+| 20230509_221055_jpg.rf.jPmTXC0in0fFeiwBK6Pe.jpg | train | 13 | ebd_20230509_221055.jpg |
+| 20230509_221103_jpg.rf.7aDTsPtavTxUdtI1zBxy.jpg | train | 13 | ebd_20230509_221103.jpg |
+| 20230509_221311_jpg.rf.CRJ3RB9zncszrChkSLHn.jpg | train | 13 | ebd_20230509_221311.jpg |
+| 20230509_221318_jpg.rf.90NtmEC5KmIiT8k60JNs.jpg | train | 13 | ebd_20230509_221318.jpg |
+| 20230509_221323_jpg.rf.cKBLbi3WwOmrEbdDO38a.jpg | train | 13 | ebd_20230509_221323.jpg |
+| 20230509_221326_jpg.rf.hKXHR2OBFVoC1tqXroB4.jpg | train | 13 | ebd_20230509_221326.jpg |
+| 20230509_221644_jpg.rf.Fy5LjKqMHHVPcFj0ewgP.jpg | train | 11 | ebd_20230509_221644.jpg |
+| 20230509_221653_jpg.rf.e68rtOeVMkpNp0gmdsYB.jpg | train | 11 | ebd_20230509_221653.jpg |
+| 20230509_221657_jpg.rf.BCzV02EGS8kkhnDDuPGj.jpg | train | 11 | ebd_20230509_221657.jpg |
+| 20230509_221727_jpg.rf.CwSnPUtETjC28xcUHbuo.jpg | train | 4 | ebd_20230509_221727.jpg |
+| 20230509_221729_jpg.rf.o3SmZlIWMPmmzTHicNCL.jpg | train | 4 | ebd_20230509_221729.jpg |
+| 20230509_221747_jpg.rf.4gzMi6m9dRJ3LxzBUTjo.jpg | train | 13 | ebd_20230509_221747.jpg |
+| 20230509_221749_jpg.rf.MHj6fmTf8E6TlkVoRKDS.jpg | train | 13 | ebd_20230509_221749.jpg |
+| 20230509_221954_jpg.rf.U5jcaZStCmapU2oXY73q.jpg | train | 9 | ebd_20230509_221954.jpg |
+| 20230509_221958_jpg.rf.xOQVjo2koPqfm5FWwfcF.jpg | train | 9 | ebd_20230509_221958.jpg |
+| 20230509_222007_jpg.rf.EDEg2zTwzzbA25xvOWfg.jpg | train | 14 | ebd_20230509_222007.jpg |
+| 20230509_222008_jpg.rf.bxtYfiNSFJOFu7TGaRXf.jpg | train | 13 | ebd_20230509_222008.jpg |
+| 20230509_222010_jpg.rf.7VlfxX7hoR7dkdsxDgob.jpg | train | 13 | ebd_20230509_222010.jpg |
+| 20230509_222054_jpg.rf.RR7VmYr2gfoVh8l9FxAK.jpg | train | 4 | ebd_20230509_222054.jpg |
+| 20230509_222057_jpg.rf.JvC6f811ZYnCHV484TZJ.jpg | train | 4 | ebd_20230509_222057.jpg |
+| 20230509_222109_jpg.rf.F6M45V0lAVSA7A2zIHMR.jpg | train | 5 | ebd_20230509_222109.jpg |
+| 20230509_222201_jpg.rf.kjvWyCo3OhJLRG2G4Cjl.jpg | train | 13 | ebd_20230509_222201.jpg |
+| 20230509_222203_jpg.rf.NF88nb6jq4cFJjBBYyGM.jpg | train | 13 | ebd_20230509_222203.jpg |
+| 20230509_222205_jpg.rf.ZpgxbCIeJk7PTEsP28oE.jpg | train | 13 | ebd_20230509_222205.jpg |
+| 20230509_222208_jpg.rf.kceqjiArBKAona2A9l6A.jpg | train | 12 | ebd_20230509_222208.jpg |
+| 20230509_222211-0-_jpg.rf.4mCblIOubUrRpUUXciKz.jpg | train | 12 | ebd_20230509_222211-0-.jpg |
+| 20230509_222211_jpg.rf.2DfjtgyVbhcpWSx8URxi.jpg | train | 12 | ebd_20230509_222211.jpg |
+| 20230509_222226_jpg.rf.poqvEEeFW5CyBpEnsGEb.jpg | train | 10 | ebd_20230509_222226.jpg |
+| 20230509_222227_jpg.rf.5Hq8fRW37mjCMofUnDcb.jpg | train | 10 | ebd_20230509_222227.jpg |
+| 20230509_222228_jpg.rf.T6uz25yRq1tb9J36tcyD.jpg | train | 10 | ebd_20230509_222228.jpg |
+| 20230509_222357_jpg.rf.KBd4peiSTpiWNkuaoCtR.jpg | train | 4 | ebd_20230509_222357.jpg |
+| 20230509_222402_jpg.rf.KrudZyu9JpKqIYVwowdO.jpg | train | 4 | ebd_20230509_222402.jpg |
+| 20230509_222642_jpg.rf.mEAsP9UueR6ZLx0zhOER.jpg | train | 13 | ebd_20230509_222642.jpg |
+| 20230509_222643_jpg.rf.nILW9Qr8xSKyDklpvoEn.jpg | train | 13 | ebd_20230509_222643.jpg |
+| 20230509_222650_jpg.rf.lwUbbF1FdoboDKUwYRk7.jpg | train | 13 | ebd_20230509_222650.jpg |
+| 20230509_222752_jpg.rf.91Ls3Mwlf3znigJ6Kaul.jpg | train | 13 | ebd_20230509_222752.jpg |
+| 20230509_222755_jpg.rf.B1Cs1miAXBTr6FfLAQ2D.jpg | train | 13 | ebd_20230509_222755.jpg |
+| 20230509_222801_jpg.rf.TQgNtWEif2y6fFeVxtBt.jpg | train | 13 | ebd_20230509_222801.jpg |
+| 20230509_222824_jpg.rf.yXHAZsCDTTGtCjtWl1Ak.jpg | train | 12 | ebd_20230509_222824.jpg |
+| 20230509_222828_jpg.rf.D53hkcDvt7W8lalyOJjq.jpg | train | 12 | ebd_20230509_222828.jpg |
+| 20230509_222833_jpg.rf.wFEsMsG5hOzTgsUMduZ5.jpg | train | 12 | ebd_20230509_222833.jpg |
+| 20230509_222837_jpg.rf.PDN4B4GD8hY1H6IkfBxw.jpg | train | 12 | ebd_20230509_222837.jpg |
+| 20230509_223020_jpg.rf.UXbuCztjeBgFQLfriuXB.jpg | train | 6 | ebd_20230509_223020.jpg |
+| 20Euro_101_jpg.rf.7Jp0RVMZfMU2SVqFegkT.jpg | train | 2 | ebd_20Euro_101.jpg |
+| 20Euro_132_jpg.rf.GFi69vmVWYEak85cy3fe.jpg | train | 1 | ebd_20Euro_132.jpg |
+| 20Euro_133_jpg.rf.zpg8E9GmGCXvUnSARpyV.jpg | train | 1 | ebd_20Euro_133.jpg |
+| 20Euro_150_jpg.rf.5K5w1MKaXWUrMgieQZDk.jpg | train | 1 | ebd_20Euro_150.jpg |
+| 20Euro_169_jpg.rf.6fmcNaT3BwVho49mKJXb.jpg | train | 1 | ebd_20Euro_169.jpg |
+| 20Euro_200_jpg.rf.0Rc5wMX7MKbyISg6MoEO.jpg | train | 1 | ebd_20Euro_200.jpg |
+| 20Euro_26_jpg.rf.gP8Ok8cqgf72c0xJXS2I.jpg | train | 1 | ebd_20Euro_26.jpg |
+| 20Euro_33_jpg.rf.RCIzzgjwrQdCAs1o96iS.jpg | train | 1 | ebd_20Euro_33.jpg |
+| 20Euro_39_jpg.rf.LiJVJy8iNQ04O49ZULGj.jpg | train | 2 | ebd_20Euro_39.jpg |
+| 20Euro_3_jpg.rf.znQqYUXLX9mfy1wX0Mma.jpg | train | 2 | ebd_20Euro_3.jpg |
+| 20Euro_51_jpg.rf.uCaG87UPQE996ccaatzs.jpg | train | 2 | ebd_20Euro_51.jpg |
+| 20Euro_64_jpg.rf.TKbHLgyThunG7QMu8J04.jpg | train | 1 | ebd_20Euro_64.jpg |
+| 20Euro_67_jpg.rf.pHMG03nWw9wKq98fpN0m.jpg | train | 2 | ebd_20Euro_67.jpg |
+| 20Euro_90_jpg.rf.3208OfC9X8WImuYck7jz.jpg | train | 1 | ebd_20Euro_90.jpg |
+| 50Euro_126_JPEG_jpg.rf.oEQLkHBfj2QpQpVm235C.jpg | train | 2 | ebd_50Euro_126_JPEG.jpg |
+| 50Euro_129_JPEG_jpg.rf.ib2tlCnDciqcG3UQwvoI.jpg | train | 4 | ebd_50Euro_129_JPEG.jpg |
+| 50Euro_132_JPEG_jpg.rf.1BgHiLnU2vQw6lx5YlNz.jpg | train | 2 | ebd_50Euro_132_JPEG.jpg |
+| 50Euro_136_JPEG_jpg.rf.ytnNRMN9kKodq0Ypjlaf.jpg | train | 2 | ebd_50Euro_136_JPEG.jpg |
+| 50Euro_138_JPEG_jpg.rf.CSmn2eL9iB6j1M0BVf1J.jpg | train | 1 | ebd_50Euro_138_JPEG.jpg |
+| 50Euro_180_JPEG_jpg.rf.5Cg4GPzsCMc5JH299QwK.jpg | train | 1 | ebd_50Euro_180_JPEG.jpg |
+| 50Euro_194_jpg.rf.qFLyVtKVL5GUk93ibZIF.jpg | train | 2 | ebd_50Euro_194.jpg |
+| 50Euro_29_JPEG_jpg.rf.dSggUf6eufISrxJHoZFH.jpg | train | 4 | ebd_50Euro_29_JPEG.jpg |
+| 50Euro_35_JPEG_jpg.rf.GZnEl7nseqooCBBAxlkT.jpg | train | 1 | ebd_50Euro_35_JPEG.jpg |
+| 50Euro_58_JPEG_jpg.rf.YFhNUOU44hvgWOqaitAl.jpg | train | 1 | ebd_50Euro_58_JPEG.jpg |
+| 50Euro_88_JPEG_jpg.rf.iJ9uLH4iVx5zNVkGvhgV.jpg | train | 1 | ebd_50Euro_88_JPEG.jpg |
+| 5Euro_112_jpg.rf.NpvtFZrP4y9rkLLxR0Ix.jpg | train | 2 | ebd_5Euro_112.jpg |
+| 5Euro_128_jpg.rf.KybMCmyz1yqEQgKqwHmw.jpg | train | 2 | ebd_5Euro_128.jpg |
+| 5Euro_144_jpg.rf.xakV6sMKpD1yjn4YRzHg.jpg | train | 1 | ebd_5Euro_144.jpg |
+| 5Euro_157_jpg.rf.8SLztPn4nefaDvHuNTK2.jpg | train | 2 | ebd_5Euro_157.jpg |
+| 5Euro_175_jpg.rf.rp99dzb9VL102Pqt04tv.jpg | train | 2 | ebd_5Euro_175.jpg |
+| 5Euro_31_jpg.rf.txNjmxCu7slRMYbKTrBt.jpg | train | 1 | ebd_5Euro_31.jpg |
+| 5Euro_38_jpg.rf.bOidaHvsywJ4WIOrQR2n.jpg | train | 2 | ebd_5Euro_38.jpg |
+| 5Euro_82_jpg.rf.77SVVBhNyriZYqiKyIpD.jpg | train | 1 | ebd_5Euro_82.jpg |
+| 5Euro_94_jpg.rf.2CtQC2vXoBpBfsTHv7hc.jpg | train | 2 | ebd_5Euro_94.jpg |
+| 5Euro_95_jpg.rf.T013iB7OckGdNSXeVVbI.jpg | train | 2 | ebd_5Euro_95.jpg |
+| 82_jpg.rf.V9c4YJFNgKid1XW9Vls9.jpg | train | 2 | ebd_82.jpg |
+| 83_jpg.rf.5ujQgHp8egDiGNY9qQeC.jpg | train | 2 | ebd_83.jpg |
+| IMG-20230331-WA0029_jpg.rf.yyQpkx5gyth5yn94fOAh.jpg | train | 6 | ebd_IMG-20230331-WA0029.jpg |
+| IMG-20230331-WA0030_jpg.rf.uyn6kDS5nA7YAEXHWhDs.jpg | train | 6 | ebd_IMG-20230331-WA0030.jpg |
+| IMG-20230407-WA0000_jpg.rf.Cubg3IhGbn1rdTBrfz0M.jpg | train | 2 | ebd_IMG-20230407-WA0000.jpg |
+| IMG-20230407-WA0001_jpg.rf.iZPa19CMQUq45A8qtcUa.jpg | train | 2 | ebd_IMG-20230407-WA0001.jpg |
+| IMG_20230507_120721258_jpg.rf.np3mZSdw7bwbccYfFPP6.jpg | train | 1 | ebd_IMG_20230507_120721258.jpg |
+| IMG_20230507_120749610_jpg.rf.5NPIUHo8QoMrNeroHEQq.jpg | train | 1 | ebd_IMG_20230507_120749610.jpg |
+| IMG_20230507_120817749_jpg.rf.uQpxYq6m7OabdrK3QBxo.jpg | train | 1 | ebd_IMG_20230507_120817749.jpg |
+| IMG_20230507_120844868_jpg.rf.YfVyD74vl1135D71YS56.jpg | train | 1 | ebd_IMG_20230507_120844868.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-10-_jpg.rf.bWaVrf6YOpccLPYwEJ6p.jpg | train | 2 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-10-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-12-_jpg.rf.uT1SyH3wVTNxI8QnmHtv.jpg | train | 3 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-12-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-13-_jpg.rf.ITYC8z3jmX6oF9YFpccs.jpg | train | 5 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-13-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-15-_jpg.rf.FKq6rCVuMmI9r9i9GJja.jpg | train | 4 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-15-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-16-_jpg.rf.ARkH3WFOWj772CvbVpWI.jpg | train | 4 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-16-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-17-_jpg.rf.fI0kZRObMj8ASt3iivGy.jpg | train | 4 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-17-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-18-_jpg.rf.AUKS0HfxCU5f3KrblWIp.jpg | train | 5 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-18-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-19-_jpg.rf.O0NY0aMiuqWywTEdatZ9.jpg | train | 5 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-19-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-20-_jpg.rf.6uOjmmZrMaeD5g68dmEW.jpg | train | 3 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-20-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-26-_jpg.rf.UFSHtJUvG1VPbGCQa0d7.jpg | train | 2 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-26-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-27-_jpg.rf.MgilMf4lFRLcdxsldoxS.jpg | train | 2 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-27-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-28-_jpg.rf.XcpirCnLGKRzvYiQuIhn.jpg | train | 4 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-28-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-3-_jpg.rf.OHY23UHIzU8Ysyx67YRy.jpg | train | 4 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-3-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-30-_jpg.rf.qa3Jd5ugopuVGgfctbkP.jpg | train | 3 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-30-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-31-_jpg.rf.csaK3ghCqStc5Dia8yWX.jpg | train | 1 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-31-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-32-_jpg.rf.fRjtp8hS7Ec4s0hDP5mR.jpg | train | 3 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-32-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-33-_jpg.rf.hhrvit5oWbM2NC82R1Go.jpg | train | 3 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-33-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-35-_jpg.rf.ykg1U2BsZ7UdCai0TV2C.jpg | train | 2 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-35-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-36-_jpg.rf.ERjyZg45TJNLsFTs9yX4.jpg | train | 3 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-36-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-37-_jpg.rf.JuIT87c0D4Ghp9LgPi0Z.jpg | train | 3 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-37-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-38-_jpg.rf.E6UKhfHHhBXj2hfRIJwM.jpg | train | 2 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-38-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-39-_jpg.rf.XXzOnVUDPaV7lB7iAlpo.jpg | train | 2 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-39-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-4-_jpg.rf.6ZzbxlBMjXiTCiTiCqiY.jpg | train | 5 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-4-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-40-_jpg.rf.n6T3MkXAUfO29vI6sO9w.jpg | train | 1 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-40-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-41-_jpg.rf.CA2m9QkGfxT5KNBKaeHC.jpg | train | 2 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-41-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-42-_jpg.rf.yS6FrANHrOirsW8lEYfY.jpg | train | 2 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-42-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-44-_jpg.rf.zDE5ravNzVnwxOfetsGM.jpg | train | 1 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-44-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-46-_jpg.rf.Ixx2QGPA6oh2FCmXVsRC.jpg | train | 1 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-46-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-47-_jpg.rf.R7ttbHh36oManpGTdrVN.jpg | train | 1 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-47-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-48-_jpg.rf.TNMsROi8OSwolmUrVenh.jpg | train | 4 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-48-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-51-_jpg.rf.fEuv41bVbr3h8ojj5QDp.jpg | train | 1 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-51-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-53-_jpg.rf.wHBuGtkBcciA3hQQ6yHs.jpg | train | 3 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-53-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-54-_jpg.rf.Lmvh5tF7RESIJL4bG4cW.jpg | train | 3 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-54-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-55-_jpg.rf.gVzEldIbm6maD4qgM3pd.jpg | train | 2 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-55-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-6-_jpg.rf.oY3OMedyAstbM54B2iWp.jpg | train | 6 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-6-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-7-_jpg.rf.0cI6Vjuq4dZZCArzyOMF.jpg | train | 7 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-7-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-8-_jpg.rf.rcJkdxR833QUmuZv7fSH.jpg | train | 6 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-8-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-9-_jpg.rf.reU8rnpjhUXYcWMjyVEa.jpg | train | 5 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-9-.jpg |
+| WhatsApp-Image-2023-05-08-at-03-18-58-1-_jpg.rf.Z9zeCXNuTZy53yi7Z88g.jpg | train | 5 | ebd_WhatsApp-Image-2023-05-08-at-03-18-58-1-.jpg |
+| 100Euro_179_JPEG_jpg.rf.G2y47iQw8GXuAp0SpJKY.jpg | valid | 2 | ebd_100Euro_179_JPEG.jpg |
+| 100Euro_190_JPEG_jpg.rf.k4FrfNFye0USxbUGHPcp.jpg | valid | 1 | ebd_100Euro_190_JPEG.jpg |
+| 10Euro_129_jpg.rf.XzNXHbMlxrmLtWr5gChe.jpg | valid | 3 | ebd_10Euro_129.jpg |
+| 10Euro_132_jpg.rf.53EciuYfY2igERqD9V6M.jpg | valid | 1 | ebd_10Euro_132.jpg |
+| 10Euro_134_jpeg_jpg.rf.6QA6jqqFRDwHd9NrzXd7.jpg | valid | 2 | ebd_10Euro_134_jpeg.jpg |
+| 10Euro_179_jpg.rf.FZ2wbzN2BhXTIIexbLCd.jpg | valid | 1 | ebd_10Euro_179.jpg |
+| 10Euro_199_jpg.rf.PZSjZhQAbSAPObrIiEiQ.jpg | valid | 1 | ebd_10Euro_199.jpg |
+| 10Euro_73_jpg.rf.iHphAxDvl5WbZjA1vPgH.jpg | valid | 1 | ebd_10Euro_73.jpg |
+| 20230330_215611_jpg.rf.qA9bWIBAL9pUvYpKDDM1.jpg | valid | 3 | ebd_20230330_215611.jpg |
+| 20230330_220533_jpg.rf.zTxvdbSt2z79JF3uiZkg.jpg | valid | 2 | ebd_20230330_220533.jpg |
+| 20230330_220831_jpg.rf.tnHwBOaENcKOJN0U4Pcs.jpg | valid | 7 | ebd_20230330_220831.jpg |
+| 20230403_103349_jpg.rf.qnm9s1MJXMtAj897AtIG.jpg | valid | 2 | ebd_20230403_103349.jpg |
+| 20230403_103358_jpg.rf.COmqSFWAJTO4BomoV2rZ.jpg | valid | 2 | ebd_20230403_103358.jpg |
+| 20230403_103405_jpg.rf.BMBermYHlGDGUAxJY5SA.jpg | valid | 2 | ebd_20230403_103405.jpg |
+| 20230403_103408_jpg.rf.U6Bdk0GxPOM7Nufx1VKy.jpg | valid | 2 | ebd_20230403_103408.jpg |
+| 20230407_181359_jpg.rf.mQDJRkkCc0oZoUVXoQUi.jpg | valid | 1 | ebd_20230407_181359.jpg |
+| 20230407_181823_jpg.rf.IgcrkNb2RHL133sHobDI.jpg | valid | 7 | ebd_20230407_181823.jpg |
+| 20230407_181912_jpg.rf.SzAbBFoQPegB27NPUIfJ.jpg | valid | 6 | ebd_20230407_181912.jpg |
+| 20230412_161356_jpg.rf.5hlvXK9nZWMAkQX3HJyC.jpg | valid | 3 | ebd_20230412_161356.jpg |
+| 20230412_161405_jpg.rf.13WRbYYvStgFyM1MKIiz.jpg | valid | 3 | ebd_20230412_161405.jpg |
+| 20230412_161427_jpg.rf.VtyyCZrhXTCVSZcv0kjr.jpg | valid | 3 | ebd_20230412_161427.jpg |
+| 20230414_114808_jpg.rf.r2RNIoW7opgjt1upvrDY.jpg | valid | 5 | ebd_20230414_114808.jpg |
+| 20230414_114925_jpg.rf.8DFwM2xPEqJ2EmhYNb1K.jpg | valid | 5 | ebd_20230414_114925.jpg |
+| 20230414_114953_jpg.rf.VKKOROdKUZOFfg1mS7FQ.jpg | valid | 3 | ebd_20230414_114953.jpg |
+| 20230414_115032_jpg.rf.FfYrWsOQvWunw3ytnk5l.jpg | valid | 3 | ebd_20230414_115032.jpg |
+| 20230414_115034_jpg.rf.GQ8OS9fzoXZ7y1wFBYVL.jpg | valid | 3 | ebd_20230414_115034.jpg |
+| 20230414_115139_jpg.rf.f4Z394Ge5XOsBOnMtQ7L.jpg | valid | 4 | ebd_20230414_115139.jpg |
+| 20230509_221051_jpg.rf.mxn0TM1eknjXmjaMePZH.jpg | valid | 13 | ebd_20230509_221051.jpg |
+| 20230509_221059_jpg.rf.KO8IAw3BLFbG0DL8jBfm.jpg | valid | 13 | ebd_20230509_221059.jpg |
+| 20230509_221308_jpg.rf.R9z5X9dkWXbLx76XXHJ1.jpg | valid | 13 | ebd_20230509_221308.jpg |
+| 20230509_221313_jpg.rf.YXpyGCkHeNIHOY99lUNy.jpg | valid | 13 | ebd_20230509_221313.jpg |
+| 20230509_221647_jpg.rf.vmNl1jBj66Sbi32Qtof2.jpg | valid | 11 | ebd_20230509_221647.jpg |
+| 20230509_222216_jpg.rf.PqJNkS1kOy60cbgqfgVS.jpg | valid | 12 | ebd_20230509_222216.jpg |
+| 20230509_222648_jpg.rf.w84ruVIDNImhBhGmt6Po.jpg | valid | 13 | ebd_20230509_222648.jpg |
+| 20230509_222753_jpg.rf.vtOCyCbpCQ4xxsVZYnbw.jpg | valid | 13 | ebd_20230509_222753.jpg |
+| 20230509_223023_jpg.rf.jqE6BpB8jjsDB0u21lHD.jpg | valid | 6 | ebd_20230509_223023.jpg |
+| 20Euro_192_jpeg_jpg.rf.zbUwxZSTDaHWG9kfSRM2.jpg | valid | 2 | ebd_20Euro_192_jpeg.jpg |
+| 20Euro_27_jpg.rf.oz7FunNrM969GLW4wWD4.jpg | valid | 2 | ebd_20Euro_27.jpg |
+| 20Euro_95_jpg.rf.RlV4bLBbK2D0AYC0gCSP.jpg | valid | 2 | ebd_20Euro_95.jpg |
+| 50Euro_175_JPEG_jpg.rf.CCsyrk8ySYPTpuHTVI4H.jpg | valid | 2 | ebd_50Euro_175_JPEG.jpg |
+| 50Euro_80_JPEG_jpg.rf.iejcDgxmorUtNaRptHif.jpg | valid | 1 | ebd_50Euro_80_JPEG.jpg |
+| 50Euro_8_JPEG_jpg.rf.DQaK2mhmDM1ZvT6hyroX.jpg | valid | 1 | ebd_50Euro_8_JPEG.jpg |
+| 5Euro_165_jpg.rf.d0CH1UmLXc9qbHpSDkHN.jpg | valid | 2 | ebd_5Euro_165.jpg |
+| 5Euro_174_jpg.rf.3fctMQJrdMzYQ5cNAvoL.jpg | valid | 1 | ebd_5Euro_174.jpg |
+| 5Euro_42_jpg.rf.8EQ4sGWMyc9wjkLfw7TJ.jpg | valid | 2 | ebd_5Euro_42.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-11-_jpg.rf.tYpJPVhKzjgwBQ5AoXDZ.jpg | valid | 2 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-11-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-14-_jpg.rf.JCfevx3S8XgWejT3KgDN.jpg | valid | 5 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-14-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-43-_jpg.rf.bWIpBy76xyDtTA7pkIfA.jpg | valid | 2 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-43-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-45-_jpg.rf.sYRaqQCtGDvWrR93K5LK.jpg | valid | 4 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-45-.jpg |
+| WhatsApp-Image-2023-05-08-at-03-19-01-2-_jpg.rf.GozadGx1ccmCbMz1I6MG.jpg | valid | 4 | ebd_WhatsApp-Image-2023-05-08-at-03-19-01-2-.jpg |
+| WhatsApp-Image-2023-05-08-at-03-19-10-3-_jpg.rf.SxUxFxRrIzIig6A5Yops.jpg | valid | 2 | ebd_WhatsApp-Image-2023-05-08-at-03-19-10-3-.jpg |
+| 100Euro_0_JPEG_jpg.rf.vmXCbJDdR9Wiy8HYx1Bg.jpg | test | 2 | ebd_100Euro_0_JPEG.jpg |
+| 100Euro_102_JPEG_jpg.rf.SuRYjml6rEtL4WYD7xFi.jpg | test | 2 | ebd_100Euro_102_JPEG.jpg |
+| 10Euro_180_jpg.rf.WmVjx0dul7NqIk3HbwdG.jpg | test | 1 | ebd_10Euro_180.jpg |
+| 20230401_181921_jpg.rf.yQmlnTjTqb89O1CxtZwi.jpg | test | 1 | ebd_20230401_181921.jpg |
+| 20230403_103230_jpg.rf.bxPawiYqo65vYKu06uIb.jpg | test | 2 | ebd_20230403_103230.jpg |
+| 20230414_114820_jpg.rf.mqY2F1d00i1fYcwcMfKS.jpg | test | 5 | ebd_20230414_114820.jpg |
+| 20230414_114828_jpg.rf.0rlwTfpvACoQ08lcl5Mr.jpg | test | 5 | ebd_20230414_114828.jpg |
+| 20230414_114911_jpg.rf.gD2Bbi9Ln0hOG0TKv250.jpg | test | 5 | ebd_20230414_114911.jpg |
+| 20230414_114929_jpg.rf.vaAS8gK6t7c837cOIxdi.jpg | test | 5 | ebd_20230414_114929.jpg |
+| 20230427_220450_jpg.rf.hKuvfLyIg3Qd2tanI3L3.jpg | test | 4 | ebd_20230427_220450.jpg |
+| 20230509_222209_jpg.rf.BLm6kGqENEdcW3XJBHr6.jpg | test | 12 | ebd_20230509_222209.jpg |
+| 20230509_222832_jpg.rf.B8SYJBAW6MoQTOJvrUpi.jpg | test | 12 | ebd_20230509_222832.jpg |
+| 20Euro_84_jpg.rf.SSpp9jaSzdLNo56GZCbC.jpg | test | 2 | ebd_20Euro_84.jpg |
+| 50Euro_128_JPEG_jpg.rf.7iAj0KPuLkrDdC4QzmBz.jpg | test | 2 | ebd_50Euro_128_JPEG.jpg |
+| 50Euro_94_jpg.rf.eBxMeF0mQF5KVzf1bLI7.jpg | test | 2 | ebd_50Euro_94.jpg |
+| 5Euro_172_jpg.rf.iFUV8X6OPApNIYdOoJpY.jpg | test | 2 | ebd_5Euro_172.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-23-_jpg.rf.FfiKFsJTMLUuiKjSg9kV.jpg | test | 5 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-23-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-34-_jpg.rf.kUhM40JsdMzldHWWj5vT.jpg | test | 3 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-34-.jpg |
+| WhatsApp-Image-2023-04-21-at-16-36-20-5-_jpg.rf.h2b9bXGk41tLa50P0Uj1.jpg | test | 4 | ebd_WhatsApp-Image-2023-04-21-at-16-36-20-5-.jpg |
+
+## Excluidas
+
+| foto original | motivo | duplicado de | dist. | dataset |
+|---|---|---|---|---|
+| 100Euro_101_JPEG_jpg.rf.X5V1uoBnwqK2lIHLLwiS.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 100Euro_136_JPEG_jpg.rf.oZFPUINhVN9mlhoRDzBi.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 100Euro_147_JPEG_jpg.rf.twiAo9DdlSsXTF9qfcfl.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 100Euro_153_JPEG_jpg.rf.C37by4Sb8EC65X828Msu.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 100Euro_154_JPEG_jpg.rf.MsuNhSGUUfS9Pygpcpwu.jpg | duplicado | 100_Euro_085.jpg | 1 | train |
+| 100Euro_159_jpg.rf.sVyZ2UJcY6YpTbHVnIS6.jpg | duplicado | 100_Euro_086.jpg | 2 | train |
+| 100Euro_169_JPEG_jpg.rf.WPcEidbMKAGUq5z6gsZt.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 100Euro_175_JPEG_jpg.rf.wO3pb1CfIMLUjiolXsfC.jpg | duplicado | 100_Euro_122.jpg | 0 | train |
+| 100Euro_183_JPEG_jpg.rf.4bEGrj1wteOheDGfHHyT.jpg | duplicado | 100Euro_175_JPEG_jpg.rf.wO3pb1CfIMLUjiolXsfC.jpg | 8 | nuevo (mismo dataset) |
+| 100Euro_191_jpg.rf.Zn3wm8mkgPq7J7MOSx9R.jpg | duplicado | 100_Euro_147.jpg | 2 | train |
+| 100Euro_31_JPEG_jpg.rf.dquFgahAXUBBqefKhU4L.jpg | duplicado | 100_Euro_200.jpg | 2 | train |
+| 100Euro_44_JPEG_jpg.rf.pS5OXfXlCRIUrebpFURh.jpg | duplicado | Multiple_Euro_069.jpg | 1 | train |
+| 100Euro_53_JPEG_jpg.rf.qQCRWsUYR1Nsi5R7bQOp.jpg | duplicado | 100_Euro_243.jpg | 2 | train |
+| 100Euro_54_JPEG_jpg.rf.cxaHG8jMBW2KTOfwo9hW.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 100Euro_59_jpg.rf.ZvY9Mnuu969JaEIYBk2Q.jpg | duplicado | 100_Euro_249.jpg | 5 | test |
+| 100Euro_61_JPEG_jpg.rf.n8AIN3y3AYggWxhvFQdN.jpg | duplicado | Multiple_Euro_004.jpg | 0 | test |
+| 100Euro_71_JPEG_jpg.rf.iY7oP9CV6RzSnxSeuEME.jpg | duplicado | 100_Euro_338.jpg | 0 | train |
+| 100Euro_73_JPEG_jpg.rf.Xe2XWyatdXqIqpo7L7gB.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 100Euro_74_JPEG_jpg.rf.1RKA3ldSM9ghecs3tddh.jpg | duplicado | 100_Euro_275.jpg | 4 | train |
+| 100Euro_7_jpg.rf.h5N5CtBrBPS2FUAYPcRZ.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 100Euro_99_JPEG_jpg.rf.TcmHIOzZk69WqwW8F0eI.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 100Euro_9_jpg.rf.X0fqyr4cQXXFWBxMIjiB.jpg | duplicado | 100_Euro_335.jpg | 2 | train |
+| 10Euro_103_jpg.rf.GNAs0TegXyYN5mylbbO3.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_105_jpeg_jpg.rf.alN6jCVvrwYZilmxuii8.jpg | duplicado | 010_Euro_017.jpg | 2 | train |
+| 10Euro_107_jpg.rf.g3YiXhrkJtyeen1YbVOy.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_111_jpg.rf.SmKR5JZhzYTcDoKrw3CN.jpg | duplicado | 010_Euro_029.jpg | 0 | train |
+| 10Euro_117_jpg.rf.Hd9mI9n55IOc89N0sk2s.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_119_jpg.rf.gXHIz7MPlsLdRJ0CtbYD.jpg | duplicado | 010_Euro_052.jpg | 2 | train |
+| 10Euro_124_jpg.rf.pHMQSIkTSccQ4e1TcXRF.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_126_jpg.rf.tAWLVjgf1ZPLqXnLRJet.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_143_jpg.rf.MKVjBdKMWkh2Pq8mkaM2.jpg | duplicado | 10Euro_126_jpg.rf.tAWLVjgf1ZPLqXnLRJet.jpg | 8 | nuevo (mismo dataset) |
+| 10Euro_153_jpg.rf.FSKbMXYrlVZD3bUajYO4.jpg | duplicado | 010_Euro_109.jpg | 0 | train |
+| 10Euro_155_jpeg_jpg.rf.fPo5aVml4Lf0r5wlEvWb.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_159_jpg.rf.pkz1ZQ0fkn4VfXYfVayf.jpg | duplicado | 010_Euro_120.jpg | 4 | train |
+| 10Euro_167_jpg.rf.uOnCoGDZDTUwU8npZm3x.jpg | duplicado | 010_Euro_136.jpg | 2 | train |
+| 10Euro_170_jpg.rf.oJ7mwZ7LVATFD1Vlujl2.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_171_jpg.rf.9JeMGmmL0cKGNCldTxQh.jpg | duplicado | 010_Euro_143.jpg | 5 | train |
+| 10Euro_173_jpg.rf.WXUlYPp0Jk9IpACyrUkE.jpg | duplicado | 10Euro_172_jpeg_jpg.rf.6eQA5nvJQ5eTenJI8rkh.jpg | 0 | nuevo (mismo dataset) |
+| 10Euro_175_jpeg_jpg.rf.iywP16eGtGT1y4YDcN6X.jpg | duplicado | 010_Euro_149.jpg | 2 | train |
+| 10Euro_177_jpg.rf.VPIBHsswgzAT69CDwE00.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_184_jpg.rf.4wTA6T0sPvM47hjuQoU1.jpg | duplicado | 010_Euro_167.jpg | 2 | train |
+| 10Euro_185_jpg.rf.GuibXdNnYqh9kevVNal7.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_191_jpg.rf.92b4mEZvubeKUVjC3w6k.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_193_jpg.rf.0NABtAwBrsGd9kztVV6C.jpg | duplicado | 010_Euro_186.jpg | 0 | valid |
+| 10Euro_29_jpg.rf.3W0SvKFmZEETZv1jSYh4.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_39_jpg.rf.byjgTg4l5RKB9Yaocw5m.jpg | duplicado | 10Euro_40_jpg.rf.XPqk8RghIDTLd2DyBy7t.jpg | 0 | nuevo (mismo dataset) |
+| 10Euro_40_jpg.rf.XPqk8RghIDTLd2DyBy7t.jpg | duplicado | 10Euro_39_jpg.rf.byjgTg4l5RKB9Yaocw5m.jpg | 0 | nuevo (mismo dataset) |
+| 10Euro_56_jpg.rf.51lfJSfuLJtqaDAgYttG.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_65_jpg.rf.wBB3Qf4D9ZMOTTbVvoeL.jpg | duplicado | 010_Euro_286.jpg | 0 | test |
+| 10Euro_66_jpg.rf.zcwKGuJVIIpZCEnzREx3.jpg | duplicado | 010_Euro_396.jpg | 0 | train |
+| 10Euro_74_jpg.rf.kzw2FH87GgE1TbPHqClN.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_7_jpg.rf.xSTaXmltYMfbn4QcsRGh.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_80_jpg.rf.yTdvs1LiKHzR4DncwDsp.jpg | duplicado | 500_Euro_002__aug2.jpg | 6 | nuevo |
+| 10Euro_87_jpg.rf.tq8Jc7mXeUr5OTGJytww.jpg | duplicado | 010_Euro_332.jpg | 0 | train |
+| 10Euro_89_jpg.rf.IReAFHI1HUVCBLdxbcd3.jpg | duplicado | 010_Euro_336.jpg | 0 | valid |
+| 10Euro_8_jpg.rf.A7JocvgTVZ8qZaF5rp1v.jpg | duplicado | 010_Euro_339.jpg | 4 | test |
+| 10Euro_95_jpg.rf.3VfihAbYDqnWaipnszxp.jpg | duplicado | 010_Euro_326.jpg | 4 | valid |
+| 20230330_215522_jpg.rf.wEoUgOC0s3Jy0XtqzNpK.jpg | duplicado | 20230330_215519_jpg.rf.RrXGNIg0DyAfg4DgPbMX.jpg | 8 | nuevo (mismo dataset) |
+| 20230330_215607_jpg.rf.GAlldmj9GdyyAE2WvlD4.jpg | duplicado | 20230330_215606_jpg.rf.w6yKZCm5EOLoGRj52s4V.jpg | 8 | nuevo (mismo dataset) |
+| 20230330_215633_jpg.rf.quyboZ9i0prErtG4y9rP.jpg | duplicado | 20230330_215620_jpg.rf.YVvrY7ty0HLntDKo4Spi.jpg | 8 | nuevo (mismo dataset) |
+| 20230330_220904_jpg.rf.8tBnn3gkoN4bO8x9ycKu.jpg | duplicado | 20230330_220903_jpg.rf.1F5jjBVackszRvcIXzGI.jpg | 2 | nuevo (mismo dataset) |
+| 20230407_181410_jpg.rf.OjyIMQK2kPUuLltDFGcs.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20230407_181829_jpg.rf.xDA2PA7LYuV4zsoD98xa.jpg | duplicado | 20230407_181756_jpg.rf.ODupzRkvr5mx8S3abUYh.jpg | 6 | nuevo (mismo dataset) |
+| 20230414_114846_jpg.rf.eBBsWvE1Iz0cGc1laCix.jpg | duplicado | 20230414_114843_jpg.rf.gVLKaCS7XBhLO6FIkXGY.jpg | 8 | nuevo (mismo dataset) |
+| 20230414_114910_jpg.rf.lZ8Fp3fXDA6DMFlJ4f3O.jpg | duplicado | 20230414_114911_jpg.rf.gD2Bbi9Ln0hOG0TKv250.jpg | 4 | nuevo (mismo dataset) |
+| 20230414_115014_jpg.rf.mPF9cQn0GVS72CZi9gDw.jpg | duplicado | 20230414_115013_jpg.rf.bjpQk8NB9rLfukAQpJjS.jpg | 8 | nuevo (mismo dataset) |
+| 20230414_115135_jpg.rf.Ajku82Yb0n5zqqpMsIVF.jpg | duplicado | 20230414_115129_jpg.rf.HThucr8n6gK8DgTwaajD.jpg | 8 | nuevo (mismo dataset) |
+| 20230509_221550_jpg.rf.VHyJuTkQTTxjLISAJi7y.jpg | sin billetes (solo mano) |  |  |  |
+| 20230509_221552_jpg.rf.r9zNpBlZTe5zOzmBZ9Cx.jpg | sin billetes (solo mano) |  |  |  |
+| 20230509_221553_jpg.rf.f7nW8TxjNWrosSJMs7kO.jpg | sin billetes (solo mano) |  |  |  |
+| 20230509_221705_jpg.rf.h410KtCVlX9xk9pHPElN.jpg | sin billetes (solo mano) |  |  |  |
+| 20230509_221956_jpg.rf.UH2LMQjwDMYNBkjhqyxg.jpg | duplicado | 20230509_221954_jpg.rf.U5jcaZStCmapU2oXY73q.jpg | 8 | nuevo (mismo dataset) |
+| 20230509_221959_jpg.rf.iJtBBj5vLXBDCXLlkopr.jpg | duplicado | 20230509_221954_jpg.rf.U5jcaZStCmapU2oXY73q.jpg | 6 | nuevo (mismo dataset) |
+| 20230509_222102_jpg.rf.ryiyxRDndMxn3rnL1wS6.jpg | sin billetes (solo mano) |  |  |  |
+| 20230509_222104_jpg.rf.GzXBcuEBXJmD4cH5KxDr.jpg | sin billetes (solo mano) |  |  |  |
+| 20230509_222403_jpg.rf.33Zp6SvGoh7c3tKhLa35.jpg | duplicado | 20230509_222402_jpg.rf.KrudZyu9JpKqIYVwowdO.jpg | 7 | nuevo (mismo dataset) |
+| 20230509_222757_jpg.rf.ZPsXkr2JIjxd8HIJWPUL.jpg | sin billetes (solo mano) |  |  |  |
+| 20230509_223043_jpg.rf.rUiqNaIukRwpDG5QckC9.jpg | sin billetes (solo mano) |  |  |  |
+| 20230509_223045_jpg.rf.SUjQ7W78kbnR6QlQZksV.jpg | sin billetes (solo mano) |  |  |  |
+| 20Euro_100_jpg.rf.pttHsRJtEImBaLIiSfAc.jpg | duplicado | 020_Euro_006.jpg | 0 | train |
+| 20Euro_103_jpg.rf.GZ31alhBIYqxviCVMJXF.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_112_jpg.rf.yktzLN1LVqG2KmKfiLCy.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_115_jpg.rf.eqTRWXoyXDSLIRnziLXB.jpg | duplicado | 020_Euro_047.jpg | 1 | train |
+| 20Euro_119_jpg.rf.NF8QwVqEmCa82NeU3gPp.jpg | duplicado | 020_Euro_055.jpg | 2 | train |
+| 20Euro_11_jpg.rf.gwpbovDsXxWVDGLA5WHj.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_131_jpg.rf.nl0ibrYfV4pmYChn7dC5.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_137_jpg.rf.vtDQCA4ZhZn53QkBKSYS.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_145_jpg.rf.pIkKkiLhpcbrQU77clWr.jpg | duplicado | 020_Euro_113.jpg | 2 | valid |
+| 20Euro_146_jpg.rf.IC7XVgKKDgSr3VcHbaDr.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_147_jpg.rf.DY3vpXfBPW6lUUk9u5zQ.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_149_jpg.rf.LdHP4851hKkabtApblBP.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_152_jpg.rf.af1j9637kWcIanxuioHW.jpg | duplicado | 020_Euro_129.jpg | 2 | train |
+| 20Euro_15_jpg.rf.lrME6oHggTWvkxIzWXe2.jpg | duplicado | 020_Euro_383.jpg | 0 | train |
+| 20Euro_162_jpg.rf.URygvCW3K6i182Yhg8pR.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_173_jpg.rf.guPLTyKYITElgaOlgJUk.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_176_jpg.rf.sLgR6tOvaeYvsWKZeTi4.jpg | duplicado | 020_Euro_175.jpg | 0 | train |
+| 20Euro_183_jpg.rf.7WnQHvGrA1hHOk0KzxkJ.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_184_jpg.rf.IcbJgOmQmTMwnfZdcqpD.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_185_jpg.rf.ITtb5jfzK2zllZ93fL3x.jpg | duplicado | 020_Euro_192.jpg | 2 | test |
+| 20Euro_1_jpg.rf.bC0KTl2Uwc8FS9mgpMlj.jpg | duplicado | 020_Euro_394.jpg | 0 | train |
+| 20Euro_29_jpg.rf.TgcPhu1oH0XdUZPXvQSb.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_36_jpg.rf.2M2KTZEMkLvWWuF65PWl.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_47_jpg.rf.6Cib75GREJFFDvYdV25U.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_52_jpg.rf.eJWukuChSlgxXHZTdFkD.jpg | duplicado | 020_Euro_275.jpg | 0 | train |
+| 20Euro_73_jpg.rf.skTuM8n9daTHscaDmF5Y.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_87_jpg.rf.38xsZpmgHb6BzvfZ6LCx.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_8_jpg.rf.orJGKSXwI6GPhg9wM5YL.jpg | duplicado | 20Euro_192_jpeg_jpg.rf.zbUwxZSTDaHWG9kfSRM2.jpg | 8 | nuevo (mismo dataset) |
+| 20Euro_91_jpg.rf.IxGgxd7ZgNVAVZ0wyU6t.jpg | duplicado | 020_Euro_349.jpg | 0 | train |
+| 20Euro_98_jpg.rf.qCOSHuDKIEFM90reZ0GB.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_99_jpg.rf.kUrx9Un8rkTsbodfl5hU.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_107_JPEG_jpg.rf.cNOjV7y0Pe9qLkFkwPyn.jpg | duplicado | 050_Euro_037.jpg | 1 | train |
+| 50Euro_111_JPEG_jpg.rf.dcJC1tfkw2BlbnYIA1ne.jpg | duplicado | 050_Euro_387.jpg | 0 | valid |
+| 50Euro_112_JPEG_jpg.rf.Z58zj8oGyJxAtwF4FzXC.jpg | duplicado | 020_Euro_382.jpg | 7 | train |
+| 50Euro_115_JPEG_jpg.rf.gJCAXr32mFc6AkG0Iww7.jpg | duplicado | 10Euro_171_jpg.rf.9JeMGmmL0cKGNCldTxQh.jpg | 6 | nuevo (mismo dataset) |
+| 50Euro_118_JPEG_jpg.rf.M20xenM4QHsvVebxL93l.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_127_JPEG_jpg.rf.bMsLP71MFqwKRud1hDHp.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_142_JPEG_jpg.rf.q9mjiQRFGBTITkTDtCuh.jpg | duplicado | 050_Euro_116.jpg | 3 | train |
+| 50Euro_149_jpeg_jpg.rf.uKnpzUE4xvPP6JZvd1rT.jpg | duplicado | 050_Euro_127.jpg | 0 | train |
+| 50Euro_159_JPEG_jpg.rf.znz6epaip7ggKs8wXh2b.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_161_JPEG_jpg.rf.BkATnH5jvIB491crKJi2.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_168_JPEG_jpg.rf.u5W5kyKkvOrak4hT7dLV.jpg | duplicado | 050_Euro_174.jpg | 0 | valid |
+| 50Euro_169_JPEG_jpg.rf.ZeYnbUAu31TdsZDHPzmB.jpg | duplicado | 100_Euro_110.jpg | 6 | train |
+| 50Euro_174_JPEG_jpg.rf.fO97mgcvwyRFTO3anhPp.jpg | duplicado | 050_Euro_186.jpg | 1 | train |
+| 50Euro_191_JPEG_jpg.rf.EGROa0pB64roaOyTuF96.jpg | duplicado | 050_Euro_113__aug2.jpg | 8 | nuevo |
+| 50Euro_195_JPEG_jpg.rf.iKAu9XyBei8S8Jyrhlj1.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_23_JPEG_jpg.rf.fCBR5HeT5cOyTSjUJGCp.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_33_JPEG_jpg.rf.8CXtaZYdecMvgrpthqmf.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_39_jpg.rf.Lk5549RezWVAr3zlwwsb.jpg | duplicado | 050_Euro_044.jpg | 5 | train |
+| 50Euro_42_JPEG_jpg.rf.mLugfmmNJHqXhFHzPvHe.jpg | duplicado | 050_Euro_116__aug2.jpg | 8 | nuevo |
+| 50Euro_49_JPEG_jpg.rf.5PeMkECJq71DEflCBnuN.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_4_JPEG_jpg.rf.LvkcPd7wXQr9p96Gr8Wi.jpg | duplicado | 050_Euro_291.jpg | 4 | train |
+| 50Euro_54_JPEG_jpg.rf.heIQCFAw5N599pjkI9Y0.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_55_JPEG_jpg.rf.FGNhWXuCeFrwkGwG6LFv.jpg | duplicado | 050_Euro_302.jpg | 1 | train |
+| 50Euro_62_JPEG_jpg.rf.zjaKUvKVcsqNniMt9Y0u.jpg | duplicado | 50Euro_94_jpg.rf.eBxMeF0mQF5KVzf1bLI7.jpg | 0 | nuevo (mismo dataset) |
+| 50Euro_69_JPEG_jpg.rf.5NT6ZBXnMYjqilB9e1Pq.jpg | duplicado | 100_Euro_037.jpg | 8 | train |
+| 50Euro_70_JPEG_jpg.rf.FCieMRjXaJ0l3EFq903j.jpg | duplicado | 050_Euro_333.jpg | 4 | train |
+| 50Euro_74_JPEG_jpg.rf.nHRxMz4xdsdNzcr3WrVr.jpg | duplicado | 050_Euro_338.jpg | 1 | valid |
+| 50Euro_76_JPEG_jpg.rf.Z8rWFqOftgoldNuIxdjn.jpg | duplicado | 5Euro_103_jpg.rf.8nJqubBhgiluC5BjO33a.jpg | 7 | nuevo (mismo dataset) |
+| 50Euro_82_JPEG_jpg.rf.m3PzPeXFF9QAbRAYlcc4.jpg | duplicado | 050_Euro_354.jpg | 0 | train |
+| 50Euro_87_JPEG_jpg.rf.ljhlmRZu2n0jQlMymV45.jpg | duplicado | 050_Euro_366.jpg | 0 | test |
+| 50Euro_92_JPEG_jpg.rf.Qtjm5zaXwmLRkNeQKXeL.jpg | duplicado | 050_Euro_374.jpg | 0 | train |
+| 50Euro_95_JPEG_jpg.rf.4cKgUJMPJX1MFjJaH2LI.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_9_JPEG_jpg.rf.f3Cf5VRnDtcfXrTh00l2.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 5Euro_103_jpg.rf.8nJqubBhgiluC5BjO33a.jpg | duplicado | 005_Euro_013.jpg | 0 | train |
+| 5Euro_106_jpg.rf.ZiwOefZntmYldcEnMkXY.jpg | duplicado | 005_Euro_017.jpg | 2 | train |
+| 5Euro_113_jpg.rf.tFrh7FzKa7YH3v7BNxIl.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 5Euro_114_jpg.rf.TvIzZHS7ehjsh7Gne4cB.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 5Euro_116_jpg.rf.wRNy81567TYIazokXV8y.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 5Euro_117_jpg.rf.QJ88NZkamdRLWDQzFxDN.jpg | duplicado | 005_Euro_041.jpg | 2 | valid |
+| 5Euro_131_jpg.rf.jFKsArDubNCra70UNZVH.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 5Euro_137_jpg.rf.V36EG7TyX9ByAMiNGKmO.jpg | duplicado | Multiple_Euro_098.jpg | 0 | train |
+| 5Euro_139_jpg.rf.QRrZyHScMNToqHtw0xn6.jpg | duplicado | 005_Euro_082.jpg | 0 | train |
+| 5Euro_145_jpg.rf.xTKrPuH5iAY8m6ngTZFA.jpg | duplicado | 005_Euro_102.jpg | 0 | train |
+| 5Euro_146_jpg.rf.u5k3nrljYvWDHRNV2TPi.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 5Euro_149_jpg.rf.McJDxzHgikGz2Ntk5ffF.jpg | duplicado | 5Euro_144_jpg.rf.xakV6sMKpD1yjn4YRzHg.jpg | 8 | nuevo (mismo dataset) |
+| 5Euro_156_jpg.rf.mTmRB89kSGr6oprKkWcU.jpg | duplicado | 5Euro_177_jpg.rf.GdLDVzGG5KNPXRynVJEZ.jpg | 0 | nuevo (mismo dataset) |
+| 5Euro_160_jpg.rf.fLINbZM9g4ozYucJDgRi.jpg | duplicado | 005_Euro_136.jpg | 0 | train |
+| 5Euro_16_jpg.rf.lQkZaFVbNXvZUjCwdFGW.jpg | duplicado | 005_Euro_151.jpg | 2 | valid |
+| 5Euro_171_jpeg_jpg.rf.avcd1brDCC812yrDfPaX.jpg | duplicado | Multiple_Euro_103.jpg | 0 | train |
+| 5Euro_173_jpg.rf.LjHtlByRJqn4B0poLP63.jpg | duplicado | 5Euro_172_jpg.rf.iFUV8X6OPApNIYdOoJpY.jpg | 0 | nuevo (mismo dataset) |
+| 5Euro_188_jpg.rf.GeROnt9KWNYPUaUT6F5U.jpg | duplicado | 005_Euro_184.jpg | 2 | train |
+| 5Euro_191_jpg.rf.V3w6rkfAe9KyPX1lD8b9.jpg | duplicado | 005_Euro_194.jpg | 2 | train |
+| 5Euro_195_jpg.rf.u7a4HQ0WgYHeihwAkgtJ.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 5Euro_19_jpg.rf.egQnqsOvmZq9zewfSmUI.jpg | duplicado | Multiple_Euro_108.jpg | 1 | train |
+| 5Euro_20_jpg.rf.tsn3Ndzj7r3ss13sd0Bg.jpg | duplicado | 005_Euro_413.jpg | 6 | train |
+| 5Euro_21_jpg.rf.En3zk9l5YiEBL1V3PkRk.jpg | duplicado | 005_Euro_217.jpg | 2 | train |
+| 5Euro_26_jpg.rf.VNBcHdqODE7wYeRW80ih.jpg | duplicado | 005_Euro_230.jpg | 3 | train |
+| 5Euro_29_jpg.rf.gHo1PrYs4y4IF1VGErox.jpg | duplicado | 005_Euro_236.jpg | 0 | train |
+| 5Euro_40_jpg.rf.egij8BH2dmcAiW42Q8CQ.jpg | duplicado | 005_Euro_259.jpg | 0 | train |
+| 5Euro_46_jpg.rf.EgxRYt12bxskEH6Yjbjp.jpg | duplicado | 005_Euro_275.jpg | 1 | train |
+| 5Euro_60_jpg.rf.seqC9JcOSx0s0IWzsgZ4.jpg | duplicado | 005_Euro_302.jpg | 3 | train |
+| 5Euro_62_jpg.rf.dpT93FSgz3qPcDNL7DKo.jpg | duplicado | Multiple_Euro_116.jpg | 0 | test |
+| 5Euro_68_jpg.rf.pqfuce1lBBR1OB5hkeKy.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 5Euro_74_jpg.rf.dEJtx2AXmuTk1vA3qBSu.jpg | duplicado | 005_Euro_413.jpg | 1 | train |
+| 5Euro_78_jpg.rf.SaZqyD2uVj8o5HmAIPRY.jpg | duplicado | 005_Euro_415.jpg | 0 | test |
+| 5Euro_81_jpg.rf.eiLXgwJExHeiG3ivv5gh.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 5Euro_87_jpg.rf.ogBADgSoETmA6eiqHifK.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 5Euro_90_jpg.rf.8f7KAX7UCc6Q9jPaQo1R.jpg | duplicado | 005_Euro_360.jpg | 0 | train |
+| 5Euro_91_jpg.rf.BBtVncJ9yJsyWNsDf6jW.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 5Euro_98_jpg.rf.G1F5e25IttMLuGNxGDqI.jpg | duplicado | 005_Euro_380.jpg | 0 | train |
+| 5Euro_9_jpg.rf.NRsRsgLY5sOr4q7WeaY4.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| IMG-20230506-WA0001_jpg.rf.9mbPNjcOIVNuEfaogucd.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| WhatsApp-Image-2023-04-21-at-16-36-20-2-_jpg.rf.rorw2AQKngQ34ZTTVDDN.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| WhatsApp-Image-2023-04-21-at-16-36-20-21-_jpg.rf.PV2O2vIikghZMdbLVZL9.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| WhatsApp-Image-2023-04-21-at-16-36-20-22-_jpg.rf.wmRGWhDCPnTeBjAeGUrQ.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| WhatsApp-Image-2023-04-21-at-16-36-20-24-_jpg.rf.ZE6lM6q8GW5BB0g5bZZi.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| WhatsApp-Image-2023-04-21-at-16-36-20-25-_jpg.rf.osiTWgNzPUsNBZyOD4b5.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| WhatsApp-Image-2023-04-21-at-16-36-20-29-_jpg.rf.fItBRo4QjrOfEY8e10NI.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| WhatsApp-Image-2023-04-21-at-16-36-20-49-_jpg.rf.WvyYtDYoAOGlFl5MgNVS.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| WhatsApp-Image-2023-04-21-at-16-36-20-50-_jpg.rf.eyYuvzrHpw6l3xQzWwMV.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| WhatsApp-Image-2023-04-21-at-16-36-20-52-_jpg.rf.jnt5LMk8lDvQv9Az6gDM.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| WhatsApp-Image-2023-05-08-at-03-19-13_jpg.rf.LN4CyREHiQQVBqMLM0it.jpg | duplicado | WhatsApp-Image-2023-04-21-at-16-36-20-46-_jpg.rf.Ixx2QGPA6oh2FCmXVsRC.jpg | 6 | nuevo (mismo dataset) |
+| 100Euro_129_JPEG_jpg.rf.ZWT8TR20rtVFb2KgFyGS.jpg | duplicado | Multiple_Euro_127.jpg | 0 | train |
+| 100Euro_142_JPEG_jpg.rf.c4YLQli7E9tHWwsrHvdX.jpg | duplicado | 100_Euro_068.jpg | 2 | train |
+| 100Euro_146_JPEG_jpg.rf.ofyyKmGRI55CNGWdhh3R.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 100Euro_16_JPEG_jpg.rf.aOru4oNGhV1CtepHBtF5.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 100Euro_186_JPEG_jpg.rf.jE3AI0cQbgnGCVhY9HLv.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 100Euro_43_JPEG_jpg.rf.AI0VOq6rxl71rrI45DP5.jpg | duplicado | 100_Euro_072__aug2.jpg | 5 | nuevo |
+| 100Euro_49_JPEG_jpg.rf.4CQebhKgbGu82uqY4iOB.jpg | duplicado | 100_Euro_334.jpg | 0 | test |
+| 100Euro_75_JPEG_jpg.rf.xcCll4djuDyilIRm12Fd.jpg | duplicado | 100_Euro_343.jpg | 4 | train |
+| 10Euro_113_jpg.rf.unwXkyzrKx6QP7DRWehE.jpg | duplicado | 010_Euro_034.jpg | 1 | train |
+| 10Euro_118_jpg.rf.7200Ymcg113OJcaRKquO.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_35_jpeg_jpg.rf.rcxtURLpmX5A6yt7BaHn.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 10Euro_61_jpg.rf.mStsrSNmQ2qg1BMGLztg.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20230330_215530_jpg.rf.51FIwuhuhn92FgcLChki.jpg | duplicado | 20230330_215531_jpg.rf.GdW8RtCBRr4dlPOietxH.jpg | 8 | nuevo (mismo dataset) |
+| 20230330_215539_jpg.rf.rGzmCieQFlCSsMGZgrfE.jpg | duplicado | 20230330_215540_jpg.rf.FCka0AKHptzzWcurrESZ.jpg | 8 | nuevo (mismo dataset) |
+| 20230407_181401_jpg.rf.vYnBWraR1PmMLsZKIIM9.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20230412_161428_jpg.rf.DFzp7kvbnmKnh6j0aWKK.jpg | duplicado | 20230412_161427_jpg.rf.VtyyCZrhXTCVSZcv0kjr.jpg | 5 | nuevo (mismo dataset) |
+| 20230509_222207_jpg.rf.lm0u5QQlvlY402mxLofL.jpg | duplicado | 20230509_222208_jpg.rf.kceqjiArBKAona2A9l6A.jpg | 6 | nuevo (mismo dataset) |
+| 20Euro_157_jpg.rf.AzyWzvTS0sC2excRyybf.jpg | duplicado | 020_Euro_137.jpg | 1 | train |
+| 20Euro_160_jpg.rf.SKunn69LlH2RF0d1gd0b.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_171_jpg.rf.nj2FwgEMlnkfbJJsEElb.jpg | duplicado | 050_Euro_085.jpg | 8 | test |
+| 20Euro_187_jpg.rf.JoeweICxbXTmnlUv4UGp.jpg | duplicado | 020_Euro_391.jpg | 0 | train |
+| 20Euro_191_jpg.rf.LnnWpu9fPzxAQAORlZrh.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_197_jpg.rf.4pbE1P5LibV8wdbV1oAo.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_45_jpg.rf.7r59mpYn7PqX3KwGwuvo.jpg | duplicado | 020_Euro_260.jpg | 0 | train |
+| 20Euro_49_jpg.rf.hna3ntE5WOVzt1oAM0OU.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_75_jpg.rf.zw6ygwlOb0vLduoMqJEK.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_162_JPEG_jpg.rf.z8diT8lVbPjFIXIjxNi4.jpg | duplicado | 50Euro_194_jpg.rf.qFLyVtKVL5GUk93ibZIF.jpg | 0 | nuevo (mismo dataset) |
+| 50Euro_173_JPEG_jpg.rf.1psQIPfsENjNjA0dfOnf.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_38_JPEG_jpg.rf.Ptc1tRYdxXMAKVfejNDi.jpg | duplicado | 050_Euro_271.jpg | 6 | train |
+| 50Euro_40_JPEG_jpg.rf.upv090NL2Noj2XxAUROh.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_45_JPEG_jpg.rf.CBcZhGokKoPPZLvls4aK.jpg | duplicado | 050_Euro_282.jpg | 0 | train |
+| 50Euro_59_JPEG_jpg.rf.Rb4IpASgdBMWSZ9u9yrn.jpg | duplicado | 050_Euro_311.jpg | 0 | train |
+| 50Euro_79_JPEG_jpg.rf.oN0AfMDNiV8fBDAeuOW5.jpg | duplicado | Multiple_Euro_086.jpg | 0 | train |
+| 5Euro_110_jpg.rf.vxMGyMVOJ15PJu86W53k.jpg | duplicado | 010_Euro_206.jpg | 4 | train |
+| 5Euro_49_jpg.rf.JCEcz34PrbehSySMvozD.jpg | duplicado | 005_Euro_280.jpg | 0 | train |
+| 5Euro_72_jpg.rf.0FE4KK9kf2eSRFMhHQ0w.jpg | duplicado | 005_Euro_322.jpg | 8 | train |
+| 5Euro_80_jpg.rf.IidqG0QtT7ikD3oWKtI6.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 5Euro_83_jpg.rf.BzoWYiSESyE4TRk0lTfp.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| IMG-20230506-WA0000_jpg.rf.WUkXNlLN5MvoSOJtERyB.jpg | duplicado | 010_Euro_339.jpg | 8 | test |
+| WhatsApp-Image-2023-04-21-at-16-36-20-1-_jpg.rf.btckLKJrQPQXml1LFEsQ.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 100Euro_103_JPEG_jpg.rf.iOm7YPuvZVBq8NfG51gH.jpg | duplicado | 100_Euro_008.jpg | 0 | train |
+| 100Euro_181_JPEG_jpg.rf.gNqz3bNLTO5L4T49UlH9.jpg | duplicado | 100_Euro_128.jpg | 0 | train |
+| 100Euro_80_JPEG_jpg.rf.qfM6FCaiHe17Pp1N5uUe.jpg | duplicado | Multiple_Euro_083.jpg | 2 | train |
+| 100Euro_90_JPEG_jpg.rf.KgVcDm9TOEUhNwolAySF.jpg | duplicado | 100_Euro_296.jpg | 1 | train |
+| 10Euro_160_jpg.rf.fBLQ6DS6csOS7OvJ8BaM.jpg | duplicado | 010_Euro_127.jpg | 0 | valid |
+| 10Euro_6_jpg.rf.tffYx50o2dsoi1WaV7PM.jpg | duplicado | 010_Euro_398.jpg | 0 | train |
+| 20230407_181411_jpg.rf.FYb1tLnsHxm2uCGCgyY7.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 20Euro_136_jpg.rf.STNQpsW2uNgzu8YdoArk.jpg | duplicado | 020_Euro_092.jpg | 0 | test |
+| 20Euro_166_jpg.rf.RIhEAwoh9Qf72hwQbfRz.jpg | duplicado | 020_Euro_385.jpg | 0 | valid |
+| 50Euro_100_JPEG_jpg.rf.WGUxfRpWKigxu0OsU3r0.jpg | duplicado | 050_Euro_030.jpg | 4 | train |
+| 50Euro_167_JPEG_jpg.rf.y3RftJf0jjbXYGD3WMA5.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 50Euro_61_JPEG_jpg.rf.AbKpAjBGfNiFpKo5p4f1.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 5Euro_177_jpg.rf.GdLDVzGG5KNPXRynVJEZ.jpg | duplicado | 5Euro_156_jpg.rf.mTmRB89kSGr6oprKkWcU.jpg | 0 | nuevo (mismo dataset) |
+| 5Euro_189_jpg.rf.4gFG4DtGVg5ZHM0sbOKi.jpg | primer plano (1 billete, >50% de la imagen) |  |  |  |
+| 5Euro_92_jpg.rf.K1IsYCybacUnKIMzW2PD.jpg | duplicado | 005_Euro_367.jpg | 4 | train |

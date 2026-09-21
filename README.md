@@ -192,9 +192,24 @@ interiores + shoelace), vectorizado en GPU:
 - `nms_rotated` no está implementada: PP-YOLOE-R no la usa (su NMS es el `multiclass_nms`
   nativo de Paddle con polígonos), así que exportación e inferencia tampoco la necesitan.
 
+## Dataset externo "Euro Banknote Detection" (añadido a train, pendiente de entrenar)
+
+551 fotos (640×640, 12 clases de billete + `hand`) → **304 incluidas** en train tras: quitar 142
+duplicados/casi duplicados con nuestros datasets (pHash/dHash ≤ 8; 20 coincidían con nuestro valid/test),
+96 primeros planos (1 billete > 50 % de la imagen) y 9 fotos sin billete; clases de billete fusionadas en
+`euro_banknote`, `hand` descartada. Resultado: `annotations/train_plus_extra.json` = 355 + 304 = 659 imgs /
+1918 cajas (y `train_plus_aug_extra.json` con las copias offline además).
+
+- **Manifiesto de la selección** (todas las fotos con su estado y motivo, versionado en git):
+  `data_manifests/eurobanknotes_extra_selection.{md,csv,json}` (`scripts/extra_manifest.py`).
+- Selección limpia en formato YOLOv8-OBB para subir a Roboflow: `export/eurobanknotes_extra_yolov8obb/`
+  (`scripts/export_yolo_obb.py`).
+- Config del run: `configs/ppyoloe_r_crn_s_banknotes_extra.yml` (train 659, augmentación online, sin copias
+  offline, 60 épocas, mosaico hasta la 50): `python scripts/train.py -c configs/ppyoloe_r_crn_s_banknotes_extra.yml --eval -o save_dir=output_extra`.
+
 ## Repositorio: qué está y qué no
 
-En git van: código (`scripts/`, `ext_op_fallback/`), `configs/`, `v1/` (splits), `README.md`,
+En git van: código (`scripts/`, `ext_op_fallback/`), `configs/`, `v1/` (splits), `data_manifests/`, `README.md`,
 `requirements.txt`, `logs/`, las métricas JSON (`output*/metrics*/`) y los **pesos finales**
 `output/model_final.pdparams` (base) y `output_aug/model_final.pdparams` (aug), 31 MB cada uno.
 Fuera (`.gitignore`): `.venv/`, el clone de `PaddleDetection/`, los exports de Roboflow, `augmented/`,
