@@ -192,7 +192,7 @@ interiores + shoelace), vectorizado en GPU:
 - `nms_rotated` no está implementada: PP-YOLOE-R no la usa (su NMS es el `multiclass_nms`
   nativo de Paddle con polígonos), así que exportación e inferencia tampoco la necesitan.
 
-## Dataset externo "Euro Banknote Detection" (añadido a train, pendiente de entrenar)
+## Dataset externo "Euro Banknote Detection" → modelo `extra` (RECOMENDADO)
 
 551 fotos (640×640, 12 clases de billete + `hand`) → **304 incluidas** en train tras: quitar 142
 duplicados/casi duplicados con nuestros datasets (pHash/dHash ≤ 8; 20 coincidían con nuestro valid/test),
@@ -205,7 +205,28 @@ duplicados/casi duplicados con nuestros datasets (pHash/dHash ≤ 8; 20 coincid�
 - Selección limpia en formato YOLOv8-OBB para subir a Roboflow: `export/eurobanknotes_extra_yolov8obb/`
   (`scripts/export_yolo_obb.py`).
 - Config del run: `configs/ppyoloe_r_crn_s_banknotes_extra.yml` (train 659, augmentación online, sin copias
-  offline, 60 épocas, mosaico hasta la 50): `python scripts/train.py -c configs/ppyoloe_r_crn_s_banknotes_extra.yml --eval -o save_dir=output_extra`.
+  offline, 60 épocas, mosaico hasta la 50, ~1 h 30): `python scripts/train.py -c configs/ppyoloe_r_crn_s_banknotes_extra.yml --eval -o save_dir=output_extra`.
+  mAP@0.5 ppdet en valid: 81.7 (ép. 5) → 89.0 (ép. 30) → 89.4 (ép. 60). Log: `logs/train_extra.log`.
+
+### Comparativa final de los tres modelos (NMS 0.5, inferencia 640 con `interp: 3`, P/R/F1 a score ≥ 0.5)
+
+| dataset | modelo | mAP50 | mAP75 | mAP50-95 | P@.5 | R@.5 | F1@.5 |
+|---|---|---|---|---|---|---|---|
+| valid | base | 94.9 | 80.4 | **70.1** | 0.977 | 0.895 | 0.934 |
+| valid | aug | 96.4 | 75.0 | 64.0 | 0.969 | 0.888 | 0.927 |
+| valid | **extra** | 95.1 | **80.9** | 69.5 | 0.969 | 0.874 | 0.919 |
+| test | base | 96.9 | **96.0** | **78.7** | 0.984 | 0.952 | 0.968 |
+| test | aug | 99.9 | 88.3 | 72.5 | 0.984 | 0.952 | 0.968 |
+| test | **extra** | **100.0** | 91.5 | 77.6 | **1.000** | **0.984** | **0.992** |
+| billetesprueba | base | 93.2 | 50.7 | 52.2 | 0.970 | 0.784 | 0.867 |
+| billetesprueba | aug | 95.4 | 69.9 | 59.8 | 0.962 | 0.851 | 0.903 |
+| billetesprueba | **extra** | **98.7** | **84.2** | **66.5** | 0.935 | **0.971** | **0.953** |
+
+**`output_extra/model_final.pdparams` es el modelo recomendado**: en fotos reales sube el recall de 0.78 a 0.97 y el
+mAP75 de 51 a 84, manteniendo la localización fina del base en valid/test. Conclusión de la ablación: lo que
+faltaba eran datos del tipo correcto (billetes pequeños, varios por foto, manos, fondos reales); 304 fotos así
+aportaron más que 710 copias offline y sin la penalización en mAP75 de estas. billetesprueba sigue siendo una
+prueba independiente (ninguna de sus fotos coincide con las 304 añadidas).
 
 ## Repositorio: qué está y qué no
 

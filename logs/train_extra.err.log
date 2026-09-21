@@ -1,0 +1,11 @@
+INFORMACI‡N: no se pudo encontrar ning£n archivo para los patrones dados.
+C:\Users\Clara\OneDrive\Escritorio\paddletest\.venv\lib\site-packages\paddle\utils\cpp_extension\extension_utils.py:711: UserWarning: No ccache found. Please be aware that recompiling all source files may be required. You can download and install ccache from: https://github.com/ccache/ccache/blob/master/doc/INSTALL.md
+  warnings.warn(warning_message)
+Warning: import ppdet from source directory without installing, run 'python setup.py install' to install ppdet firstly
+======================= Modified FLAGS detected =======================
+FLAGS(name='FLAGS_enable_pir_in_executor', current_value=True, default_value=False)
+FLAGS(name='FLAGS_win_cuda_bin_dir', current_value='C:\\Users\\Clara\\OneDrive\\Escritorio\\paddletest\\.venv\\lib\\site-packages\\paddle\\..\\nvidia', default_value='')
+=======================================================================
+W0921 23:20:26.692160  2296 gpu_resources.cc:119] Please NOTE: device: 0, GPU Compute Capability: 7.5, Driver API Version: 11.2, Runtime API Version: 11.8
+W0921 23:20:26.693125  2296 gpu_resources.cc:164] device: 0, cuDNN Version: 8.9.
+W0921 23:20:26.693125  2296 gpu_resources.cc:196] WARNING: device: 0. The installed Paddle is compiled with CUDA 11.8, but CUDA runtime version in your machine is 11.2, which may cause serious incompatible bug. Please recompile or reinstall Paddle with compatible CUDA version.
