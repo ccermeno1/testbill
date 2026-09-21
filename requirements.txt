@@ -1,0 +1,26 @@
+# Dependencias de PaddleDetection release/2.8 + scripts de este repo.
+# PaddlePaddle se instala aparte segun plataforma (ver README):
+#   Windows/Linux GPU: paddlepaddle-gpu==3.0.0  (indice cu118)
+#   macOS / CPU:       paddlepaddle==3.0.0
+setuptools<80
+wheel
+numpy<2
+tqdm
+typeguard
+visualdl>=2.2.0
+opencv-python<=4.6.0
+PyYAML
+shapely
+scipy
+terminaltables
+Cython
+pycocotools
+Pillow
+imgaug>=0.4.0
+pyclipper
+lapx
+motmetrics
+scikit-learn
+pillow-heif
+imagehash
+-e ./ext_op_fallback

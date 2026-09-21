@@ -1,0 +1,76 @@
+{
+  "version": "v3",
+  "created_utc": "2026-09-17T07:39:31+00:00",
+  "mode": "repartition",
+  "export_mode": "adopt",
+  "data_root": "/Users/clara.cermeno/Desktop/projects/testbill/data/Annotated banknotes 2.yolov8-obb",
+  "seed": 20260910,
+  "ratios": {
+    "train": 0.6992031872509961,
+    "valid": 0.20119521912350596,
+    "test": 0.099601593625498
+  },
+  "stratify_regex": "^(\\d+|Multiple)_",
+  "strata": {
+    "005": {
+      "train": 43,
+      "valid": 12,
+      "test": 7
+    },
+    "010": {
+      "train": 44,
+      "valid": 13,
+      "test": 6
+    },
+    "020": {
+      "train": 42,
+      "valid": 14,
+      "test": 6
+    },
+    "050": {
+      "train": 45,
+      "valid": 12,
+      "test": 6
+    },
+    "100": {
+      "train": 43,
+      "valid": 12,
+      "test": 8
+    },
+    "200": {
+      "train": 44,
+      "valid": 14,
+      "test": 5
+    },
+    "500": {
+      "train": 45,
+      "valid": 13,
+      "test": 5
+    },
+    "Multiple": {
+      "train": 49,
+      "valid": 10,
+      "test": 4
+    }
+  },
+  "group_strategy": "manifest",
+  "group_regex": null,
+  "group_manifest": "runs/_inspection/dups_color.json",
+  "independence_confirmed": false,
+  "counts": {
+    "train": 355,
+    "valid": 100,
+    "test": 47
+  },
+  "digest": "eda70ac15c371f28c5856c20e6b377c1f97e8682c71c8c18f56eb163599028be",
+  "notes": [
+    "group '020_Euro_284_jpg.rf.IYNMYXxfkCbBwGaXQIIJ' crosses strata ['020', '500']: two photos considered the same shot with different banknote types. Split as '020'; worth a look",
+    "group '100_Euro_031_jpg.rf.rhjRS5dHtrfz0DemDKXV' crosses strata ['100', 'Multiple']: two photos considered the same shot with different banknote types. Split as '100'; worth a look"
+  ],
+  "history": [
+    {
+      "action": "materialize",
+      "utc": "2026-09-17T07:39:31+00:00"
+    }
+  ]
+}

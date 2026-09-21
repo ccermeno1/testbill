@@ -1,0 +1,50 @@
+# Copia de PaddleDetection/configs/rotate/ppyoloe_r/_base_/ppyoloe_r_reader.yml con:
+#  - resolucion 640 (las imagenes son 416x416; 1024 es innecesario y no cabe en 4 GB)
+#  - batch_size 4 (bajar a 2 si hay OOM en la GPU)
+#  - worker_num 2 y sin shared memory (Windows)
+worker_num: 2
+image_height: &image_height 640
+image_width: &image_width 640
+image_size: &image_size [*image_height, *image_width]
+
+TrainReader:
+  sample_transforms:
+    - Decode: {}
+    - Poly2Array: {}
+    - RandomRFlip: {}
+    - RandomRRotate: {angle_mode: 'value', angle: [0, 90, 180, -90]}
+    - RandomRRotate: {angle_mode: 'value', angle: [30, 60], rotate_prob: 0.5}
+    - RResize: {target_size: *image_size, keep_ratio: True, interp: 2}
+    - Poly2RBox: {filter_threshold: 2, filter_mode: 'edge', rbox_type: 'oc'}
+  batch_transforms:
+    - NormalizeImage: {mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225], is_scale: True}
+    - Permute: {}
+    - PadRGT: {}
+    - PadBatch: {pad_to_stride: 32}
+  batch_size: 4
+  shuffle: true
+  drop_last: true
+  use_shared_memory: false
+  collate_batch: true
+
+EvalReader:
+  sample_transforms:
+    - Decode: {}
+    - Poly2Array: {}
+    - RResize: {target_size: *image_size, keep_ratio: True, interp: 2}
+    - NormalizeImage: {mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225], is_scale: True}
+    - Permute: {}
+  batch_transforms:
+    - PadBatch: {pad_to_stride: 32}
+  batch_size: 4
+  collate_batch: false
+
+TestReader:
+  sample_transforms:
+    - Decode: {}
+    - Resize: {target_size: *image_size, keep_ratio: True, interp: 3}   # INTER_AREA: sin aliasing al reducir fotos grandes
+    - NormalizeImage: {mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225], is_scale: True}
+    - Permute: {}
+  batch_transforms:
+    - PadBatch: {pad_to_stride: 32}
+  batch_size: 4

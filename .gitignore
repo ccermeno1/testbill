@@ -1,0 +1,31 @@
+# --- entorno / dependencias ---
+.venv/
+# clone externo (ver README: git clone --branch release/2.8)
+PaddleDetection/
+__pycache__/
+*.pyc
+*.egg-info/
+.claude/
+
+# --- datos (grandes; se regeneran con los scripts o se descargan de Roboflow) ---
+Annotated banknotes 2.yolov8-obb/
+billetesprueba 2.yolov8-obb/
+Euro Banknote Detection.yolov8-obb/
+augmented/
+dataset/
+export/
+
+# --- salidas de entrenamiento: se ignora todo salvo pesos finales y metricas ---
+output*/*
+!output*/model_final.pdparams
+!output*/metrics*/
+output*/metrics*/*
+!output*/metrics*/*.json
+
+# --- cache de pesos preentrenados de ppdet, temporales ---
+*.pdopt
+*.pdema
+*.pdstates
+*.tmp
+Thumbs.db
+.DS_Store

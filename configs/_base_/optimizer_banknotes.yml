@@ -1,0 +1,22 @@
+# Basado en PaddleDetection/configs/rotate/ppyoloe_r/_base_/optimizer_3x.yml.
+# La referencia entrena con 4 GPUs x 2 imagenes (batch total 8) y lr 0.008;
+# aqui batch total 4 -> lr escalado linealmente a 0.004. Si usas batch 2, pon 0.002.
+epoch: 80
+
+LearningRate:
+  base_lr: 0.004
+  schedulers:
+    - !CosineDecay
+      max_epochs: 96
+    - !LinearWarmup
+      start_factor: 0.
+      steps: 200
+
+OptimizerBuilder:
+  clip_grad_by_norm: 35.
+  optimizer:
+    momentum: 0.9
+    type: Momentum
+  regularizer:
+    factor: 0.0005
+    type: L2
