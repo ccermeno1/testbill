@@ -187,6 +187,61 @@ def test_obb_rejects_thin_rotated_gt_that_hbb_accepts():
     assert labels_hbb[0].item() == 1
 
 
+def _paired_sample_iou(boxes_a, boxes_b, num_samples=100):
+    """Old RetinaNet assigner estimator (fixed 100-sample grid)."""
+    from oriented_det.ops.gpu_ops import (
+        _box_vertices,
+        _generate_box_samples,
+        _points_in_paired_boxes,
+    )
+
+    area_a = boxes_a[:, 2] * boxes_a[:, 3]
+    area_b = boxes_b[:, 2] * boxes_b[:, 3]
+    samples_a = _generate_box_samples(boxes_a, num_samples)
+    samples_b = _generate_box_samples(boxes_b, num_samples)
+    verts_a = _box_vertices(boxes_a)
+    verts_b = _box_vertices(boxes_b)
+    count_in_b = _points_in_paired_boxes(samples_a, verts_b).sum(dim=1).float()
+    count_in_a = _points_in_paired_boxes(samples_b, verts_a).sum(dim=1).float()
+    inter = torch.maximum(
+        (count_in_b / num_samples) * area_a,
+        (count_in_a / num_samples) * area_b,
+    )
+    inter = torch.minimum(inter, torch.minimum(area_a, area_b))
+    union = (area_a + area_b - inter).clamp(min=1e-8)
+    return torch.clamp(inter / union, 0.0, 1.0)
+
+
+def test_sample_iou_underestimates_exact_and_would_miss_positive():
+    """100-sample ranking (Sep 11 OBB run) drops a true ≥0.5 pair below 0.5."""
+    anchors = torch.tensor([[64.0, 64.0, 32.0, 16.0, 0.0]], dtype=torch.float32)
+    gt = torch.tensor(
+        [[68.0, 64.0, 32.0, 18.0, math.radians(35.0)]], dtype=torch.float32
+    )
+    exact = float(_paired_exact_rotated_iou(anchors, gt))
+    shapely = float(
+        rbox_iou(
+            RBox(*[float(x) for x in anchors[0]]),
+            RBox(*[float(x) for x in gt[0]]),
+            intersection_backend="auto",
+        )
+    )
+    sampled = float(_paired_sample_iou(anchors, gt))
+    assert exact == pytest.approx(shapely, abs=3e-3)
+    assert exact >= 0.5
+    assert sampled < 0.5
+
+    labels, _ = match_retinanet_anchors_to_gt(
+        anchors,
+        gt,
+        use_hbb_for_matching=False,
+        positive_iou_threshold=0.5,
+        negative_iou_threshold=0.4,
+        match_low_quality=False,
+    )
+    assert labels[0].item() == 1
+
+
 def test_assigner_exact_iou_matches_diff_iou_rotated_and_shapely():
     a = torch.tensor([[10.0, 20.0, 40.0, 12.0, 0.4]], dtype=torch.float32)
     b = torch.tensor([[14.0, 18.0, 36.0, 14.0, -0.25]], dtype=torch.float32)

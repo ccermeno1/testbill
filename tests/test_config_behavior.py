@@ -188,7 +188,7 @@ def test_dota_3x_recipes_are_1x_plus_36_epochs():
     pairs = [
         ("oriented_rcnn", 0.55, 0.55),
         ("rotated_faster_rcnn", 0.6, 0.6),
-        ("rotated_retinanet", 0.35, 0.35),
+        ("rotated_retinanet", 0.25, 0.25),
         ("rotated_fcos", 0.2, 0.2),
     ]
     for name, one_score, three_score in pairs:

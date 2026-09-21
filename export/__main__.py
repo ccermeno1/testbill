@@ -1,4 +1,4 @@
-"""``python -m export`` entry point."""
+"""``python -m export`` entry point (same as ``odet export``)."""
 
 from export.cli import main
 

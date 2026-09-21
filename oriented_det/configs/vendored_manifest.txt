@@ -30,7 +30,9 @@ oriented_rcnn/hrsc2016_le90_3x.json
 oriented_rcnn/fair1m_le90_1x.json
 oriented_rcnn/hrsid_le90_1x.json
 rotated_retinanet/dota_le90_1x.json
+rotated_retinanet/dota_le90_1x_hbb.json
 rotated_retinanet/dota_le90_3x.json
+rotated_retinanet/dota_le90_3x_hbb.json
 rotated_fcos/dota_le90_1x.json
 rotated_fcos/dota_le90_3x.json
 rotated_fcos/hrsc2016_le90_1x.json

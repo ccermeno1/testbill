@@ -183,24 +183,27 @@ def test_retinanet_1x_rr_recipe_enables_pm180_rotate():
     assert rr.model.box_reg_loss_type == "l1"
 
 
-def test_retinanet_1x_obb_recipe_uses_obb_matching():
-    """1× OBB ablation pins RBboxOverlaps2D; Hub 1× stays circum-HBB. Priors stay θ=0."""
+def test_retinanet_dota_recipes_obb_default_hbb_extension():
+    """Un-suffixed 1×/3×/RR are OBB; *_hbb.json is circum-HBB. Priors stay θ=0."""
     from pathlib import Path
 
     from oriented_det.train.config import TrainingExperimentConfig
 
     root = Path(__file__).resolve().parents[1]
-    hub = TrainingExperimentConfig.load(
-        root / "configs" / "rotated_retinanet" / "dota_le90_1x.json"
-    )
-    obb = TrainingExperimentConfig.load(
-        root / "configs" / "rotated_retinanet" / "dota_le90_1x_obb.json"
-    )
-    assert hub.model.use_hbb_for_matching is True
-    assert obb.model.use_hbb_for_matching is False
-    assert obb.model.anchor_angles is None
-    assert obb.preprocessing.enable_random_rotate is False
-    assert obb.model.box_reg_loss_type == "l1"
+    recipes = root / "configs" / "rotated_retinanet"
+    obb_names = ("dota_le90_1x.json", "dota_le90_3x.json", "dota_le90_1x_rr.json")
+    hbb_names = ("dota_le90_1x_hbb.json", "dota_le90_3x_hbb.json")
+    for name in obb_names:
+        cfg = TrainingExperimentConfig.load(recipes / name)
+        assert cfg.model.use_hbb_for_matching is False, name
+        assert cfg.model.anchor_angles is None, name
+        assert cfg.model.box_reg_loss_type == "l1", name
+        assert cfg.production.score_threshold == pytest.approx(0.25), name
+    for name in hbb_names:
+        cfg = TrainingExperimentConfig.load(recipes / name)
+        assert cfg.model.use_hbb_for_matching is True, name
+        assert cfg.production.score_threshold == pytest.approx(0.35), name
+        assert cfg.model.anchor_angles is None, name
 
 
 def test_retinanet_dota_recipes_split_train_val_and_preds_score_floors():
@@ -218,7 +221,8 @@ def test_retinanet_dota_recipes_split_train_val_and_preds_score_floors():
         "dota_le90_1x.json",
         "dota_le90_3x.json",
         "dota_le90_1x_rr.json",
-        "dota_le90_1x_obb.json",
+        "dota_le90_1x_hbb.json",
+        "dota_le90_3x_hbb.json",
     ):
         cfg = TrainingExperimentConfig.load(
             root / "configs" / "rotated_retinanet" / name
@@ -228,20 +232,6 @@ def test_retinanet_dota_recipes_split_train_val_and_preds_score_floors():
         assert train_sc == pytest.approx(0.3), name
         assert preds_sc == pytest.approx(0.05), name
         assert "0.05" in preds_src or "preds_score_threshold" in preds_src
-
-
-def test_retinanet_dota_recipes_use_hbb_matching():
-    """Hub 1× / 3× / RR pin circum-HBB (MMRotate hbb column), not OBB."""
-    from pathlib import Path
-
-    from oriented_det.train.config import TrainingExperimentConfig
-
-    root = Path(__file__).resolve().parents[1]
-    for name in ("dota_le90_1x.json", "dota_le90_3x.json", "dota_le90_1x_rr.json"):
-        cfg = TrainingExperimentConfig.load(
-            root / "configs" / "rotated_retinanet" / name
-        )
-        assert cfg.model.use_hbb_for_matching is True, name
 
 
 def test_create_model_fcos_passes_config_fields():

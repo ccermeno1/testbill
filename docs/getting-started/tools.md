@@ -27,10 +27,11 @@ After `uv pip install -e .`, use the **`odet`** CLI (`odet --help`). Script impl
 | `ssdd-to-dota` | Export SSDD XML/COCO/DOTA to DOTA images + labels |
 | `dota-submit` | DOTA v1.0 Task 1 zip (`hf://` zoo, a run, or `predictions.json`) |
 | `pretrained` | `list` / `download` Hub checkpoints (`hf://` slugs) |
+| `export` | ONNX producer (`onnx` / `infer` / `demo` / `preds`) |
 | `labels-to-comma` | Convert DOTA label files to comma-separated format |
 | `free-gpu` | Kill GPU processes (dev utility) |
 
-ONNX export is **not** an `odet` subcommand. Use `python -m export` / `make export-onnx` after `uv pip install -e ".[export]"`. See [ONNX export](../examples/export.md).
+ONNX export is **`odet export`** after `uv pip install -e ".[export]"` (`python -m export` is the same CLI). TensorFlow / SavedModel are not supported. See [ONNX export](../examples/export.md).
 
 Common commands:
 

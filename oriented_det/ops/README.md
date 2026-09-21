@@ -65,7 +65,8 @@ Benchmark vs Shapely: ``python tools/measure_sampled_riou_error.py`` (see [tools
 
 Training **two-stage** anchor/proposal matching uses GPU sampling IoU (`oriented_box_iou_gpu`).
 **Rotated RetinaNet** assignment uses `models/retinanet_assign.py` instead (AABB prune +
-fixed 100-sample pairwise IoU). Both paths are **approximate**; **mAP and optional final NMS**
+exact convex IoU via `diff_iou_rotated_2d`, MMRotate `RBboxOverlaps2D`). Two-stage matching
+is still **approximate**; **mAP and optional final NMS**
 use **exact Shapely polygon IoU** on CPU. The geometry defaults below apply to
 `oriented_box_iou_gpu` so two-stage matching IoU is close enough to polygon IoU across
 DOTA-like scales without paying a fixed 10×10 (100-point) grid on every tiny anchor.
@@ -195,7 +196,7 @@ RetinaNet checkpoints (hundreds of weakly-suppressing candidates per class).
 
 Train-loss IoU for **matched pairs** (`[N, 5]`), not matching/NMS/mAP.
 
-[`diff_iou_rotated.py`](diff_iou_rotated.py) implements convex polygon intersection (edge crossings + contained corners, shoelace) and **`riou_loss_per_box` = `1 - IoU`**. Runs on CPU or CUDA as batched PyTorch (no custom kernel). Distinct from sampling [`pairwise_rotated_iou`](rotated_ops.py). FCOS **`box_reg_loss_type: riou`** uses this; ROI **`riou`** still uses sampling. No overlap → loss is a flat 1; near-square boxes have a weak ∂/∂θ (same as true IoU).
+[`diff_iou_rotated.py`](diff_iou_rotated.py) implements convex polygon intersection (edge crossings + contained corners, shoelace) and **`riou_loss_per_box` = `1 - IoU`**. Unused hull slots repeat the first intersection vertex so extra shoelace terms are 0 (padding with an invalid exterior corner inflates the polygon and clamps IoU to 1). Runs on CPU or CUDA as batched PyTorch (no custom kernel). Distinct from sampling [`pairwise_rotated_iou`](rotated_ops.py). RetinaNet OBB assignment and FCOS **`box_reg_loss_type: riou`** use this; ROI **`riou`** still uses sampling. No overlap → loss is a flat 1; near-square boxes have a weak ∂/∂θ (same as true IoU).
 
 ## Auxiliary decoded-box losses (`kfiou.py`, `probiou.py`, `gaussian_angle.py`)
 

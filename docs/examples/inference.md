@@ -51,6 +51,10 @@ Re-runs mAP and writes fresh `analysis_iou*.json` / `model_analysis_*.md` from a
 
 See the [tools reference on GitHub](https://github.com/DL4EO/oriented-det/blob/main/tools/README.md) and [Getting Started: Tools](../getting-started/tools.md).
 
+## Docker (PyTorch in a container)
+
+To ship a checkpoint as a Tile Geo Process HTTP service, see [Docker deploy](deploy.md).
+
 ## ONNX Runtime (no PyTorch)
 
 To ship a checkpoint as ONNX + Python NMS, see [ONNX export](export.md).

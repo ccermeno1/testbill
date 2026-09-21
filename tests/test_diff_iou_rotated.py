@@ -36,6 +36,19 @@ def test_axis_aligned_partial_overlap_matches_exact():
     assert iou == pytest.approx(1.0 / 3.0, abs=3e-3)
 
 
+def test_shifted_thin_rotated_pair_does_not_clamp_iou_to_one():
+    """Invalid hull pad used to pull in an exterior corner and report IoU=1."""
+    a = torch.tensor([[64.0, 64.0, 32.0, 16.0, 0.0]], dtype=torch.float32)
+    b = torch.tensor(
+        [[70.0, 64.0, 24.0, 6.0, math.radians(50.0)]], dtype=torch.float32
+    )
+    iou = float(diff_iou_rotated_2d(a, b))
+    exact = _exact_iou(a[0], b[0])
+    assert exact < 0.4
+    assert iou == pytest.approx(exact, abs=3e-3)
+    assert iou < 0.4
+
+
 def test_rotated_pairs_close_to_exact_polygon_iou():
     torch.manual_seed(0)
     pred = torch.tensor(

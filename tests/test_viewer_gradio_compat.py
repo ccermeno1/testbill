@@ -1,3 +1,7 @@
+import pytest
+
+pytest.importorskip("gradio")
+
 from gradio.components.slider import Slider
 
 import tools.app  # noqa: F401 - importing applies Gradio compatibility patches

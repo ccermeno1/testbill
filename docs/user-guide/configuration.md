@@ -181,7 +181,7 @@ For **ProbIoU (or rIoU/KFIoU) as primary** ROI loss on Rotated Faster R-CNN, set
 
 Preds resolver: CLI → `preds_score_threshold` if set → **0.05**. It ignores both `evaluation.train_val_score_threshold` and `production.score_threshold`. Deploy still uses `production.score_threshold`.
 
-DOTA 1× recipes set `production.score_threshold` to the eval-val global F1 threshold minus **0.05** (Oriented R-CNN **0.55**, Faster R-CNN **0.6**, RetinaNet **0.35**, FCOS **0.2**). 3× inherits those floors. HRSC 1× recipes use the same rule (Oriented R-CNN / Faster R-CNN **0.85**, FCOS **0.2**). On DOTA, that F1 sweep is leaky eval-val; the real test is Task 1. On HRSC, eval-val is held-out ImageSets test.
+DOTA 1× recipes set `production.score_threshold` to the eval-val global F1 threshold minus **0.05** (Oriented R-CNN **0.55**, Faster R-CNN **0.6**, RetinaNet OBB **0.25** / HBB **0.35**, FCOS **0.2**). 3× inherits those floors. HRSC 1× recipes use the same rule (Oriented R-CNN / Faster R-CNN **0.85**, FCOS **0.2**). On DOTA, that F1 sweep is leaky eval-val; the real test is Task 1. On HRSC, eval-val is held-out ImageSets test.
 
 `production.overlap_pixels` (default 200 when null) and `ignore_margin_pixels` (default `dataset.overlap / 2`) control native sliding-window overlap and the optional **full-image** deploy edge filter for `fixed`/`crop` in `oriented_det.runtime.inference` (`odet preds`, `save_predictions`, deploy). Last tiles flush to the image edge (same as `tile_dota.py`). Per-window stitch margin default is **0** (keep overlap copies, then NMS); pass `--window-margin-pixels` to drop the overlap band. `resize_mode: pad` / `keep_ratio` do not native-tile; they use the training whole-image scale path (`keep_ratio` then `pad_size_divisor`).
 `production.overlap_pixels` (default 200 when null) and `ignore_margin_pixels` (default `dataset.overlap / 2`) control native sliding-window overlap and the optional **full-image** deploy edge filter for `fixed`/`crop` in `oriented_det.runtime.inference` (`odet preds`, `save_predictions`, deploy). Last tiles flush to the image edge (same as `tile_dota.py`). Per-window stitch margin default is **0** (keep overlap copies, then NMS); pass `--window-margin-pixels` to drop the overlap band. `resize_mode: pad` / `keep_ratio` do not native-tile; they use the training whole-image scale path (`keep_ratio` then `pad_size_divisor`).
@@ -206,9 +206,11 @@ Top-level configs (inherit bases under `configs/_base_/`):
 | `configs/rotated_faster_rcnn/dota_le90_3x.json` | Rotated Faster R-CNN | 3× pretrain (inherits 1×; Hub Task 1 74.48%) |
 | `configs/rotated_faster_rcnn/hrsc2016_le90_1x.json` | Rotated Faster R-CNN | 1× HRSC2016 (keep-ratio, rotate off) |
 | `configs/rotated_faster_rcnn/hrsc2016_le90_3x.json` | Rotated Faster R-CNN | 3× HRSC2016 (inherits 1×, ±20° rotate) |
-| `configs/rotated_retinanet/dota_le90_1x.json` | RetinaNet | **1× DOTA pretrain** (full recipe) |
-| `configs/rotated_retinanet/dota_le90_1x_rr.json` | RetinaNet | 1× + RR p=0.5 ±180° (not Hub) |
-| `configs/rotated_retinanet/dota_le90_3x.json` | RetinaNet | 3× DOTA pretrain (inherits 1×) |
+| `configs/rotated_retinanet/dota_le90_1x.json` | RetinaNet | **1× DOTA pretrain (OBB, default)** |
+| `configs/rotated_retinanet/dota_le90_1x_hbb.json` | RetinaNet | 1× circum-HBB |
+| `configs/rotated_retinanet/dota_le90_1x_rr.json` | RetinaNet | 1× OBB + RR p=0.5 ±180° (not Hub) |
+| `configs/rotated_retinanet/dota_le90_3x.json` | RetinaNet | 3× OBB (inherits 1×; Hub) |
+| `configs/rotated_retinanet/dota_le90_3x_hbb.json` | RetinaNet | 3× circum-HBB (Hub) |
 | `configs/rotated_fcos/dota_le90_1x.json` | Rotated FCOS | **Hub** 1× DOTA decoded rIoU |
 | `configs/rotated_fcos/dota_le90_3x.json` | Rotated FCOS | 3× DOTA decoded rIoU (inherits 1×; 36 epochs) |
 | `configs/rotated_fcos/dota_le90_1x_l1_kfiou_aux.json` | Rotated FCOS | 1× L1 + KFIoU aux |

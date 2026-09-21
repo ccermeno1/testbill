@@ -104,7 +104,7 @@
     ],
     "retinanet_stacked_convs": 4,
     "box_reg_loss_type": "l1",
-    "use_hbb_for_matching": true,
+    "use_hbb_for_matching": false,
     "final_nms_use_cpu": false,
     "inference_pre_nms_score_threshold": 0.05,
     "final_nms_iou_threshold": 0.1,
@@ -113,7 +113,7 @@
     "rpn_negative_iou_threshold": 0.4
   },
   "production": {
-    "score_threshold": 0.35,
+    "score_threshold": 0.25,
     "inference_pre_nms_score_threshold": 0.05,
     "final_nms_iou_threshold": 0.1,
     "max_detections_per_image": 3000,

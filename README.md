@@ -17,7 +17,7 @@
 - **Datasets**: DOTA polygon loader (pattern, split file, or separate folders), **HRSC2016** native XML loader, **FAIR1M** 37-class XML loader (+ convert/tile tutorial), **SSDD** and **HRSID** SAR ship loaders (finetune DOTA 1× Hub locally; no SAR zoo), image tiling, label filtering, ignore masks, oriented mAP evaluation
 - **Models**: **Oriented R-CNN** ([Xie et al., ICCV 2021](https://openaccess.thecvf.com/content/ICCV2021/html/Xie_Oriented_R-CNN_for_Object_Detection_ICCV_2021_paper.html); horizontal RPN + MidpointOffset → oriented RoIAlign + oriented ROI head), **Rotated Faster R-CNN** (Ren et al., NeurIPS 2015 two-stage baseline with horizontal RPN + horizontal RoIAlign + rotated ROI head; MMRotate reference), **Rotated RetinaNet** ([Lin et al., ICCV 2017](https://openaccess.thecvf.com/content_ICCV_2017/papers/Lin_Focal_Loss_for_ICCV_2017_paper.pdf); oriented anchors, sigmoid focal loss), **Rotated FCOS** (anchor-free single-stage; distance-angle coder, centerness, L1 / KFIoU / decoded rIoU); ResNet + FPN backbones; selective loading of external checkpoints where configs wire `checkpoint.load_from_checkpoint`
 - **Training**: JSON configs + **`odet train`**, mixed precision (AMP), gradient accumulation, checkpointing, best-metric tracking, TensorBoard, optional curriculum learning and profiling
-- **ONNX export**: pre-NMS ONNX + Python NMS (`python -m export` / `make export-onnx`); consumers run ONNX Runtime only
+- **ONNX export**: pre-NMS ONNX + Python NMS (`odet export` / `make export-onnx`); consumers run ONNX Runtime only
 
 Hands-on write-ups (code, metrics, inference knobs) live on **[DeepLearning.Earth](https://deeplearning.earth)** — especially the [15 DOTA class tour](https://deeplearning.earth/posts/2026-06-23_oriented_rcnn_detections_for_the_15_dota_classes/), [sampled rIoU and ProbIoU](https://deeplearning.earth/posts/2026-07-10_rotated_faster_rcnn_probiou_dota/), [Rotated FCOS / v0.2.0](https://deeplearning.earth/posts/2026-08-28_oriented-det_v0_2_0_rotated_fcos_decoded_riou_and_the_updated_zoo/), and [macOS FCOS vs Oriented R-CNN](https://deeplearning.earth/posts/2026-09-02_rotated_fcos_vs_oriented_rcnn_on_macos/).
 
@@ -47,7 +47,7 @@ uv pip install -e .
 - From PyPI: `pip install oriented-det`
 - For development and tests: `uv pip install -e ".[dev]"`
 - For the Gradio prediction viewer: `uv pip install -e ".[viewer]"` or `pip install "oriented-det[viewer]"`
-- For **ONNX export**: `uv pip install -e ".[export]"` then `python -m export --help` (see [ONNX export](docs/examples/export.md))
+- For **ONNX export**: `uv pip install -e ".[export]"` then `odet export --help` (see [ONNX export](docs/examples/export.md))
 - For **macOS Apple Silicon** or **CPU-only**, see [Installation](docs/getting-started/installation.md) and the [macOS walkthrough](https://deeplearning.earth/posts/2026-06-25_oriented_object_detection_on_macos_in_pure_python/) (`odet image-demo` on MPS, no CUDA toolchain).
 - Verify: `pytest tests/test_geometry.py tests/test_iou.py tests/test_nms.py`
 
@@ -94,7 +94,7 @@ After that, copy-pasted commands and unmodified configs that reference `/path/to
 | **Configs** | [`configs/`](configs/) | Experiment JSON (`_base_` inheritance, schema in `configs/config.schema.json`) |
 | **Runs** | `runs/<model_type>/<timestamp>/` | Checkpoints, `config.json` snapshot, `train.log` (created at train time; not shipped in the repo) |
 | **Docs** | [`docs/`](docs/) | MkDocs user guide and API reference |
-| **Examples** | [`demo/`](demo/), [`pretrained/`](pretrained/), [`notebooks/`](notebooks/), [`export/`](export/) | Demo images; Hub checkpoints; Kaggle FAIR1M tutorial notebook; ONNX export producer (`python -m export`) |
+| **Examples** | [`demo/`](demo/), [`pretrained/`](pretrained/), [`notebooks/`](notebooks/), [`export/`](export/) | Demo images; Hub checkpoints; Kaggle FAIR1M tutorial notebook; ONNX export producer (`odet export`) |
 
 **`odet` vs `tools/`:** Installing the package registers the `odet` command. It loads modules under `tools/` (for example `tools.train`, `tools.save_predictions`). Shared inference and collate code lives in [`oriented_det/runtime/`](oriented_det/runtime/). You do not need two workflows — use **`odet`** (or **`make`**, which calls `odet`).
 
@@ -105,7 +105,7 @@ After that, copy-pasted commands and unmodified configs that reference `/path/to
 Full documentation is in the **docs/** folder and can be built and served with MkDocs:
 
 - **Build/serve**: `make docs` or `make docs-serve` (see [docs/README.md](docs/README.md)); or `uv pip install -e ".[docs]"` then `mkdocs serve`.
-- **Guides**: [Getting Started](docs/getting-started/installation.md), [User Guide](docs/user-guide/geometry.md), [API Reference](docs/api/geometry.md), [Examples](docs/examples/inference.md), [ONNX export](docs/examples/export.md).
+- **Guides**: [Getting Started](docs/getting-started/installation.md), [User Guide](docs/user-guide/geometry.md), [API Reference](docs/api/geometry.md), [Examples](docs/examples/inference.md), [Docker deploy](docs/examples/deploy.md), [ONNX export](docs/examples/export.md).
 - **Blog**: [DeepLearning.Earth](https://deeplearning.earth) — curated posts below (code, metrics, inference knobs).
 
 | Topic | Post |
@@ -121,6 +121,8 @@ Full documentation is in the **docs/** folder and can be built and served with M
 | FCOS vs Oriented R-CNN (MPS latency, thresholds) | [https://deeplearning.earth/posts/2026-09-02_rotated_fcos_vs_oriented_rcnn_on_macos/](https://deeplearning.earth/posts/2026-09-02_rotated_fcos_vs_oriented_rcnn_on_macos/) |
 | Side-by-side browser demo (three 1× checkpoints) | [https://deeplearning.earth/posts/2026-09-06_oriented_det_optical_satellite_demo/](https://deeplearning.earth/posts/2026-09-06_oriented_det_optical_satellite_demo/) |
 | Apache 2.0 vs DOTA / HRSC dataset terms | [https://deeplearning.earth/posts/2026-09-10_oriented_det_apache_license_versus_dota/](https://deeplearning.earth/posts/2026-09-10_oriented_det_apache_license_versus_dota/) |
+| Docker deploy (Tile Geo Process) | [https://deeplearning.earth/posts/2026-10-05_deploy_oriented_det_in_docker/](https://deeplearning.earth/posts/2026-10-05_deploy_oriented_det_in_docker/) |
+| ONNX export (no PyTorch on infer) | [https://deeplearning.earth/posts/2026-10-08_onnx_export_without_pytorch/](https://deeplearning.earth/posts/2026-10-08_onnx_export_without_pytorch/) |
 
 ## Documentation by folder
 
@@ -131,8 +133,8 @@ Full documentation is in the **docs/** folder and can be built and served with M
 | [oriented_det/cli/](oriented_det/cli/) | [oriented_det/cli/README.md](oriented_det/cli/README.md) | **`odet`** entry point and subcommand list |
 | [tools/](tools/) | [tools/README.md](tools/README.md) | CLI script implementations (invoked by `odet`; see [Repository layout](#repository-layout)) |
 | [configs/](configs/) | [configs/README.md](configs/README.md) | DOTA configs and **pretrain model zoo** (`_base_` inheritance) |
-| [deploy/example/](deploy/example/) | [deploy/example/README.md](deploy/example/README.md) | Minimal DOTA deploy smoke image |
-| [export/](export/) | [export/README.md](export/README.md) | ONNX export producer (`python -m export`); consumer bundle in gitignored `onnx_export/` |
+| [deploy/example/](deploy/example/) | [deploy/example/README.md](deploy/example/README.md) | Sanic Tile Geo Process Docker image (DOTA smoke) |
+| [export/](export/) | [export/README.md](export/README.md) | ONNX export producer (`odet export`); consumer bundle in gitignored `onnx_export/` |
 | [docs/](docs/) | [docs/README.md](docs/README.md) | MkDocs source; full user guide and API reference |
 
 ## Training and evaluation
@@ -149,7 +151,7 @@ Install once: `uv pip install -e .`. Then:
 | COCO polygons → DOTA | `odet coco-to-dota --ann-file instances.json --image-dir images --output-dir out` |
 | Val predictions | `odet preds --experiment-dir runs/oriented_rcnn/<timestamp>` or `make preds` |
 | Offline mAP | `make eval-val` or `make preds` then `make metrics`. DOTA: leaky val tiles (real test is Task 1). HRSC/FAIR1M/SSDD/HRSID: held-out test/val. |
-| ONNX export | `make export-onnx` or `python -m export onnx ...` (see [export/README.md](export/README.md)) |
+| ONNX export | `odet export onnx ...` or `make export-onnx` (see [export/README.md](export/README.md)) |
 
 DOTA configs: per-model `dota_le90_1x.json` under [configs/](configs/) (3× where published; Faster R-CNN and FCOS DOTA are 1×). Run `odet --help` for all subcommands. Makefile shortcuts and script-level options: [tools/README.md](tools/README.md). Config reference: [docs/user-guide/configuration.md](docs/user-guide/configuration.md), [configs/config.schema.json](configs/config.schema.json), [configs/README.md](configs/README.md).
 
@@ -185,7 +187,7 @@ OrientedDet is Apache-2.0 open source. For **consulting, training workshops, or 
 
 ## Publishing to PyPI
 
-Version **0.3.0** — tag releases as **`v0.3.0`** (git) matching `version` in `pyproject.toml`.
+Version **0.3.1** — tag releases as **`v0.3.1`** (git) matching `version` in `pyproject.toml`.
 
 Configs: edit **`configs/`** at the repo root, then **`make sync-configs`** so **`oriented_det/configs/`** stays in sync (see **`oriented_det/configs/vendored_manifest.txt`**). CI runs **`make check-configs`**.
 
@@ -216,7 +218,7 @@ make check-configs
 pytest tests/ -q
 ```
 
-Bump version in `pyproject.toml` and `docs/changelog.md` if needed (currently **0.3.0**).
+Bump version in `pyproject.toml` and `docs/changelog.md` if needed (currently **0.3.1**).
 
 #### 3. Build locally
 

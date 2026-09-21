@@ -1,4 +1,4 @@
-"""Standalone CLI for ONNX export (``python -m export``)."""
+"""ONNX export CLI (``odet export`` / ``python -m export``)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ _COMMANDS: Dict[str, Tuple[str, str]] = {
     "preds": ("export.scripts.save_predictions_onnx", "export-preds"),
 }
 
-# Former odet / export-tf names. Export is not an odet subcommand.
+# Legacy python -m export names. Top-level odet export-* (TF / SavedModel) stay removed.
 _ALIASES = {
     "export-onnx": "onnx",
     "export-infer": "infer",
@@ -30,14 +30,15 @@ def install_hint() -> str:
     export = root / "requirements-export.txt"
     return (
         f"Infer/demo (no oriented-det): pip install -r {runtime}\n"
-        f"Export from a checkpoint: pip install -r {export} (plus oriented-det)"
+        f"Producer (odet export): uv pip install -e \".[export]\" "
+        f"or pip install -r {export} (plus oriented-det)"
     )
 
 
 def _print_help() -> None:
-    print("Usage: python -m export <command> [options]")
-    print("Run from the oriented-det repo root. Not an odet subcommand.")
-    print("demo / infer do not need oriented-det.")
+    print("Usage: odet export <command> [options]")
+    print("       python -m export <command> [options]")
+    print("ONNX only (no TensorFlow / SavedModel). demo / infer do not need PyTorch.")
     print("")
     print("Commands:")
     for name in sorted(_COMMANDS):
@@ -45,14 +46,14 @@ def _print_help() -> None:
     print("")
     print("Examples:")
     print(
-        "  python -m export onnx --config path/to/config.json "
+        "  odet export onnx --config path/to/config.json "
         "--checkpoint path/to/model.pth --output ./onnx_export/model.onnx"
     )
     print(
-        "  python -m export infer --onnx ./onnx_export/model.onnx "
+        "  odet export infer --onnx ./onnx_export/model.onnx "
         "--images ./tiles --output ./onnx_export/predictions"
     )
-    print("  python -m export demo")
+    print("  odet export demo")
     print("")
     print(install_hint())
 

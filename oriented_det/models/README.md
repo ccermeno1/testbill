@@ -28,7 +28,7 @@ Regression guards: `tests/test_roi.py` (eager vs ONNX-export RoIAlign), `tests/t
 
 `RotatedFCOS` ONNX export uses `rotated_fcos_inference_pre_nms_padded`: backbone + head + decode, padded to `nms_pre ×` FPN levels.
 
-Producer CLI: `python -m export` ([export/README.md](../../export/README.md)).
+Producer CLI: `odet export` ([export/README.md](../../export/README.md)).
 
 ## Rotated Faster R-CNN Proposal Filtering
 
@@ -65,7 +65,7 @@ Encoded Smooth L1 (main or aux) applies **directly to all five encoded channels*
 - **RoIAlign:** `horizontal_roi_align` uses `aligned=True` (half-pixel aligned), matching mmcv's `RoIAlign` default.
 - **Backbone BN:** frozen statistics (`FrozenBatchNorm2d`) by default, matching MMRotate `norm_eval=True`. See `backbones/README.md`.
 - **Loss normalization:** RPN and ROI SmoothL1 box-regression losses are summed over positives and divided by the **total** number of sampled anchors/RoIs (MMDet `avg_factor`), including Oriented R-CNN midpoint RPN and oriented ROI stages.
-- **Assignment IoU:** RPN stages use HBB IoU when `use_hbb_for_matching: true` (MMRotate horizontal RPN). Oriented R-CNN ROI matching uses rotated IoU by default (`roi_use_hbb_for_matching: false`). RetinaNet Hub DOTA recipes pin circum-HBB (`true`); base model JSON defaults to OBB (`false`).
+- **Assignment IoU:** RPN stages use HBB IoU when `use_hbb_for_matching: true` (MMRotate horizontal RPN). Oriented R-CNN ROI matching uses rotated IoU by default (`roi_use_hbb_for_matching: false`). RetinaNet Hub DOTA default is OBB (`false`); circum-HBB is the `*_hbb` recipes. Base model JSON is also OBB (`false`).
 
 RPN proposal pruning uses horizontal xyxy proposals and `torchvision.ops.nms` on GPU.
 The RPN proposal geometry is horizontal; rotated geometry is introduced by the ROI
@@ -118,7 +118,7 @@ Configs: `configs/rotated_fcos/dota_le90_1x.json` (rIoU 1× Hub recipe), `dota_l
 - **5 FPN levels (P3–P7)** with strides `[8, 16, 32, 64, 128]` when `fpn_returned_layers: [2,3,4]`.
 - **`min_pos_iou=0`** in all-level MaxIoU (MMRotate `MaxIoUAssigner`); low-quality match requires max IoU `> 0`.
 - **Regression loss:** encoded L1/SmoothL1 summed over positives, normalized by batch positive count (MMDet `avg_factor`).
-- **Assignment IoU:** Hub DOTA recipes pin circum-HBB (`use_hbb_for_matching: true`). Matching concatenates P3–P7 then splits labels by level (MMRotate `get_targets`). With `false`, `retinanet_assign.match_retinanet_anchors_to_gt` uses AABB prune + exact convex IoU (`diff_iou_rotated_2d`, MMRotate `RBboxOverlaps2D`). Two-stage RPN/ROI matching is unchanged.
+- **Assignment IoU:** Hub DOTA default is OBB (`use_hbb_for_matching: false`). Matching concatenates P3–P7 then splits labels by level (MMRotate `get_targets`). `retinanet_assign.match_retinanet_anchors_to_gt` uses AABB prune + exact convex IoU (`diff_iou_rotated_2d`, MMRotate `RBboxOverlaps2D`). Circum-HBB is the `*_hbb` recipes (`true`). Two-stage RPN/ROI matching is unchanged.
 - **le90 angle wrap in `edge_swap` encoding** (`norm_angle_le90` in `encode_oriented_boxes`).
 
 ### `final_nms_use_cpu` (exact final NMS)

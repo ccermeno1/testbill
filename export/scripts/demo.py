@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run the exported FCOS ONNX on the bundled plane image and assert NMS.
 
-Works from the repo (``python -m export demo``) and from a copied
-``onnx_export/`` bundle (``python demo.py``). No oriented-det.
+Works from the repo (``odet export demo`` / ``python -m export demo``) and from a copied
+``onnx_export/`` bundle (``python demo.py``). The copied bundle does not need oriented-det.
 """
 
 from __future__ import annotations

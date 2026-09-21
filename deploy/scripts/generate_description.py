@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from oriented_det.data.dota_classes import DOTA_V1_CLASSES
+from oriented_det.data.dota_classes import DOTA_V1_CLASS_SET
 from oriented_det.utils.config import merge_dicts
 
 
@@ -37,7 +37,7 @@ def detect_tier(class_names: List[str], dataset_format: str) -> str:
     if fmt == "hrsid":
         return "hrsid"
     if fmt == "dota":
-        if list(class_names) == list(DOTA_V1_CLASSES):
+        if set(class_names) == DOTA_V1_CLASS_SET:
             return "dota_v1_full"
         return "dota_subset"
     return "generic"

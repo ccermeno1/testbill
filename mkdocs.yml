@@ -81,6 +81,7 @@ nav:
   - Examples:
     - Training: examples/training.md
     - Inference: examples/inference.md
+    - Docker deploy: examples/deploy.md
     - ONNX export: examples/export.md
   - Contributing: contributing.md
   - Roadmap: roadmap.md

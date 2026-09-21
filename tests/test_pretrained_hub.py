@@ -47,10 +47,16 @@ def test_list_assets():
         "rotated_faster_rcnn_r50_fpn_dota_le90_3x-9951acc6.pth"
     )
     assert assets["rotated_retinanet_dota_le90_1x"] == (
-        "rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.pth"
+        "rotated_retinanet_r50_fpn_dota_le90_1x-b9190270.pth"
     )
     assert assets["rotated_retinanet_dota_le90_3x"] == (
-        "rotated_retinanet_r50_fpn_dota_le90_3x-42968545.pth"
+        "rotated_retinanet_r50_fpn_dota_le90_3x-961aaf73.pth"
+    )
+    assert assets["rotated_retinanet_dota_le90_1x_hbb"] == (
+        "rotated_retinanet_r50_fpn_dota_le90_1x_hbb-9eb38d49.pth"
+    )
+    assert assets["rotated_retinanet_dota_le90_3x_hbb"] == (
+        "rotated_retinanet_r50_fpn_dota_le90_3x_hbb-42968545.pth"
     )
     assert assets["rotated_fcos_dota_le90_1x"] == (
         "rotated_fcos_r50_fpn_dota_le90_1x-a87b6dba.pth"
@@ -226,6 +232,8 @@ def test_manifest_is_valid_json():
     assets = data["assets"]
     assert "rotated_retinanet_dota_le90_1x" in assets
     assert "rotated_retinanet_dota_le90_3x" in assets
+    assert "rotated_retinanet_dota_le90_1x_hbb" in assets
+    assert "rotated_retinanet_dota_le90_3x_hbb" in assets
     assert "rotated_faster_rcnn_dota_le90_1x" in assets
     assert "rotated_faster_rcnn_dota_le90_3x" in assets
     assert "rotated_fcos_dota_le90_1x" in assets
@@ -245,8 +253,10 @@ def test_manifest_eval_map50_is_eval_val_not_task1():
         "rotated_faster_rcnn_dota_le90_3x": (0.8346, 0.7448),
         "rotated_fcos_dota_le90_1x": (0.7513, 0.7307),
         "rotated_fcos_dota_le90_3x": (0.8232, 0.7291),
-        "rotated_retinanet_dota_le90_1x": (0.6820, 0.6787),
-        "rotated_retinanet_dota_le90_3x": (0.7651, 0.7070),
+        "rotated_retinanet_dota_le90_1x": (0.7112, 0.7172),
+        "rotated_retinanet_dota_le90_3x": (0.7856, 0.7389),
+        "rotated_retinanet_dota_le90_1x_hbb": (0.6820, 0.6787),
+        "rotated_retinanet_dota_le90_3x_hbb": (0.7651, 0.7070),
     }
     for slug, (eval_val, task1) in expected.items():
         entry = assets[slug]

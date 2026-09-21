@@ -41,7 +41,7 @@ IMAGE_DEMO_DEVICE ?= cuda:0
 IMAGE_DEMO_OUT_DIR ?= demo/out
 DEMO_DIR ?= demo
 
-# ONNX export (python -m export; see export/README.md). Independent of CONFIG used by make train.
+# ONNX export (odet export; see export/README.md). Independent of CONFIG used by make train.
 EXPORT_CONFIG ?= configs/rotated_fcos/dota_le90_1x.json
 EXPORT_CKPT ?= pretrained/rotated_fcos_r50_fpn_dota_le90_1x-a87b6dba.pth
 EXPORT_MODE ?= rotated_fcos_pre_nms
@@ -102,7 +102,7 @@ help:
 	@echo "  make viewer                 - Gradio viewer (VIEWER_PRED_DIR= or latest predictions/; see docs/eval-reports/)"
 	@echo "  make demo                   - image_demo on all top-level images in DEMO_DIR ($(DEMO_DIR)) → $(IMAGE_DEMO_OUT_DIR)/"
 	@echo ""
-	@echo "=== ONNX export (python -m export; not an odet subcommand) ==="
+	@echo "=== ONNX export (odet export; ONNX only) ==="
 	@echo "  make export-onnx            - checkpoint → onnx_export/model.onnx + consumer sidecars"
 	@echo "  make export-demo            - bundled plane image + NMS assertions"
 	@echo "  make export-verify          - ORT zeros smoke on onnx_export/model.onnx"
@@ -513,7 +513,7 @@ clean:
 test:
 	PYTHONPATH=$(PYTHONPATH) $(PYTEST) $(TESTS)
 
-# --- ONNX export (python -m export; artifacts in onnx_export/) ---
+# --- ONNX export (odet export; artifacts in onnx_export/) ---
 # Usage:
 #   make export-onnx
 #   make export-onnx EXPERIMENT=runs/rotated_fcos/<timestamp>

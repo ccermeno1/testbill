@@ -1,7 +1,7 @@
 {
   "model_type": "rotated_retinanet",
   "experiment_timestamp": "20260912-105343",
-  "source_recipe": "configs/rotated_retinanet/dota_le90_1x.json",
+  "source_recipe": "configs/rotated_retinanet/dota_le90_1x_hbb.json",
   "source_code_root": "/path/to/oriented-det",
   "git_commit": "d69ff877453781ca6889edd8f475367fa236a317",
   "git_describe": "v0.2.0-5-gd69ff87-dirty",

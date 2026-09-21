@@ -43,7 +43,8 @@ https://dl4eo.github.io/oriented-det/
 - **roadmap.md** — Public release plan (v0.3 datasets + ONNX restore; next v0.4 RTMDet-R / YOLO-OBB)
 - **user-guide/configuration.md** — Canonical JSON training config reference
 - **eval-reports/** — Published eval-val reports per Hub slug (markdown + analysis JSON); see [eval-reports/README.md](eval-reports/README.md). Raw `predictions.json` lives in gitignored `predictions/`.
-- **examples/export.md** — ONNX export (`python -m export`)
+- **examples/deploy.md** — Docker Tile Geo Process example
+- **examples/export.md** — ONNX export (`odet export`)
 - **code-analysis-report.md** — Deep code/doc analysis (2026-06-15): inventory, validation, findings
 - **mkdocs.yml** — MkDocs configuration and nav
 - **site/** — Generated HTML (created by `mkdocs build`)

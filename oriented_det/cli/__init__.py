@@ -28,6 +28,7 @@ _COMMANDS: Dict[str, Tuple[str, str]] = {
     "labels-to-comma": ("tools.dota_labels_to_comma", "odet-labels-to-comma"),
     "free-gpu": ("tools.free_gpu", "odet-free-gpu"),
     "pretrained": ("tools.pretrained_download", "odet-pretrained"),
+    "export": ("export.cli", "odet-export"),
 }
 
 
@@ -42,6 +43,7 @@ def _print_help() -> None:
     print("  odet train --config configs/oriented_rcnn/dota_le90_1x.json")
     print("  odet train-multi-gpu --config configs/oriented_rcnn/dota_le90_1x.json")
     print("  odet preds --experiment-dir runs/oriented_rcnn/<id>")
+    print("  odet export onnx --config path/to/config.json --checkpoint path/to/model.pth")
     print("  odet playground-csv --data-root /path/to/playground")
 
 

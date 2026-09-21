@@ -4,6 +4,27 @@ All notable changes to OrientedDet will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-21
+
+Patch: Rotated RetinaNet Hub default is **OBB** (no suffix). Circum-HBB lives at `*_hbb`. Official Task 1 **71.72%** (1×) / **73.89%** (3×).
+
+### Added
+
+- **Rotated RetinaNet 1× OBB Hub** — `rotated_retinanet_dota_le90_1x` is now exact convex IoU assign (`use_hbb_for_matching: false`). Official Task 1 **71.72%** (AP75 43.46, COCO mAP 42.18; deploy **0.25**; leaky eval-val 71.12%; ahead of MMRotate OBB 68.42%). Recipe: [`dota_le90_1x.json`](../configs/rotated_retinanet/dota_le90_1x.json).
+- **Rotated RetinaNet 3× OBB Hub** — `rotated_retinanet_dota_le90_3x` inherits 1× OBB (36 epochs). Official Task 1 **73.89%** (AP75 47.11, COCO mAP 44.63; deploy **0.25**; leaky eval-val 78.56%). Recipe: [`dota_le90_3x.json`](../configs/rotated_retinanet/dota_le90_3x.json).
+- **HBB Hub slugs** — previous circum-HBB weights: `rotated_retinanet_dota_le90_1x_hbb` (**67.87%** Task 1) and `rotated_retinanet_dota_le90_3x_hbb` (**70.70%** Task 1).
+- **`odet export`** — ONNX-only (`onnx`, `infer`, `demo`, `preds`). Same CLI as `python -m export`. TensorFlow / SavedModel stay removed.
+
+### Changed
+
+- Un-suffixed RetinaNet 1×/3× recipes are OBB; HBB is `dota_le90_*_hbb.json`. v0.3.0 `hf://rotated_retinanet_dota_le90_1x` (HBB) and `…_3x` (HBB) map to the `_hbb` slugs in 0.3.1. Old Hub filenames stay for 0.3.0 clients.
+- RetinaNet OBB deploy floor is **0.25** (eval-val F1 0.30 − 0.05). HBB stays **0.35**.
+
+### Fixed
+
+- Deploy `generate_description.py` treats a DOTA class list as **v1 full** by set equality (Hub sidecars are alphabetical, not `DOTA_V1_CLASSES` order).
+- RetinaNet convex-IoU hull padding no longer fills unused shoelace slots with an exterior dummy vertex (that clamped some IoUs to 1.0). Unused slots repeat the first hull vertex.
+
 ## [0.3.0] - 2026-09-19
 
 Dataset release: native **HRSC2016**, **FAIR1M**, **SSDD**, and **HRSID** loaders; HRSC Hub 3× zoo; DOTA zoo refreshed to official Task 1 numbers (advertise / finetune from **1×**). Restores **ONNX-only** export (`python -m export`) after dropping the 0.2 TensorFlow stack.

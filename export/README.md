@@ -14,13 +14,13 @@ Exporting a new graph from a checkpoint still needs oriented-det. From the repo 
 
 ```bash
 uv pip install -e ".[export]"
-python -m export onnx \
+odet export onnx \
   --config runs/rotated_fcos/<ts>/config.json \
   --checkpoint runs/rotated_fcos/<ts>/checkpoints/checkpoint_best.pth \
   --output ./onnx_export/model.onnx
 ```
 
-Default mode is `rotated_fcos_pre_nms`. Artifacts land in [`../onnx_export/`](../onnx_export/README.md). This is **not** an `odet` subcommand.
+`python -m export` is the same CLI. Default mode is `rotated_fcos_pre_nms`. Artifacts land in [`../onnx_export/`](../onnx_export/README.md). TensorFlow / SavedModel are not supported.
 
 Makefile wrappers (same defaults: FCOS DOTA 1× Hub weights):
 
@@ -99,7 +99,7 @@ User-facing walkthrough: [docs/examples/export.md](../docs/examples/export.md). 
 | [postprocess.py](postprocess.py) | Pre-NMS tensors → detections |
 | [runtime.py](runtime.py) | ORT inference helper |
 | [ort_runtime.py](ort_runtime.py) | ORT session cache / device |
-| [cli.py](cli.py) | `python -m export` (`onnx`, `infer`, `demo`, `preds`) |
+| [cli.py](cli.py) | `odet export` / `python -m export` (`onnx`, `infer`, `demo`, `preds`) |
 | [scripts/](scripts/README.md) | CLI implementations |
 | [demo/](demo/README.md) | Bundled plane image for `python -m export demo` |
 | [`../onnx_export/`](../onnx_export/README.md) | ONNX artifacts + copies of the consumer Python stack |

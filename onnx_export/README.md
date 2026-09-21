@@ -2,7 +2,7 @@
 
 Consumer bundle written by [`export/`](../export/README.md): **ONNX graph** plus copies of the detection runtime from `export/`.
 
-Source of truth stays under `export/`. At `python -m export onnx`, these are copied next to `model.onnx`:
+Source of truth stays under `export/`. At `odet export onnx`, these are copied next to `model.onnx`:
 
 - `nms.py`, `preprocess.py`, `postprocess.py`, `runtime.py`, `ort_runtime.py`
 - `demo.py`, `infer_onnx.py`

@@ -1,0 +1,9 @@
+{
+  "_base_": ["./dota_le90_1x.json"],
+  "model": {
+    "use_hbb_for_matching": true
+  },
+  "production": {
+    "score_threshold": 0.35
+  }
+}

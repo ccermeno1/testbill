@@ -13,16 +13,13 @@ if str(_REPO_ROOT) not in sys.path:
 
 
 def test_cli_export_commands_map_to_python_modules() -> None:
-    """Export lives in this repo; former names must not be odet subcommands."""
+    """ONNX export is ``odet export``; former TF / hyphenated top-level names stay gone."""
     from export import cli
+    from oriented_det import cli as odet_cli
 
-    try:
-        from oriented_det import cli as odet_cli
-    except ImportError:
-        odet_cli = None
-    if odet_cli is not None:
-        for name in ("export-tf", "export-onnx", "export-detect", "export-savedmodel", "export-preds"):
-            assert name not in odet_cli._COMMANDS
+    assert odet_cli._COMMANDS["export"][0] == "export.cli"
+    for name in ("export-tf", "export-onnx", "export-detect", "export-savedmodel", "export-preds"):
+        assert name not in odet_cli._COMMANDS
     for name, module in (
         ("onnx", "export.scripts.export_onnx"),
         ("infer", "export.scripts.infer_onnx"),
@@ -33,6 +30,46 @@ def test_cli_export_commands_map_to_python_modules() -> None:
     assert "tf" not in cli._COMMANDS
     assert "detect" not in cli._COMMANDS
     assert "savedmodel" not in cli._COMMANDS
+
+
+def test_odet_export_help(capsys) -> None:
+    from oriented_det.cli import main as odet_main
+
+    old_argv = sys.argv
+    try:
+        odet_main(["export"])
+    finally:
+        sys.argv = old_argv
+    out = capsys.readouterr().out
+    assert "odet export" in out
+    assert "onnx" in out
+    assert "TensorFlow" in out
+
+
+def test_odet_rejects_legacy_hyphenated_export_commands() -> None:
+    from oriented_det.cli import main as odet_main
+
+    old_argv = sys.argv
+    try:
+        with pytest.raises(SystemExit) as ei:
+            odet_main(["export-onnx"])
+        assert ei.value.code == 2
+    finally:
+        sys.argv = old_argv
+
+
+def test_odet_export_rejects_tf(capsys) -> None:
+    from oriented_det.cli import main as odet_main
+
+    old_argv = sys.argv
+    try:
+        with pytest.raises(SystemExit) as ei:
+            odet_main(["export", "tf"])
+        assert ei.value.code == 2
+    finally:
+        sys.argv = old_argv
+    err = capsys.readouterr()
+    assert "Unknown command" in err.err
 
 
 @pytest.mark.parametrize(

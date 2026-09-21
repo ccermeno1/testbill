@@ -787,6 +787,8 @@ class TestRotatedRetinaNet:
         assert isinstance(losses, dict)
         assert "loss_classifier" in losses
         assert "loss_box_reg" in losses
+        assert isinstance(losses["retinanet_num_pos"], float)
+        assert losses["retinanet_num_pos"] >= 0.0
         
         # Losses should be scalars
         assert losses["loss_classifier"].dim() == 0

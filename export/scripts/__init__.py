@@ -1,4 +1,4 @@
-"""CLI implementations invoked by ``python -m export``."""
+"""CLI implementations invoked by ``odet export`` / ``python -m export``."""
 
 from __future__ import annotations
 

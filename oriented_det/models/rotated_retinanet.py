@@ -377,6 +377,8 @@ def compute_oriented_retinanet_loss(
         - "loss_classifier": Classification loss (sigmoid focal loss, normalized by the number
           of positive anchors); same TensorBoard name as two-stage detectors
         - "loss_box_reg": Box regression loss (smooth L1)
+        - "retinanet_num_pos" / "retinanet_num_neg" / "retinanet_num_ignore": assignment
+          counts for the batch (Python floats, not part of ``total_loss``)
     """
     if torch is None or F is None:
         raise RuntimeError("PyTorch is required for loss computation.")
@@ -403,6 +405,8 @@ def compute_oriented_retinanet_loss(
     # normalized once by the total number of positive anchors in the batch (avg_factor).
     cls_loss_sums = []
     num_pos_total = 0
+    num_neg_total = 0
+    num_ignore_total = 0
     reg_loss_sums: List[torch.Tensor] = []
     reg_loss_decoded_addends: List[torch.Tensor] = []
     num_reg_pos_total = 0
@@ -585,7 +589,9 @@ def compute_oriented_retinanet_loss(
                     )
                 )
             num_pos_total += int((labels == 1).sum())
-            
+            num_neg_total += int((labels == 0).sum())
+            num_ignore_total += int((labels == -1).sum())
+
             positive_mask = labels == 1
             if not positive_mask.any():
                 continue
@@ -731,6 +737,9 @@ def compute_oriented_retinanet_loss(
     return {
         "loss_classifier": loss_classification,
         "loss_box_reg": loss_box_reg,
+        "retinanet_num_pos": float(num_pos_total),
+        "retinanet_num_neg": float(num_neg_total),
+        "retinanet_num_ignore": float(num_ignore_total),
     }
 
 

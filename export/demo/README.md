@@ -7,6 +7,7 @@ Needs **no oriented-det**. From a checkout that already has `onnx_export/model.o
 ```bash
 pip install -r export/requirements-runtime.txt
 python -m export demo
+# or: odet export demo
 # after export, the same demo also runs from the copied bundle:
 #   python onnx_export/demo.py
 # optional exact polygon IoU:

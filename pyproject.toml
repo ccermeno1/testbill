@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oriented-det"
-version = "0.3.0"
+version = "0.3.1"
 description = "A lightweight, modern PyTorch library for rotated object detection in aerial and satellite imagery"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -93,6 +93,11 @@ Blog = "https://deeplearning.earth"
 
 [project.scripts]
 odet = "oriented_det.cli:main"
+
+[tool.pytest.ini_options]
+# Repo-root packages (`oriented_det`, `tools`, `export`) when invoking `pytest tests/`
+# rather than `python -m pytest` / `make test` (PYTHONPATH).
+pythonpath = ["."]
 
 [tool.setuptools]
 # Ship oriented_det, tools, and the ONNX export producer CLI. Makefile/docs are checkout-only.

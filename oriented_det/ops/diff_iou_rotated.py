@@ -9,8 +9,8 @@ Runs on CPU or CUDA (vectorized PyTorch; no custom kernel). Intersection
 math is fp32 with AMP off, same reason as KFIoU.
 
 Vertex order around the intersection centroid uses ``atan2`` (mmcv dropped
-its CUDA sort for stability). Invalid slots gather a zeroed dummy so extra
-shoelace terms are 0.
+its CUDA sort for stability). Unused hull slots repeat the first intersection
+vertex so extra shoelace terms are 0.
 """
 
 from __future__ import annotations
@@ -110,7 +110,12 @@ def _box1_in_box2(corners1: Tensor, corners2: Tensor) -> Tensor:
 
 
 def _sort_indices(vertices: Tensor, mask: Tensor) -> Tensor:
-    """``(B, N, 24, 2)`` + validity → ``(B, N, 9)`` hull indices (wrap + dummy pad)."""
+    """``(B, N, 24, 2)`` + validity → ``(B, N, 9)`` hull indices (wrap + pad).
+
+    Unused slots repeat the first hull vertex so extra shoelace terms are 0.
+    Padding with an invalid exterior corner (still has real xy) inflates the
+    polygon and clamps IoU to 1.
+    """
     mask_b = mask.bool()
     mask_f = mask_b.to(dtype=vertices.dtype)
     num_valid = mask_f.sum(dim=-1, keepdim=True).clamp(min=1.0)
@@ -121,17 +126,12 @@ def _sort_indices(vertices: Tensor, mask: Tensor) -> Tensor:
     sorted_idx = torch.argsort(ang, dim=-1)
     first8 = sorted_idx[..., :8]
     wrap = first8[..., :1]
-    dummy_idx = torch.argsort(mask_b.to(dtype=vertices.dtype), dim=-1)[..., :1]
     k = mask_b.to(dtype=torch.int64).sum(dim=-1).clamp(max=8)
     slots = torch.arange(9, device=vertices.device).view(1, 1, 9)
-    k_exp = k.unsqueeze(-1)
-    is_vertex = slots < k_exp
-    is_wrap = (slots == k_exp) & (k_exp > 0)
-    first8_pad = torch.cat([first8, first8[..., :1]], dim=-1)
-    dummy_exp = dummy_idx.expand(-1, -1, 9)
+    is_vertex = slots < k.unsqueeze(-1)
+    first8_pad = torch.cat([first8, wrap], dim=-1)
     wrap_exp = wrap.expand(-1, -1, 9)
-    out = torch.where(is_vertex, first8_pad, dummy_exp)
-    return torch.where(is_wrap, wrap_exp, out)
+    return torch.where(is_vertex, first8_pad, wrap_exp)
 
 
 def _intersection_area(corners1: Tensor, corners2: Tensor) -> Tensor:

@@ -15,6 +15,9 @@ tools/test_*
 
 # Local deploy overrides (copy from description_overrides.example.json in each deploy tree)
 deploy/description_overrides.json
+deploy/example/app/config.json
+deploy/example/app/description.json
+deploy/example/app/weights/
 
 # Training and prediction folders
 runs/

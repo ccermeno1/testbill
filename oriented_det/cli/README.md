@@ -14,6 +14,7 @@ Install the package (`uv pip install -e .` or `pip install oriented-det`), then 
 | `coco-to-dota` | COCO polygons (or HRSID dump) → DOTA images + labels |
 | `ssdd-to-dota` | SSDD XML/COCO/DOTA → DOTA images + labels |
 | `dota-submit` | DOTA v1.0 Task 1 zip from Hub `hf://` weights, a training run, or `predictions.json` |
+| `export` | ONNX producer (`onnx` / `infer` / `demo` / `preds`; [`export/README.md`](../../export/README.md)) |
 | `labels-to-comma` | Convert DOTA label files to comma-separated format |
 
-Subcommands load implementations from [`tools/`](../../tools/) (train, preds, tiling, …). Reusable inference, checkpoint, and collate helpers live in [`oriented_det/runtime/`](../runtime/). ONNX export is a separate CLI: `python -m export` (see [`export/README.md`](../../export/README.md)). See the main [README](../../README.md#repository-layout).
+Subcommands load implementations from [`tools/`](../../tools/) (train, preds, tiling, …) except **`export`**, which loads [`export.cli`](../../export/cli.py). Reusable inference, checkpoint, and collate helpers live in [`oriented_det/runtime/`](../runtime/). See the main [README](../../README.md#repository-layout).

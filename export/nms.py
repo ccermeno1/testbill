@@ -1,6 +1,6 @@
 """CPU rotated IoU and greedy NMS.
 
-Source of truth: ``export/nms.py``. ``python -m export onnx`` copies this file
+Source of truth: ``export/nms.py``. ``odet export onnx`` copies this file
 with the rest of the consumer stack next to ``model.onnx``. No oriented-det imports.
 
 IoU backends:

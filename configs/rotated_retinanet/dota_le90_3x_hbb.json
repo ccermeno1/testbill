@@ -1,0 +1,7 @@
+{
+  "_base_": ["./dota_le90_1x_hbb.json"],
+  "training": {
+    "num_epochs": 36,
+    "lr_scheduler_milestones": [24, 33]
+  }
+}

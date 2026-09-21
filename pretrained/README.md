@@ -64,7 +64,7 @@ Environment overrides: see [oriented_det/pretrained/README.md](../oriented_det/p
 
 **mAP** below is **official DOTA v1.0 Task 1** when the slug has `eval_task1_map50`. Training-time periodic mAP uses non-empty val tiles only and may be higher.
 
-**Deploy `production.score_threshold`** on DOTA recipes is the eval-val global F1 threshold minus **0.05** (Oriented R-CNN **0.55**, Faster R-CNN **0.6**, RetinaNet **0.35**, FCOS **0.2**). 3× inherits the 1× floor. `make eval-val` still uses score ≥ **0.05**. Oriented R-CNN 3× Hub advertises Task 1 **74.88%** (leaky eval-val 82.92%); RetinaNet 3× Hub advertises Task 1 **70.70%** (leaky eval-val 76.51%); FCOS 3× Hub advertises Task 1 **72.91%** (leaky eval-val 82.32%). **Finetune from 1×**, not 3× — see [oriented_rcnn/README.md — 1x vs 3x](../configs/oriented_rcnn/README.md#1x-vs-3x).
+**Deploy `production.score_threshold`** on DOTA recipes is the eval-val global F1 threshold minus **0.05** (Oriented R-CNN **0.55**, Faster R-CNN **0.6**, RetinaNet OBB **0.25** / HBB **0.35**, FCOS **0.2**). 3× inherits the 1× floor. `make eval-val` still uses score ≥ **0.05**. Oriented R-CNN 3× Hub advertises Task 1 **74.88%** (leaky eval-val 82.92%); RetinaNet 3× OBB Hub advertises Task 1 **73.89%** (leaky eval-val 78.56%); FCOS 3× Hub advertises Task 1 **72.91%** (leaky eval-val 82.32%). **Finetune from 1×**, not 3× — see [oriented_rcnn/README.md — 1x vs 3x](../configs/oriented_rcnn/README.md#1x-vs-3x).
 
 ### Oriented R-CNN R50-FPN
 
@@ -86,12 +86,14 @@ Environment overrides: see [oriented_det/pretrained/README.md](../oriented_det/p
 
 ### Rotated RetinaNet R50-FPN
 
-Hub **1×** is **circum-HBB** assign (`use_hbb_for_matching: true`); ahead of MMRotate HBB **64.55%**. OBB (`configs/rotated_retinanet/dota_le90_1x_obb.json`) is still underway and is **not** on Hub.
+Hub **1× / 3×** are **OBB** assign (`use_hbb_for_matching: false`, MMRotate `RBboxOverlaps2D`); ahead of MMRotate OBB **68.42%**. Circum-HBB lives at `*_hbb`. See [configs/rotated_retinanet/README.md](../configs/rotated_retinanet/README.md#obb-vs-hbb-assignment).
 
 | Slug | Recipe | Official Task 1 | Config | Final config | Final log |
 |------|--------|-----------------|--------|--------------|-----------|
-| `rotated_retinanet_dota_le90_1x` | 1× HBB | **67.87%** (eval-val 68.20%) | [`dota_le90_1x.json`](../configs/rotated_retinanet/dota_le90_1x.json) | [`rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.json`](./rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.json) | [`rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.log`](./rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.log) |
-| `rotated_retinanet_dota_le90_3x` | 3× HBB | **70.70%** (eval-val 76.51%) | [`dota_le90_3x.json`](../configs/rotated_retinanet/dota_le90_3x.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x-42968545.json`](./rotated_retinanet_r50_fpn_dota_le90_3x-42968545.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x-42968545.log`](./rotated_retinanet_r50_fpn_dota_le90_3x-42968545.log) |
+| `rotated_retinanet_dota_le90_1x` | 1× OBB (default) | **71.72%** (eval-val 71.12%) | [`dota_le90_1x.json`](../configs/rotated_retinanet/dota_le90_1x.json) | [`rotated_retinanet_r50_fpn_dota_le90_1x-b9190270.json`](./rotated_retinanet_r50_fpn_dota_le90_1x-b9190270.json) | [`rotated_retinanet_r50_fpn_dota_le90_1x-b9190270.log`](./rotated_retinanet_r50_fpn_dota_le90_1x-b9190270.log) |
+| `rotated_retinanet_dota_le90_3x` | 3× OBB | **73.89%** (eval-val 78.56%) | [`dota_le90_3x.json`](../configs/rotated_retinanet/dota_le90_3x.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x-961aaf73.json`](./rotated_retinanet_r50_fpn_dota_le90_3x-961aaf73.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x-961aaf73.log`](./rotated_retinanet_r50_fpn_dota_le90_3x-961aaf73.log) |
+| `rotated_retinanet_dota_le90_1x_hbb` | 1× circum-HBB | **67.87%** (eval-val 68.20%) | [`dota_le90_1x_hbb.json`](../configs/rotated_retinanet/dota_le90_1x_hbb.json) | [`rotated_retinanet_r50_fpn_dota_le90_1x_hbb-9eb38d49.json`](./rotated_retinanet_r50_fpn_dota_le90_1x_hbb-9eb38d49.json) | [`rotated_retinanet_r50_fpn_dota_le90_1x_hbb-9eb38d49.log`](./rotated_retinanet_r50_fpn_dota_le90_1x_hbb-9eb38d49.log) |
+| `rotated_retinanet_dota_le90_3x_hbb` | 3× circum-HBB | **70.70%** (eval-val 76.51%) | [`dota_le90_3x_hbb.json`](../configs/rotated_retinanet/dota_le90_3x_hbb.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x_hbb-42968545.json`](./rotated_retinanet_r50_fpn_dota_le90_3x_hbb-42968545.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x_hbb-42968545.log`](./rotated_retinanet_r50_fpn_dota_le90_3x_hbb-42968545.log) |
 
 ### Rotated FCOS R50-FPN
 

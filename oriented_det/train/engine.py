@@ -847,6 +847,14 @@ def train_one_epoch(
                 f"match_rate={avg_metrics.get('roi_match_rate', 0.0):.2%}",
                 flush=True,
             )
+        if "retinanet_num_pos" in avg_metrics:
+            print(
+                "  RetinaNet assign: "
+                f"pos={avg_metrics.get('retinanet_num_pos', 0.0):.1f}, "
+                f"neg={avg_metrics.get('retinanet_num_neg', 0.0):.1f}, "
+                f"ignore={avg_metrics.get('retinanet_num_ignore', 0.0):.1f}",
+                flush=True,
+            )
         # Debug: full loss breakdown to compare with MMRotate and spot unbalanced losses.
         if debug:
             loss_keys = [k for k in avg_metrics if k not in ("epoch", "_global_step") and (k == "total_loss" or k.startswith("loss_"))]

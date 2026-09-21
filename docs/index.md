@@ -79,7 +79,7 @@ See [Installation](getting-started/installation.md) for CUDA, macOS, and CPU set
 - **[Getting Started](getting-started/installation.md)** - Installation and quick start guides
 - **[User Guide](user-guide/geometry.md)** - Detailed usage for each module
 - **[API Reference](api/geometry.md)** - Complete API documentation
-- **[Examples](examples/inference.md)** - Training, inference, and [ONNX export](examples/export.md)
+- **[Examples](examples/inference.md)** - Training, inference, [Docker deploy](examples/deploy.md), and [ONNX export](examples/export.md)
 - **[Roadmap](roadmap.md)** - Planned releases (v0.4–v1.0)
 
 ## Roadmap

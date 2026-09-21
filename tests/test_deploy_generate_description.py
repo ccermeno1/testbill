@@ -33,6 +33,7 @@ def test_extract_class_names_from_class_map():
 
 def test_detect_tier_dota_full():
     assert detect_tier(list(DOTA_V1_CLASSES), "dota") == "dota_v1_full"
+    assert detect_tier(list(reversed(DOTA_V1_CLASSES)), "dota") == "dota_v1_full"
 
 
 def test_detect_tier_dota_subset():

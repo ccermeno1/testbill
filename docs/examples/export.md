@@ -2,7 +2,7 @@
 
 Export a trained OrientedDet checkpoint to a **pre-NMS ONNX** graph plus Python preprocess / rotated NMS. Consumers run ONNX Runtime only — no PyTorch and no oriented-det.
 
-The producer CLI is **`python -m export`** from a checkout (not an `odet` subcommand). Folder README: [`export/README.md`](https://github.com/DL4EO/oriented-det/blob/main/export/README.md).
+The producer CLI is **`odet export`** (ONNX only; same as `python -m export`). Folder README: [`export/README.md`](https://github.com/DL4EO/oriented-det/blob/main/export/README.md). Sliding-window tiling and the Tile Geo Process HTTP service stay on the [Docker deploy](deploy.md) path in this release.
 
 ## Install
 
@@ -40,7 +40,7 @@ make export-onnx EXPERIMENT=runs/rotated_faster_rcnn/<timestamp> EXPORT_MODE=fas
 Equivalent CLI (placeholder paths):
 
 ```bash
-python -m export onnx \
+odet export onnx \
   --config /path/to/oriented-det/runs/rotated_fcos/<timestamp>/config.json \
   --checkpoint /path/to/oriented-det/runs/rotated_fcos/<timestamp>/checkpoints/checkpoint_best.pth \
   --output /path/to/oriented-det/onnx_export/model.onnx
@@ -60,8 +60,8 @@ ONNX input is NCHW RGB, already mean/std-normalized, typically `[1, 3, 1024, 102
 ## Infer
 
 ```bash
-python -m export infer --onnx ./onnx_export/model.onnx --smoke
-python -m export infer --onnx ./onnx_export/model.onnx --images /path/to/data/tiles --output ./onnx_export/predictions
+odet export infer --onnx ./onnx_export/model.onnx --smoke
+odet export infer --onnx ./onnx_export/model.onnx --images /path/to/data/tiles --output ./onnx_export/predictions
 make export-demo
 ```
 
@@ -91,7 +91,7 @@ dets = detect_image("tile.jpg", "model.onnx")
 Val-split predictions in the same JSON shape as `odet preds` (then `make export-metrics` / `odet preds --metrics-from-json`):
 
 ```bash
-python -m export preds \
+odet export preds \
   --config /path/to/oriented-det/runs/rotated_fcos/<timestamp>/config.json \
   --onnx /path/to/oriented-det/onnx_export/model.onnx
 ```

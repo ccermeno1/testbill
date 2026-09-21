@@ -10,7 +10,7 @@ This directory holds the **Python modules** that implement `odet` subcommands an
 
 **Thin compatibility modules:** `tools/inference.py` and `tools/helpers.py` re-export `oriented_det.runtime` and emit a deprecation warning; new code should import from `oriented_det.runtime.inference` and `oriented_det.runtime.collate` directly.
 
-**ONNX export** is not in `tools/`. Use `python -m export` / `make export-onnx` ([export/README.md](../export/README.md), [docs/examples/export.md](../docs/examples/export.md)).
+**ONNX export** is not in `tools/`. Use `odet export` / `make export-onnx` ([export/README.md](../export/README.md), [docs/examples/export.md](../docs/examples/export.md)).
 
 ## Quick Start with Makefile
 
@@ -581,7 +581,8 @@ make dota-submit CHECKPOINT=hf://oriented_rcnn_dota_le90_3x \
   TEST_DIR=/path/to/data/DOTA-v1.0/test OUT=work_dirs/Task1_orcnn
 
 # Other DOTA slugs: hf://rotated_faster_rcnn_dota_le90_1x hf://rotated_faster_rcnn_dota_le90_3x
-#   hf://rotated_fcos_dota_le90_1x  hf://rotated_retinanet_dota_le90_3x
+#   hf://rotated_fcos_dota_le90_1x  hf://rotated_retinanet_dota_le90_1x hf://rotated_retinanet_dota_le90_3x
+#   hf://rotated_retinanet_dota_le90_1x_hbb hf://rotated_retinanet_dota_le90_3x_hbb
 
 # Local training run
 odet dota-submit --experiment-dir runs/oriented_rcnn/<id> \

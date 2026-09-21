@@ -9,7 +9,7 @@
 - [test_postprocess.py](test_postprocess.py): Score prefilter vs post-NMS filter parity; pairwise rotated IoU helpers.
 - [test_standalone_runtime.py](test_standalone_runtime.py): Consumer stack (`demo` / `infer` / `runtime`) imports and runs without `oriented_det`. Copied `onnx_export/` bundle imports without the repo `export` package.
 - [test_export_onnx_optional.py](test_export_onnx_optional.py): ONNX export + checker / ORT (skipped unless `onnx` / `onnxruntime` are installed).
-- [test_export_cli.py](test_export_cli.py): ``python -m export`` help/import smoke. Asserts export is **not** an `odet` subcommand. Zip bundle skips `__pycache__`.
+- [test_export_cli.py](test_export_cli.py): ``odet export`` / ``python -m export`` help/import smoke. TensorFlow / hyphenated top-level ``odet export-*`` stay rejected. Zip bundle skips `__pycache__`.
 - [test_ort_runtime.py](test_ort_runtime.py): ORT device/provider helpers.
 
 Run from the oriented-det repo root:

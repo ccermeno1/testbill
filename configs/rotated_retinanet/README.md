@@ -10,56 +10,75 @@ See the [main README](../../README.md) for installation and [configs/README.md](
 
 | File | Purpose |
 |------|---------|
-| [`dota_le90_1x.json`](./dota_le90_1x.json) | **1× DOTA pretrain** (12 epochs, lr 0.0025, batch 2, train+val tiles, H+V+diagonal flips). Inherits [`dota_le90.json`](../_base_/datasets/dota_le90.json) (DOTA `odet stats` mean/std, not ImageNet). Circum-HBB matching; mAP every **4** epochs at `evaluation.train_val_score_threshold` **0.3** (eval-val / Task 1 stay **0.05**). Horizontal priors (`θ = 0`). Deploy `production.score_threshold` **0.35** (eval-val F1 0.40 − 0.05; leaky val **68.20%**, `20260912-105343`). |
-| [`dota_le90_1x_obb.json`](./dota_le90_1x_obb.json) | **1× OBB** (not Hub): same as 1× with `use_hbb_for_matching: false` (`RBboxOverlaps2D`). Same SS 1024/200 tiles and `θ = 0` priors (MMRotate `…_obb_r50_fpn_1x_dota_le90`). |
-| [`dota_le90_1x_rr.json`](./dota_le90_1x_rr.json) | **1× + RR** (not Hub): same as 1× plus `PolyRandomRotate` p=0.5 **±180°** after flips (`auto_bound=False`). Same SS 1024/200 tiles and `θ = 0` priors. |
-| [`dota_le90_3x.json`](./dota_le90_3x.json) | **3× DOTA pretrain** — inherits 1×; 36 epochs, milestones [24, 33]. Hub: `rotated_retinanet_dota_le90_3x` (**70.70%** Task 1; leaky eval-val **76.51%**, `20260913-031811`). |
+| [`dota_le90_1x.json`](./dota_le90_1x.json) | **1× DOTA pretrain (OBB, default).** 12 epochs, lr 0.0025, batch 2, train+val tiles, H+V+diagonal flips. Inherits [`dota_le90.json`](../_base_/datasets/dota_le90.json) (DOTA `odet stats` mean/std). `use_hbb_for_matching: false` (MMRotate `RBboxOverlaps2D`). Horizontal priors (`θ = 0`). In-train mAP every **4** epochs at score **0.3** (eval-val / Task 1 stay **0.05**). Deploy `production.score_threshold` **0.25** (eval-val F1 0.30 − 0.05). Hub: `rotated_retinanet_dota_le90_1x` (**71.72%** Task 1; leaky eval-val **71.12%**, `20260919-093746`). |
+| [`dota_le90_1x_hbb.json`](./dota_le90_1x_hbb.json) | **1× circum-HBB** (not the default): same as 1× with `use_hbb_for_matching: true`. Deploy **0.35** (eval-val F1 0.40 − 0.05). Hub: `rotated_retinanet_dota_le90_1x_hbb` (**67.87%** Task 1; leaky eval-val **68.20%**, `20260912-105343`). |
+| [`dota_le90_3x.json`](./dota_le90_3x.json) | **3× OBB** — inherits 1×; 36 epochs, milestones [24, 33]. Hub: `rotated_retinanet_dota_le90_3x` (**73.89%** Task 1; leaky eval-val **78.56%**, `20260920-054001`). |
+| [`dota_le90_3x_hbb.json`](./dota_le90_3x_hbb.json) | **3× circum-HBB** — inherits 1× HBB; 36 epochs, milestones [24, 33]. Hub: `rotated_retinanet_dota_le90_3x_hbb` (**70.70%** Task 1; leaky eval-val **76.51%**, `20260913-031811`). |
+| [`dota_le90_1x_rr.json`](./dota_le90_1x_rr.json) | **1× OBB + RR** (not Hub): default 1× plus `PolyRandomRotate` p=0.5 **±180°** after flips (`auto_bound=False`). |
 
 Recipes keep `loss.loss_type: focal` (unweighted). Set `focal_weighted` to apply `loss.class_weight_*` to sigmoid-focal class columns; `background_weight` is ignored.
 
 Hub **`eval_map50`** in the manifest is from **`odet preds`** on val tiles (see [pretrained/README.md](../../pretrained/README.md)), not the training **final mAP** printed at the end of `train.log`.
 
-### First run (1× baseline)
+### OBB vs HBB assignment
+
+RetinaNet MaxIoU (pos 0.5 / neg 0.4, concat P3–P7 then split) can rank anchors with two IoUs:
+
+| | **OBB** (default) | **HBB** (`*_hbb.json`) |
+|--|--|--|
+| Config | `use_hbb_for_matching: false` | `use_hbb_for_matching: true` |
+| IoU | Exact convex rotated IoU (`diff_iou_rotated_2d`, MMRotate `RBboxOverlaps2D`) | Circum-HBB (axis-aligned box of the OBB) |
+| MMRotate zoo | [68.42](https://github.com/open-mmlab/mmrotate/blob/main/configs/rotated_retinanet/rotated_retinanet_obb_r50_fpn_1x_dota_le90.py) | 64.55 |
+| OrientedDet 1× Task 1 | **71.72** | **67.87** |
+| OrientedDet 3× Task 1 | **73.89** | **70.70** |
+
+Horizontal priors (`θ = 0`) are the same. OBB IoU is stricter on thin rotated objects (ships, vehicles): a θ=0 prior vs a ~45° sliver often falls below 0.4 OBB IoU while circum-HBB still exceeds 0.5. That is why OBB helps dense elongated classes and why a 100-sample IoU assigner (Sep 11) looked like “OBB is worse.” **Do not add `anchor_angles`** for the MMRotate OBB 1× column.
+
+v0.3.0 advertised Hub 1×/3× as HBB. From **v0.3.1** the un-suffixed slugs are OBB; previous HBB weights live at `*_hbb`.
+
+### First run (1× OBB)
 
 ```bash
 python tools/train.py --config configs/rotated_retinanet/dota_le90_1x.json
 ```
 
-### 1× OBB (ablation)
-
-Same L1 1× (H+V+D flips, **`θ = 0` priors**, 1024/200 tiles) with MMRotate OBB assign (`use_hbb_for_matching: false`, exact `RBboxOverlaps2D`). This is the [68.42 zoo column](https://github.com/open-mmlab/mmrotate/blob/main/configs/rotated_retinanet/rotated_retinanet_obb_r50_fpn_1x_dota_le90.py). **Do not add `anchor_angles`** — MMRotate OBB 1× is horizontal priors; `[-45, 0, 45]` was tried on HBB and is not this recipe. Not Hub.
+### 1× circum-HBB
 
 ```bash
-make train CONFIG=configs/rotated_retinanet/dota_le90_1x_obb.json
+make train CONFIG=configs/rotated_retinanet/dota_le90_1x_hbb.json
 ```
 
-### 1× + RR (ablation)
+### 1× OBB + RR (ablation)
 
-Same L1 1× (H+V+D flips, `θ = 0` priors, 1024/200 tiles) with MMRotate `PolyRandomRotate` after flips: p=0.5, **±180°**, `auto_bound=False`. Compare eval-val to Hub 1× **68.20%** (same SS val tiles). Not Hub.
+Same L1 1× OBB with MMRotate `PolyRandomRotate` after flips: p=0.5, **±180°**, `auto_bound=False`. Not Hub.
 
 ```bash
 make train CONFIG=configs/rotated_retinanet/dota_le90_1x_rr.json
 ```
 
-### Oriented priors (tried; not a recipe)
-
-A 1× L1 run with `model.anchor_angles: [-45, 0, 45]` (27 priors/location) was **+0.5 mAP** vs the old June 1× (64.63% vs 64.14% eval-val) with ship/small-vehicle/bridge regressions. No checked-in recipe. Hub 1×/3× stay `θ = 0`.
-
-### ProbIoU as primary (tried; not a Hub recipe)
-
-We ran a **1× ProbIoU primary** ablation (decoded ProbIoU + encoded L1 aux **0.1**, same loss stack pattern as Rotated Faster R-CNN 1×). In-training mAP was essentially tied with L1 (~63% vs the old June L1 eval-val **64.14%**) with large vehicle-class regressions — **not published**. The code path remains (`roi_box_reg_main_loss_type: probiou`); there is no checked-in recipe config. Prefer the L1 1×/3× Hub recipes above.
-
-**FPN P6/P7:** With `fpn_extra_level: true`, torchvision emits FPN keys `p6`/`p7`. Earlier releases dropped those keys in `extract_backbone_features`, training on 3 levels only and logging a stride mismatch warning — restart after updating to pick up all 5 levels (strides 8–128).
-
-### 3× from ImageNet
+### 3× OBB
 
 ```bash
 python tools/train.py --config configs/rotated_retinanet/dota_le90_3x.json
 ```
 
-Same train-val decode as 1× (`evaluation.train_val_score_threshold: 0.3` for in-train mAP, `preds_score_threshold: 0.05` for eval-val / Task 1, `model.max_detections_per_image: 2000`). Deploy `production.score_threshold` inherits 1× (**0.35**; eval-val F1 0.40 − 0.05). Hub sidecar matches.
+Same train-val decode as 1× (`evaluation.train_val_score_threshold: 0.3`, `preds_score_threshold: 0.05`, `model.max_detections_per_image: 2000`). Deploy inherits 1× (**0.25**). Hub: `rotated_retinanet_dota_le90_3x`. HBB 3× is `rotated_retinanet_dota_le90_3x_hbb`.
 
-**TensorBoard:** The focal classification loss is logged as `train/loss_classifier` (same tag as Rotated Faster R-CNN), alongside `train/loss_box_reg`.
+```bash
+make train CONFIG=configs/rotated_retinanet/dota_le90_3x_hbb.json
+```
+
+### Oriented priors (tried; not a recipe)
+
+A 1× L1 run with `model.anchor_angles: [-45, 0, 45]` (27 priors/location) was **+0.5 mAP** vs the old June 1× (64.63% vs 64.14% eval-val) with ship/small-vehicle/bridge regressions. No checked-in recipe. Hub stays `θ = 0`.
+
+### ProbIoU as primary (tried; not a Hub recipe)
+
+We ran a **1× ProbIoU primary** ablation (decoded ProbIoU + encoded L1 aux **0.1**, same loss stack pattern as Rotated Faster R-CNN 1×). In-training mAP was essentially tied with L1 (~63% vs the old June L1 eval-val **64.14%**) with large vehicle-class regressions — **not published**. The code path remains (`roi_box_reg_main_loss_type: probiou`); there is no checked-in recipe config. Prefer the L1 Hub recipes above.
+
+**FPN P6/P7:** With `fpn_extra_level: true`, torchvision emits FPN keys `p6`/`p7`. Earlier releases dropped those keys in `extract_backbone_features`, training on 3 levels only and logging a stride mismatch warning — restart after updating to pick up all 5 levels (strides 8–128).
+
+**TensorBoard:** The focal classification loss is logged as `train/loss_classifier` (same tag as Rotated Faster R-CNN), alongside `train/loss_box_reg`. Epoch logs also print `RetinaNet assign: pos=…, neg=…, ignore=…`.
 
 ## Abstract
 
@@ -179,7 +198,7 @@ Rotated RetinaNet uses a 5-parameter encoding scheme for oriented bounding boxes
 - **Anchors**: `anchor_octave_base_scale: 4`, `anchor_scales_per_octave: 3`, ratios `[0.5, 1.0, 2.0]`, Hub angle `0` (`model.anchor_angles` optional degrees)
 - **Head**: separate `cls_convs` / `reg_convs` (4×3×3 each) + 3×3 `conv_cls` / `conv_bbox` (MMRotate `RetinaHead`)
 - **FPN extra levels**: `LastLevelP6P7` convs on C5 (`fpn_extra_level: true`), not max-pool P6
-- **Assigner (Hub)**: circum-HBB IoU (`use_hbb_for_matching: true`, MMRotate `hbb` column), pos 0.5 / neg 0.4, all-level concat then split (MMRotate `get_targets`). Set `false` for OBB (`RBboxOverlaps2D` via AABB prune + `diff_iou_rotated_2d`); Hub 1× ships HBB (Task 1 **67.87%** vs MMRotate HBB **64.55**; OBB still underway)
+- **Assigner (Hub default)**: exact convex rotated IoU (`use_hbb_for_matching: false`, MMRotate `RBboxOverlaps2D` via AABB prune + `diff_iou_rotated_2d`), pos 0.5 / neg 0.4, all-level concat then split (MMRotate `get_targets`). Hub 1× Task 1 **71.72%** vs MMRotate OBB **68.42**. Circum-HBB is [`dota_le90_1x_hbb.json`](./dota_le90_1x_hbb.json) / [`dota_le90_3x_hbb.json`](./dota_le90_3x_hbb.json).
 - **Evaluation**: mAP every 4 epochs (`compute_map_every_n_epochs: 4`); non-mAP val epochs skip CPU GT–IoU matching (forward + detection counts only)
 - **Inference (val/train)**: GPU sampling NMS (`model.final_nms_use_cpu: false`); class-aware by default (`model.nms_class_agnostic: false`); set `model.nms_class_agnostic: true` (and `production.nms_class_agnostic` if deploy should match) for lookalike vehicle classes; pre-NMS score filter at `inference_pre_nms_score_threshold` (0.05)
 - **Box coder**: `roi_norm_factor: null`, `roi_edge_swap: true`, L1 regression loss; encode/decode **`proj_xy=True`**
@@ -197,7 +216,7 @@ Following MMRotate's design:
 - **Negative anchors**: IoU < 0.4 with all ground-truth boxes (configurable via `negative_iou_threshold`)
 - **Ignored anchors**: Between thresholds (0.4 ≤ IoU ≤ 0.5)
 
-Hub recipes use **circum-HBB IoU** (`use_hbb_for_matching: true`). With `false`, the RetinaNet-only matcher (`retinanet_assign.py`) does AABB prune then exact convex IoU (`diff_iou_rotated_2d`, MMRotate `RBboxOverlaps2D`). Same MaxIoU rules (pos 0.5 / neg 0.4, `min_pos_iou=0` only if max IoU `> 0`). Assignment concatenates P3–P7 then splits labels by level (MMRotate `get_targets`). Two-stage detectors keep the shared `oriented_box_iou_gpu` matcher.
+Default Hub recipes use **exact convex rotated IoU** (`use_hbb_for_matching: false`). The RetinaNet-only matcher (`retinanet_assign.py`) does AABB prune then `diff_iou_rotated_2d` (MMRotate `RBboxOverlaps2D`). Circum-HBB is the `*_hbb.json` recipes. Same MaxIoU rules (pos 0.5 / neg 0.4, `min_pos_iou=0` only if max IoU `> 0`). Assignment concatenates P3–P7 then splits labels by level (MMRotate `get_targets`). Two-stage detectors keep the shared `oriented_box_iou_gpu` matcher.
 
 ### Training Configuration (MMRotate 1×)
 
@@ -227,14 +246,16 @@ See **Results and models** below for this repo’s Task 1 / eval-val numbers. Ro
 
 ## Results and models
 
-DOTA1.0 (pretrain: **train+val / val**). Advertised **1× / 3×** mAP is official **Task 1**. Leaky `make eval-val` is noted in the report. Hub 1×/3× are **circum-HBB** (`use_hbb_for_matching: true`); OBB ablation is [`dota_le90_1x_obb.json`](./dota_le90_1x_obb.json) (not Hub yet).
+DOTA1.0 (pretrain: **train+val / val**). Advertised **1× / 3×** mAP is official **Task 1**. Leaky `make eval-val` is noted in the report. Default 1×/3× are **OBB** (`use_hbb_for_matching: false`). Circum-HBB is `*_hbb`.
 
 | Backbone | mAP | Angle | lr schd | Aug | BS | Config | Final config | Final log | Download |
 | :----------------------: | :---: | :---: | :-----: | :-: | :--: | :----: | :----------: | :-------: | :----: |
-| ResNet50 (1024,1024,200) | **67.87** Task 1 (HBB; eval-val 68.20) | le90 | 1× | H+V+D | 2 | [`dota_le90_1x.json`](./dota_le90_1x.json) | [`rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.json`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.json) | [`rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.log`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_1x-9eb38d49.log) | `hf://rotated_retinanet_dota_le90_1x` |
-| ResNet50 (1024,1024,200) | **70.70** Task 1 (HBB; eval-val 76.51) | le90 | 3× | H+V+D | 2 | [`dota_le90_3x.json`](./dota_le90_3x.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x-42968545.json`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_3x-42968545.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x-42968545.log`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_3x-42968545.log) | `hf://rotated_retinanet_dota_le90_3x` |
+| ResNet50 (1024,1024,200) | **71.72** Task 1 (OBB; eval-val 71.12) | le90 | 1× | H+V+D | 2 | [`dota_le90_1x.json`](./dota_le90_1x.json) | [`rotated_retinanet_r50_fpn_dota_le90_1x-b9190270.json`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_1x-b9190270.json) | [`rotated_retinanet_r50_fpn_dota_le90_1x-b9190270.log`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_1x-b9190270.log) | `hf://rotated_retinanet_dota_le90_1x` |
+| ResNet50 (1024,1024,200) | **73.89** Task 1 (OBB; eval-val 78.56) | le90 | 3× | H+V+D | 2 | [`dota_le90_3x.json`](./dota_le90_3x.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x-961aaf73.json`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_3x-961aaf73.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x-961aaf73.log`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_3x-961aaf73.log) | `hf://rotated_retinanet_dota_le90_3x` |
+| ResNet50 (1024,1024,200) | **67.87** Task 1 (HBB; eval-val 68.20) | le90 | 1× | H+V+D | 2 | [`dota_le90_1x_hbb.json`](./dota_le90_1x_hbb.json) | [`rotated_retinanet_r50_fpn_dota_le90_1x_hbb-9eb38d49.json`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_1x_hbb-9eb38d49.json) | [`rotated_retinanet_r50_fpn_dota_le90_1x_hbb-9eb38d49.log`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_1x_hbb-9eb38d49.log) | `hf://rotated_retinanet_dota_le90_1x_hbb` |
+| ResNet50 (1024,1024,200) | **70.70** Task 1 (HBB; eval-val 76.51) | le90 | 3× | H+V+D | 2 | [`dota_le90_3x_hbb.json`](./dota_le90_3x_hbb.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x_hbb-42968545.json`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_3x_hbb-42968545.json) | [`rotated_retinanet_r50_fpn_dota_le90_3x_hbb-42968545.log`](../../pretrained/rotated_retinanet_r50_fpn_dota_le90_3x_hbb-42968545.log) | `hf://rotated_retinanet_dota_le90_3x_hbb` |
 
-Eval reports: [`docs/eval-reports/rotated_retinanet_dota_le90_1x/`](../../docs/eval-reports/rotated_retinanet_dota_le90_1x/model_analysis.md), [`docs/eval-reports/rotated_retinanet_dota_le90_3x/`](../../docs/eval-reports/rotated_retinanet_dota_le90_3x/model_analysis.md).
+Eval reports: [`docs/eval-reports/rotated_retinanet_dota_le90_1x/`](../../docs/eval-reports/rotated_retinanet_dota_le90_1x/model_analysis.md), [`docs/eval-reports/rotated_retinanet_dota_le90_3x/`](../../docs/eval-reports/rotated_retinanet_dota_le90_3x/model_analysis.md), [`docs/eval-reports/rotated_retinanet_dota_le90_1x_hbb/`](../../docs/eval-reports/rotated_retinanet_dota_le90_1x_hbb/model_analysis.md), [`docs/eval-reports/rotated_retinanet_dota_le90_3x_hbb/`](../../docs/eval-reports/rotated_retinanet_dota_le90_3x_hbb/model_analysis.md).
 
 ## Usage
 

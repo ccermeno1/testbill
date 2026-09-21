@@ -1,4 +1,4 @@
-"""ONNX export package for OrientedDet. CLI: ``python -m export``.
+"""ONNX export package for OrientedDet. CLI: ``odet export`` / ``python -m export``.
 
 Inference (``demo`` / ``infer``) needs only numpy, Pillow, and onnxruntime —
 see ``requirements-runtime.txt``. The same consumer modules are copied into

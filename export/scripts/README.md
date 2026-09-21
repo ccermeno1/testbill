@@ -1,13 +1,13 @@
 # export/scripts
 
-CLI implementations invoked by ``python -m export <command>`` from the **oriented-det** repo root.
+CLI implementations invoked by ``odet export <command>`` or ``python -m export <command>`` from the **oriented-det** repo root.
 
 - **demo / infer:** [requirements-runtime.txt](../requirements-runtime.txt) only (numpy, Pillow, onnxruntime). The consumer stack (`runtime.py`, `preprocess.py`, `postprocess.py`, `nms.py`, `ort_runtime.py`, plus these scripts) is copied into `onnx_export/` at export. No oriented-det.
 - **onnx / preds:** oriented-det plus [requirements-export.txt](../requirements-export.txt).
 
 Default artifact directory is [`../../onnx_export/`](../../onnx_export/README.md). The deliverable is **`onnx_export/model.onnx`**.
 
-| Script | `python -m export` | Purpose |
+| Script | `odet export` | Purpose |
 |--------|-------------------|---------|
 | [export_onnx.py](export_onnx.py) | `onnx` | PyTorch → ONNX + sidecar meta (preprocess / postprocess). Default `rotated_fcos_pre_nms`. |
 | [infer_onnx.py](infer_onnx.py) | `infer` | ORT + Python NMS on a folder (or `--smoke`). |

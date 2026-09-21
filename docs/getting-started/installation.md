@@ -76,7 +76,7 @@ For ONNX export (checkpoint → ONNX, plus ONNX Runtime infer):
 
 ```bash
 uv pip install -e ".[export]"
-python -m export --help
+odet export --help
 ```
 
 See [ONNX export](../examples/export.md).

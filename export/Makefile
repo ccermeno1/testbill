@@ -43,16 +43,16 @@ else
   EXPORT_CKPT := $(call FIND_CKPT,$(EXPERIMENT))
 endif
 
-## help: Show export Makefile targets (thin wrappers around python -m export)
+## help: Show export Makefile targets (thin wrappers around odet export)
 help:
-	@echo "OrientedDet ONNX export — Makefile targets (python -m export → onnx_export/)"
+	@echo "OrientedDet ONNX export — Makefile targets (odet export → onnx_export/)"
 	@echo "===================================="
 	@echo ""
-	@echo "  make export-onnx     - python -m export onnx → $(ONNX_OUT)"
+	@echo "  make export-onnx     - odet export onnx → $(ONNX_OUT)"
 	@echo "  make export-demo     - bundled plane image + NMS assertions (no oriented-det)"
 	@echo "  make export-zip      - zip $(ARTIFACTS)/ (no __pycache__) → $(REPO_ROOT)/onnx_export.zip"
 	@echo "  make export-verify   - ORT zeros smoke on that ONNX"
-	@echo "  make export-preds    - python -m export preds → $(PREDICTIONS_DIR)/<ts>/"
+	@echo "  make export-preds    - odet export preds → $(PREDICTIONS_DIR)/<ts>/"
 	@echo "  make export-metrics  - Offline mAP/PR on METRICS_PRED_DIR or newest ONNX predictions/"
 	@echo "  make test            - pytest export/tests/"
 	@echo ""
@@ -80,7 +80,7 @@ export-onnx:
 		exit 1; \
 	fi
 	@mkdir -p "$(ARTIFACTS)"
-	cd "$(REPO_ROOT)" && python -m export onnx \
+	cd "$(REPO_ROOT)" && odet export onnx \
 	  --config "$(EXPORT_CONFIG)" \
 	  --checkpoint "$(EXPORT_CKPT)" \
 	  --output "$(ONNX_OUT)" \
@@ -92,11 +92,11 @@ export-onnx:
 
 ## export-verify: ORT zeros smoke on ONNX_OUT
 export-verify:
-	cd "$(REPO_ROOT)" && python -m export infer --onnx "$(ONNX_OUT)" --smoke
+	cd "$(REPO_ROOT)" && odet export infer --onnx "$(ONNX_OUT)" --smoke
 
 ## export-demo: Bundled plane image + NMS assertions
 export-demo:
-	cd "$(REPO_ROOT)" && python -m export demo --onnx "$(ONNX_OUT)"
+	cd "$(REPO_ROOT)" && odet export demo --onnx "$(ONNX_OUT)"
 
 ## export-zip: Zip ARTIFACTS without Python cache
 EXPORT_ZIP ?= $(REPO_ROOT)/onnx_export.zip
@@ -121,7 +121,7 @@ export-preds:
 	if [ -n "$(VAL_DIR)" ]; then ROOT_ARGS="$$ROOT_ARGS --val-dir $(VAL_DIR)"; fi; \
 	TS=$$(date +%Y%m%d_%H%M%S); \
 	mkdir -p "$(PREDICTIONS_DIR)"; \
-	cd "$(REPO_ROOT)" && python -m export preds \
+	cd "$(REPO_ROOT)" && odet export preds \
 	  --config "$(EXPORT_CONFIG)" \
 	  --onnx "$(ONNX_OUT)" \
 	  --reference-checkpoint "$(EXPORT_CKPT)" \

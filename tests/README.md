@@ -3,10 +3,10 @@
 Run the full test suite from the repository root:
 
 ```bash
-pytest
+python -m pytest tests/ -q
 ```
 
-Or with the Makefile:
+Or with the Makefile (`PYTHONPATH` set to the repo root):
 
 ```bash
 make test
@@ -47,6 +47,7 @@ CI runs `pytest tests/ export/tests/` on push/PR (see `.github/workflows/test.ym
 - **test_pretrained_hub.py** — Hugging Face Hub manifest and download helpers
 - **test_sliding_window_margin.py**, **test_metrics_margin_filter.py** — Inference margin helpers; last-tile flush to image edge; pad vs DOTA native sliding-window routing; window micro-batch default (8 GPU / no auto-probe)
 - **test_deploy_generate_description.py** — Deploy script smoke
+- **test_viewer_gradio_compat.py** — Gradio slider patch (`oriented-det[viewer]`; skipped if Gradio is missing)
 
 Export tests live under [`export/tests/`](../export/tests/README.md) (`make export-test`).
 

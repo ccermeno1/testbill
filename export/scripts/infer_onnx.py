@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run a pre-NMS ONNX export on a folder of images (ORT + Python NMS).
 
-Works from the repo (``python -m export infer``) and from a copied
-``onnx_export/`` bundle (``python infer_onnx.py ...``). No oriented-det.
+Works from the repo (``odet export infer`` / ``python -m export infer``) and from a copied
+``onnx_export/`` bundle (``python infer_onnx.py ...``). The copied bundle does not need oriented-det.
 """
 
 from __future__ import annotations
