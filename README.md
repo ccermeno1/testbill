@@ -229,9 +229,22 @@ uv pip install --python .venv/bin/python -r requirements.txt      # incluye ext_
 .venv/bin/python ext_op_fallback/test_rbox_iou.py                 # comprueba la IoU rotada contra Shapely
 ```
 
-Datos: descarga los exports de Roboflow a la raíz con los mismos nombres de carpeta y regenera con
-`scripts/prepare_dataset.py` (principal), `scripts/convert_yolo_obb.py` (billetesprueba, extra) y
-`scripts/merge_extra.py` (ver secciones anteriores); o copia la carpeta `dataset/` desde otra máquina.
+Datos: copia a la raíz del repo, con estos nombres exactos, las carpetas `Annotated banknotes 2.yolov8-obb`,
+`billetesprueba 2.yolov8-obb`, `Euro Banknote Detection.yolov8-obb` y `augmented` (o simplemente copia la
+carpeta `dataset/` ya generada desde otra máquina) y regenera `dataset/` en este orden:
+
+```bash
+P=.venv/bin/python   # en Windows: .venv\Scripts\python
+$P scripts/prepare_dataset.py                                                      # principal con splits v1 -> dataset/banknotes_obb
+$P scripts/convert_yolo_obb.py --src "billetesprueba 2.yolov8-obb" --out dataset/billetesprueba
+$P scripts/add_augmented.py --src augmented --dataset dataset/banknotes_obb        # -> train_plus_aug.json
+$P scripts/convert_yolo_obb.py --src "Euro Banknote Detection.yolov8-obb" --out dataset/eurobanknotes_extra     --merge_class euro_banknote --drop_classes hand --exclude data_manifests/eurobanknotes_extra_exclude.json     --max_single_area 0.5 --skip_empty
+$P scripts/merge_extra.py --extra dataset/eurobanknotes_extra --out_name train_plus_extra                       # -> train_plus_extra.json
+$P scripts/merge_extra.py --base train_plus_aug --extra dataset/eurobanknotes_extra --out_name train_plus_aug_extra
+```
+
+(`data_manifests/eurobanknotes_extra_exclude.json` es la lista de duplicados calculada con
+`scripts/find_duplicates.py`; se versiona para no depender de recalcular los hashes.)
 
 En **Mac no hay GPU NVIDIA**, así que todo va en CPU: predecir y evaluar funciona bien (~1 s/imagen a
 640 px; el fallback `rbox_iou` tarda ~5 s por imagen en la métrica, asumible para cientos de fotos),
