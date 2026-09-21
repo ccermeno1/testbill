@@ -46,7 +46,7 @@ unimplemented MPS op, `export PYTORCH_ENABLE_MPS_FALLBACK=1`.
 <data>/{train,valid,test}/labels/*.txt     # <cls> x1 y1 x2 y2 x3 y3 x4 y4  (normalised)
 ```
 
-- `--split-dir <dir>` (this repo: `splits/`) overrides the export's folders with id lists `<dir>/{train,valid,test}.txt`
+- `--split-dir <dir>` overrides the export's folders with id lists `<dir>/{train,valid,test}.txt`
   (ids are matched by base name, i.e. without the Roboflow `.rf.<hash>` suffix, so the split
   survives re-downloads).
 - `--extra-train <dir> ...` appends flat folders (`<dir>/images`, `<dir>/labels`, YOLO-OBB) to
@@ -64,7 +64,7 @@ statistics. Preprocessing = resize keeping the aspect ratio so the long side equ
 
 ```bash
 # recommended recipe (run C below): strong augmentation, 512 px, batch 8
-python train.py --data "<yolov8-obb export>" --split-dir splits --extra-train augmented \
+python train.py --data "<yolov8-obb export>" --split-dir splits_v1 --extra-train augmented \
     --init checkpoints/rotated_rtmdet_tiny-3x-dota-9d821076.pth \
     --work-dir work_dirs/rtmdet_tiny --img-size 512 --batch 8 --epochs 100 \
     --strong-aug --stage2-epochs 30 --device mps
@@ -106,7 +106,7 @@ Memory: tiny at 512 px / batch 8 peaks at ~2.4 GB; 640 px / batch 4 at ~2.6 GB (
 ```bash
 # rotated mAP (area) on a split, several NMS thresholds
 python evaluate.py checkpoints/rtmdet_r_tiny_banknotes_C_strongaug.pth \
-    --data "<export>" --split-dir splits --split test --img-size 512 --nms-iou 0.3 0.5
+    --data "<export>" --split-dir splits_v1 --split test --img-size 512 --nms-iou 0.3 0.5
 
 # DOTA-layout folder (e.g. real photos), sweep the input size
 python evaluate.py checkpoints/rtmdet_r_tiny_banknotes_C_strongaug.pth --data data/photos --dota --img-size 800
