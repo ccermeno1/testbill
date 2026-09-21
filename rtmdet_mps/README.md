@@ -117,8 +117,10 @@ python infer.py checkpoints/rtmdet_r_tiny_banknotes_C_strongaug.pth photos/ --ou
 
 ## Trained checkpoints (`checkpoints/`, inference weights only)
 
-Dataset: 502 images / 416×416, 1 class `euro_banknote`, frozen split v1 (train 355 / val
-100 / test 47). `augmented/`: 710 offline copies of the train images (rotation, shear,
+Dataset: 502 images / 416×416, 1 class `euro_banknote`, frozen split **`splits_v1/`**
+(train 355 / val 100 / test 47, manifest v3, seed 20260910). Note: this is not the same
+partition as the repository's top-level `splits/` (351 / 101 / 50); all numbers below use
+`splits_v1/`. `augmented/`: 710 offline copies of the train images (rotation, shear,
 perspective). External set: 143 real phone photos (up to 4032 px), 208 boxes, never seen in
 training. All numbers are area AP, NMS 0.3.
 
