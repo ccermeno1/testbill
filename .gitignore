@@ -49,3 +49,7 @@ runs/_inspection/
 # Ultralytics deja esto donde le pillas.
 yolo*.pt
 runs/detect/
+
+# --- rtmdet_mps: pesos entrenados del port a PyTorch puro (19 MB cada uno) ----
+!rtmdet_mps/checkpoints/*.pth
+rtmdet_mps/work_dirs/

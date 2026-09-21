@@ -1,0 +1,6 @@
+torch>=2.1
+torchvision>=0.16
+numpy
+opencv-python
+pillow
+pillow-heif  # optional: HEIC photos in infer.py
