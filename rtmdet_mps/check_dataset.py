@@ -1,0 +1,118 @@
+"""Find the sample that kills the training process.
+
+Loads every image and label of a split, reports anything unusual (unreadable file,
+odd dtype/channels, huge size, degenerate or out-of-image boxes) and then runs the
+real augmentation pipeline over each sample. The id is printed *before* the work and
+flushed, so if the process dies (segfault), the last id printed is the culprit.
+
+    python check_dataset.py --data "<export>" --split-dir splits_v1 --split train \
+        --extra-train augmented --strong-aug --repeat 4
+"""
+import argparse
+import os.path as osp
+import sys
+import traceback
+
+import cv2
+import numpy as np
+
+sys.path.insert(0, osp.dirname(osp.abspath(__file__)))
+from rtmdet_obb.data import StrongAug, YoloObbDataset  # noqa: E402
+
+
+def describe(img, boxes, labels, path):
+    """Return a list of warnings about one raw sample."""
+    out = []
+    if img is None:
+        return [f'cv2.imread returned None (corrupt or unsupported): {path}']
+    h, w = img.shape[:2]
+    if img.ndim != 3 or img.shape[2] != 3:
+        out.append(f'unexpected shape {img.shape}')
+    if img.dtype != np.uint8:
+        out.append(f'unexpected dtype {img.dtype}')
+    if not img.flags['C_CONTIGUOUS']:
+        out.append('not C-contiguous')
+    if max(h, w) > 6000:
+        out.append(f'very large image {w}x{h}')
+    if min(h, w) < 32:
+        out.append(f'very small image {w}x{h}')
+    if len(boxes):
+        if not np.isfinite(boxes).all():
+            out.append('non-finite values in boxes')
+        wh = boxes[:, 2:4]
+        if (wh <= 1).any():
+            out.append(f'degenerate box (w or h <= 1 px): {boxes[wh.min(1) <= 1][:2].tolist()}')
+        ctr = boxes[:, :2]
+        outside = (ctr[:, 0] < 0) | (ctr[:, 0] > w) | (ctr[:, 1] < 0) | (ctr[:, 1] > h)
+        if outside.any():
+            out.append(f'{int(outside.sum())} box centre(s) outside the image')
+        if (wh.max(1) > 4 * max(h, w)).any():
+            out.append('box much larger than the image')
+    if len(labels) and (labels < 0).any():
+        out.append('negative class id')
+    return out
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument('--data', required=True)
+    p.add_argument('--split-dir')
+    p.add_argument('--split', default='train', choices=['train', 'valid', 'test'])
+    p.add_argument('--extra-train', nargs='*', default=[])
+    p.add_argument('--img-size', type=int, default=512)
+    p.add_argument('--strong-aug', action='store_true')
+    p.add_argument('--stage2', action='store_true', help='check the light pipeline instead')
+    p.add_argument('--repeat', type=int, default=2, help='augmented passes per image')
+    p.add_argument('--seed', type=int, default=0)
+    p.add_argument('--quiet', action='store_true', help='only print ids that produce warnings')
+    args = p.parse_args()
+
+    np.random.seed(args.seed)
+    aug = StrongAug(stage2=args.stage2) if args.strong_aug else None
+    ds = YoloObbDataset(args.data, args.split, args.img_size, train=True, split_dir=args.split_dir,
+                        extra_dirs=args.extra_train, strong_aug=aug, filter_empty=False)
+    print(f'{len(ds)} samples, img_size {args.img_size}, '
+          f'{"strong" if args.strong_aug else "basic"}{" stage2" if args.stage2 else ""} pipeline, '
+          f'{args.repeat} pass(es) each', flush=True)
+
+    problems, empty = [], []
+    for i in range(len(ds)):
+        item = ds.items[i]
+        if not args.quiet:
+            print(f'[{i + 1}/{len(ds)}] {item["id"]}', flush=True)
+        try:
+            img, boxes, labels = ds.load(i)
+        except Exception as e:
+            problems.append((item['id'], f'load failed: {e}'))
+            print(f'  !! load failed: {e}', flush=True)
+            continue
+        for w in describe(img, boxes, labels, item['img']):
+            problems.append((item['id'], w))
+            print(f'  !! {w}', flush=True)
+        if not len(boxes):
+            empty.append(item['id'])
+        for r in range(args.repeat):
+            try:
+                sample = ds[i]
+            except Exception:
+                problems.append((item['id'], 'augmentation raised'))
+                print(f'  !! augmentation raised on pass {r}:\n{traceback.format_exc()}', flush=True)
+                break
+            b = sample['boxes'].numpy()
+            if len(b) and not np.isfinite(b).all():
+                problems.append((item['id'], 'non-finite box after augmentation'))
+                print('  !! non-finite box after augmentation', flush=True)
+            im = sample['image']
+            if im.shape != (3, args.img_size, args.img_size):
+                problems.append((item['id'], f'bad tensor shape {tuple(im.shape)}'))
+                print(f'  !! bad tensor shape {tuple(im.shape)}', flush=True)
+
+    print(f'\ndone: {len(problems)} warning(s) over {len(ds)} samples', flush=True)
+    for pid, msg in problems:
+        print(f'  {pid}: {msg}')
+    if empty:
+        print(f'{len(empty)} sample(s) without boxes: {empty[:5]}{" ..." if len(empty) > 5 else ""}')
+
+
+if __name__ == '__main__':
+    main()

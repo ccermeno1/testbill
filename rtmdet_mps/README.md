@@ -194,6 +194,17 @@ order (two minutes):
 3. If it only crashes on `mps`, it is a torch/Metal bug or memory pressure: update torch,
    lower `--batch`, and run with `PYTORCH_ENABLE_MPS_FALLBACK=1`.
 
+If it always dies on the same sample it is the data: run
+
+```bash
+python check_dataset.py --data "<export>" --split-dir splits_v1 --split train     --extra-train augmented --img-size 512 --strong-aug --repeat 4
+```
+
+It prints each id before processing it (flushed), so the last id printed when the process dies
+is the offending file; it also reports unreadable images, odd dtypes/sizes and degenerate or
+out-of-image boxes. Over the 1065 training samples used here it reports nothing, so a hit on
+your machine means that file (or its label) differs.
+
 The decisive evidence is the macOS crash report: `~/Library/Logs/DiagnosticReports/python-*.ips`
 (or Console.app → Crash Reports). The first frames name the faulting library —
 `libtorch_cpu`/`MPSGraph` vs `libopencv` vs `CoreFoundation` — which says immediately which of
