@@ -181,6 +181,24 @@ training. All numbers are area AP, NMS 0.3.
   shorter light stage / `--resize-range 0.3 1.5`, then `--size s` (8.9 M params, ~1.8× cost).
 - The best epoch chosen by AP@0.5 saturates early; select by mAP@.5:.95 (done here).
 
+## macOS / MPS troubleshooting
+
+`Segmentation fault` after a few iterations is almost always one of these; isolate it in this
+order (two minutes):
+
+1. `--workers 0`. If the crash goes away it was the DataLoader workers. The code already calls
+   `cv2.setNumThreads(0)` and forces the `spawn` start method on macOS, which covers the usual
+   OpenCV/Core-Graphics-in-a-forked-worker crash; keep `--workers 2` at most on a laptop.
+2. `--device cpu` (with `--workers 0`). If it still crashes it is not MPS — look at the data
+   (a corrupt JPEG, a HEIC without `pillow-heif`).
+3. If it only crashes on `mps`, it is a torch/Metal bug or memory pressure: update torch,
+   lower `--batch`, and run with `PYTORCH_ENABLE_MPS_FALLBACK=1`.
+
+The decisive evidence is the macOS crash report: `~/Library/Logs/DiagnosticReports/python-*.ips`
+(or Console.app → Crash Reports). The first frames name the faulting library —
+`libtorch_cpu`/`MPSGraph` vs `libopencv` vs `CoreFoundation` — which says immediately which of
+the three it is.
+
 ## Windows notes (only relevant to the machine used for training)
 
 Each DataLoader worker commits ~5 GB of virtual memory for the CUDA DLLs. When the

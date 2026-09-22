@@ -58,6 +58,9 @@ def main():
     args = p.parse_args()
 
     torch.manual_seed(args.seed)
+    if sys.platform == 'darwin' and args.workers > 0:
+        # fork + Core Graphics / Metal in a worker segfaults; spawn is the safe context
+        torch.multiprocessing.set_start_method('spawn', force=True)
     device = pick_device(args.device)
     lr = args.lr if args.lr else 0.00025 * args.batch * args.accumulate / 8
     print(f'device {device}, lr {lr:.2e}, batch {args.batch} x {args.accumulate}, img {args.img_size}')
