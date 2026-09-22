@@ -88,6 +88,9 @@ Augmentation:
   (`--resize-range`, default 0.5–1.5) → rotation → random crop → HSV jitter → flip
   (`--flip-prob` 0.5) → mixup (`--mixup-prob` 0.5). The last `--stage2-epochs` epochs switch
   to a light pipeline (resize 0.9–1.1 + rotation + flip), as mmdet's `PipelineSwitchHook`.
+  As in mmdet, the mosaic and the mixup take their extra samples from caches of recent ones
+  (`CachedMosaic` 40 / `CachedMixUp` 20 entries per worker), so each sample decodes one image,
+  not eight. Each worker holds ~50 MB of cache; lower `--workers` on a small machine.
 
 Other options: `--accumulate N` (gradient accumulation, effective batch = batch·N, verified
 equivalent to a real batch), `--resume work_dirs/.../latest.pth`, `--val-interval`,

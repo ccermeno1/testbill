@@ -76,10 +76,14 @@ class StrongAug:
     """RTMDet "aug" recipe (mmrotate ``rotated_rtmdet_l-100e-aug-dota``):
     mosaic of 4 images on a 2x canvas -> random resize -> random rotate -> random crop
     -> HSV jitter -> random flip -> pad -> mixup. ``stage2=True`` is the light pipeline
-    used for the last epochs (resize 0.9-1.1, rotate, flip, pad only)."""
+    used for the last epochs (resize 0.9-1.1, rotate, flip, pad only).
+
+    As in mmdet, mosaic and mixup take their extra samples from caches of recent ones
+    (``CachedMosaic`` / ``CachedMixUp``), so each ``__getitem__`` decodes a single image."""
 
     def __init__(self, mosaic_prob=1.0, mixup_prob=0.5, resize_range=(0.5, 1.5), stage2_resize_range=(0.9, 1.1),
-                 rotate_prob=0.5, rotate_range=180.0, flip_prob=0.5, hsv=(5, 30, 30), stage2=False):
+                 rotate_prob=0.5, rotate_range=180.0, flip_prob=0.5, hsv=(5, 30, 30), stage2=False,
+                 mosaic_max_cached=40, mixup_max_cached=20):
         self.mosaic_prob = mosaic_prob
         self.mixup_prob = mixup_prob
         self.resize_range = tuple(resize_range)
@@ -89,6 +93,8 @@ class StrongAug:
         self.flip_prob = flip_prob
         self.hsv = tuple(hsv)
         self.stage2 = stage2
+        self.mosaic_max_cached = mosaic_max_cached
+        self.mixup_max_cached = mixup_max_cached
 
 
 class YoloObbDataset(Dataset):
@@ -110,6 +116,8 @@ class YoloObbDataset(Dataset):
                  strong_aug: Optional[StrongAug] = None):
         self.root = root
         self.strong_aug = strong_aug
+        self._mosaic_cache = []  # recently loaded samples, for the mosaic
+        self._mixup_cache = []   # recently augmented samples, for the mixup
         self.img_size = img_size
         self.train = train
         self.flip_prob = flip_prob
@@ -201,16 +209,22 @@ class YoloObbDataset(Dataset):
             boxes[:, :4] *= scale
         return img, boxes, labels, (h0, w0), scale
 
-    def _mosaic(self, i: int):
-        """mmdet CachedMosaic: 4 images around a random centre on a 2*img_size canvas."""
+    def _cache_push(self, cache, item, max_cached):
+        """mmdet's cache policy: append, then drop a random entry when over capacity."""
+        cache.append(item)
+        if len(cache) > max_cached:
+            cache.pop(np.random.randint(len(cache)))
+
+    def _mosaic(self, sample):
+        """mmdet CachedMosaic: the sample plus 3 from the cache, around a random centre."""
         s = self.img_size
         canvas = np.full((2 * s, 2 * s, 3), 114, dtype=np.uint8)
         cx = int(np.random.uniform(0.5, 1.5) * s)
         cy = int(np.random.uniform(0.5, 1.5) * s)
-        idxs = [i] + [np.random.randint(len(self)) for _ in range(3)]
+        others = [self._mosaic_cache[np.random.randint(len(self._mosaic_cache))] for _ in range(3)]
         all_boxes, all_labels = [], []
-        for loc, j in zip(('top_left', 'top_right', 'bottom_left', 'bottom_right'), idxs):
-            img, boxes, labels, _, _ = self._load_scaled(j)
+        for loc, (img, boxes, labels) in zip(('top_left', 'top_right', 'bottom_left', 'bottom_right'),
+                                             [sample] + others):
             h, w = img.shape[:2]
             if loc == 'top_left':
                 x1, y1, x2, y2 = max(cx - w, 0), max(cy - h, 0), cx, cy
@@ -270,14 +284,18 @@ class YoloObbDataset(Dataset):
         hsv[..., 2] = np.clip(hsv[..., 2] + gains[2], 0, 255)
         return cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
 
-    def _strong(self, i: int, allow_mixup: bool = True):
+    def _strong(self, i: int):
         a = self.strong_aug
         s = self.img_size
-        if not a.stage2 and np.random.rand() < a.mosaic_prob:
-            img, boxes, labels = self._mosaic(i)
+        img, boxes, labels, _, _ = self._load_scaled(i)
+        if not a.stage2:
+            self._cache_push(self._mosaic_cache, (img, boxes, labels), a.mosaic_max_cached)
+        # mmdet applies the mosaic only once the cache holds more than 4 samples
+        if not a.stage2 and len(self._mosaic_cache) > 4 and np.random.rand() < a.mosaic_prob:
+            img, boxes, labels = self._mosaic((img, boxes, labels))
             lo, hi = a.resize_range
         else:
-            img, boxes, labels, _, _ = self._load_scaled(i)
+            img, boxes, labels = img.copy(), boxes.copy(), labels.copy()
             lo, hi = a.stage2_resize_range if a.stage2 else a.resize_range
         f = np.random.uniform(lo, hi)
         if f != 1.0:
@@ -307,12 +325,14 @@ class YoloObbDataset(Dataset):
             boxes = flip_rboxes(boxes, (h, w), direction)
         canvas = np.full((s, s, 3), 114, dtype=np.uint8)
         canvas[:h, :w] = img
-        if allow_mixup and not a.stage2 and np.random.rand() < a.mixup_prob:
-            # CachedMixUp (ratio 1.0): blend 50/50 with another fully augmented sample
-            other, oboxes, olabels = self._strong(np.random.randint(len(self)), allow_mixup=False)
-            canvas = ((canvas.astype(np.float32) + other.astype(np.float32)) * 0.5).astype(np.uint8)
-            boxes = np.concatenate([boxes, oboxes])
-            labels = np.concatenate([labels, olabels])
+        if not a.stage2:
+            self._cache_push(self._mixup_cache, (canvas, boxes, labels), a.mixup_max_cached)
+            if len(self._mixup_cache) > 4 and np.random.rand() < a.mixup_prob:
+                # CachedMixUp (ratio 1.0): blend 50/50 with an earlier augmented sample
+                other, oboxes, olabels = self._mixup_cache[np.random.randint(len(self._mixup_cache))]
+                canvas = ((canvas.astype(np.float32) + other.astype(np.float32)) * 0.5).astype(np.uint8)
+                boxes = np.concatenate([boxes, oboxes])
+                labels = np.concatenate([labels, olabels])
         return canvas, boxes, labels
 
     def _getitem_strong(self, i: int):
