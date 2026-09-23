@@ -45,7 +45,9 @@ from oriented_det.runtime.inference import (
     get_model_size,
     preprocess_crop,
     run_inference,
+    run_inference_auto,
     run_inference_sliding_window,
+    uses_native_sliding_window,
     apply_nms_to_detections,
     visualize_results,
 )
@@ -493,6 +495,21 @@ def main():
             tensor = preprocess_crop(inference_image, preprocessing, slice_h, slice_w)
             detections = run_inference(
                 model, tensor, args.device, score_threshold=score_thr
+            )
+            detections = apply_nms_to_detections(
+                detections, iou_threshold=nms_thr
+            )
+        elif not uses_native_sliding_window(ih, iw, preprocessing):
+            # resize_mode pad / keep_ratio: scale the whole image like training
+            # (native-resolution windows would show objects at the wrong scale).
+            print(f"  -> whole-image resize (image {iw}×{ih} → canvas {slice_w}×{slice_h})")
+            detections = run_inference_auto(
+                image=inference_image,
+                model=model,
+                device=args.device,
+                preprocessing=preprocessing,
+                score_threshold=score_thr,
+                nms_threshold=nms_thr,
             )
             detections = apply_nms_to_detections(
                 detections, iou_threshold=nms_thr

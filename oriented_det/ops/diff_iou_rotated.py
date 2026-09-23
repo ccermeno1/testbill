@@ -110,8 +110,13 @@ def _box1_in_box2(corners1: Tensor, corners2: Tensor) -> Tensor:
 
 
 def _sort_indices(vertices: Tensor, mask: Tensor) -> Tensor:
-    """``(B, N, 24, 2)`` + validity → ``(B, N, 9)`` hull indices (wrap + pad).
+    """``(B, N, 24, 2)`` + validity → ``(B, N, 25)`` hull indices (wrap + pad).
 
+    All valid vertices are kept in angular order. An exact intersection of two
+    quads has at most 8 vertices, but nearly coincident boxes produce extra
+    near-duplicate points (contained corners plus edge crossings at t≈0/1);
+    truncating to 8 then drops a whole sector of the polygon (IoU ≈ 1/3 for
+    boxes that differ by float noise). Duplicates add zero shoelace area.
     Unused slots repeat the first hull vertex so extra shoelace terms are 0.
     Padding with an invalid exterior corner (still has real xy) inflates the
     polygon and clamps IoU to 1.
@@ -124,14 +129,14 @@ def _sort_indices(vertices: Tensor, mask: Tensor) -> Tensor:
     ang = torch.atan2(rel[..., 1], rel[..., 0])
     ang = torch.where(mask_b, ang, ang.new_full(ang.shape, _INVALID_ANGLE))
     sorted_idx = torch.argsort(ang, dim=-1)
-    first8 = sorted_idx[..., :8]
-    wrap = first8[..., :1]
-    k = mask_b.to(dtype=torch.int64).sum(dim=-1).clamp(max=8)
-    slots = torch.arange(9, device=vertices.device).view(1, 1, 9)
+    num_slots = sorted_idx.size(-1)
+    wrap = sorted_idx[..., :1]
+    k = mask_b.to(dtype=torch.int64).sum(dim=-1)
+    slots = torch.arange(num_slots + 1, device=vertices.device).view(1, 1, num_slots + 1)
     is_vertex = slots < k.unsqueeze(-1)
-    first8_pad = torch.cat([first8, wrap], dim=-1)
-    wrap_exp = wrap.expand(-1, -1, 9)
-    return torch.where(is_vertex, first8_pad, wrap_exp)
+    sorted_pad = torch.cat([sorted_idx, wrap], dim=-1)
+    wrap_exp = wrap.expand(-1, -1, num_slots + 1)
+    return torch.where(is_vertex, sorted_pad, wrap_exp)
 
 
 def _intersection_area(corners1: Tensor, corners2: Tensor) -> Tensor:

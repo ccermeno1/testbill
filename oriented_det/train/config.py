@@ -422,6 +422,21 @@ class ModelConfig:
     fcos_regress_ranges: Optional[List[List[float]]] = None
     fcos_angle_weight: float = 1.0
     fcos_nms_pre: int = 2000
+    # Rotated RTMDet (backbone = CSPNeXt ``rtmdet_variant``; ``backbone`` is ignored)
+    rtmdet_variant: str = "tiny"
+    # "coco" | "imagenet" | "dota" | path/URL to an MMDet/MMRotate .pth | null (scratch)
+    rtmdet_pretrained_weights: Optional[str] = "coco"
+    # null → BGR for coco/dota weights (MMDet convention), RGB otherwise
+    rtmdet_input_bgr: Optional[bool] = None
+    rtmdet_stacked_convs: int = 2
+    rtmdet_share_conv: bool = True
+    rtmdet_exp_on_reg: bool = False
+    rtmdet_pred_kernel_size: int = 1
+    rtmdet_assigner_topk: int = 13
+    rtmdet_assigner_iou_weight: float = 3.0
+    rtmdet_assigner_soft_center_radius: float = 3.0
+    rtmdet_qfl_beta: float = 2.0
+    rtmdet_nms_pre: int = 2000
     aux_loss_type: Optional[str] = None
     aux_loss_weight: float = 0.0
     aux_angle_weight: float = 1.0
@@ -531,6 +546,10 @@ class TrainingConfig:
     lr_mult_head: Optional[float] = None
     # Other training
     num_epochs: int = 20
+    # "sgd" (momentum) | "adamw" (RTMDet recipe: lr 0.004 @ batch 32, weight_decay 0.05)
+    optimizer: str = "sgd"
+    # AdamW: skip weight decay on norm layers and biases (MMDet paramwise_cfg)
+    optimizer_no_decay_norm_bias: bool = True
     learning_rate: float = 0.001
     momentum: float = 0.9
     weight_decay: float = 0.0001

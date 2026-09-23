@@ -1,7 +1,7 @@
 """OrientedDet: rotated object detection for aerial imagery.
 
 Exports geometry (``RBox``, ``QBox``, ``Polygon``), ops (``iou``, ``nms``), data loaders,
-and detectors (``OrientedRCNN``, ``RotatedFasterRCNN``, ``RotatedRetinaNet``, ``RotatedFCOS``).
+and detectors (``OrientedRCNN``, ``RotatedFasterRCNN``, ``RotatedRetinaNet``, ``RotatedFCOS``, ``RotatedRTMDet``).
 Training configs: ``oriented_det.train.config.TrainingExperimentConfig``.
 """
 
@@ -30,6 +30,7 @@ __all__ = [
     "RotatedFasterRCNN",
     "RotatedRetinaNet",
     "RotatedFCOS",
+    "RotatedRTMDet",
     "DeltaXYWHBBoxCoder",   # 4 params, RPN (MMRotate Rotated Faster R-CNN)
     "DeltaXYWHAHBBoxCoder", # 5 params, ROI (MMRotate)
     "DistanceAnglePointCoder",  # 5 params, FCOS (MMRotate)
@@ -53,6 +54,7 @@ _LAZY_ATTRS = {
     "RotatedFasterRCNN": (".models", "RotatedFasterRCNN"),
     "RotatedRetinaNet": (".models", "RotatedRetinaNet"),
     "RotatedFCOS": (".models", "RotatedFCOS"),
+    "RotatedRTMDet": (".models", "RotatedRTMDet"),
     "DeltaXYWHBBoxCoder": (".models", "DeltaXYWHBBoxCoder"),
     "DeltaXYWHAHBBoxCoder": (".models", "DeltaXYWHAHBBoxCoder"),
     "DistanceAnglePointCoder": (".models", "DistanceAnglePointCoder"),

@@ -84,6 +84,28 @@ def test_non_overlap_and_degenerate_are_finite():
     assert torch.isfinite(loss).all()
 
 
+def test_nearly_coincident_boxes_iou_one():
+    """Float-noise copies (e.g. w/h swapped + angle ±π/2) yield >8 hull points; none may be dropped."""
+    a = torch.tensor(
+        [
+            [18.695528, 21.826355, 30.625576, 33.061867, 0.03594010],
+            [27.282200, 42.196655, 29.901808, 42.564011, -0.35562402],
+            [-1.1535434, 20.113325, 40.807304, 33.582310, -0.15019792],
+        ],
+        dtype=torch.float32,
+    )
+    b = torch.tensor(
+        [
+            [18.695528, 21.826355, 33.061867, 30.625576, 0.03594010 - math.pi / 2],
+            [27.282200, 42.196651, 42.564011, 29.901808, -0.35562402 + math.pi / 2],
+            [-1.1535435, 20.113325, 40.807304, 33.582310, -0.15019786],
+        ],
+        dtype=torch.float32,
+    )
+    iou = diff_iou_rotated_2d(a, b)
+    assert torch.all(iou > 0.999), iou
+
+
 def test_backward_has_xywh_and_angle_grads():
     pred = torch.tensor([[0.0, 0.0, 20.0, 8.0, 0.25]], dtype=torch.float32, requires_grad=True)
     gt = torch.tensor([[1.0, 0.5, 18.0, 9.0, 0.0]], dtype=torch.float32)

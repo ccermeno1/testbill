@@ -76,7 +76,8 @@ import traceback
 import argparse
 import warnings
 
-from oriented_det import OrientedRCNN, RotatedFasterRCNN, RotatedRetinaNet, RotatedFCOS
+from oriented_det import OrientedRCNN, RotatedFasterRCNN, RotatedRetinaNet, RotatedFCOS, RotatedRTMDet
+from oriented_det.models.rotated_rtmdet import rotated_rtmdet_kwargs_from_config
 from oriented_det.data import (
     build_split_dataset,
     dataset_format_name,
@@ -1091,10 +1092,16 @@ def create_model_from_config(
             nms_class_agnostic=getattr(config.model, "nms_class_agnostic", False),
             roi_class_weights=roi_class_weights,
         )
+    elif model_type == "rotated_rtmdet":
+        model = RotatedRTMDet(
+            num_classes=num_classes,
+            roi_class_weights=roi_class_weights,
+            **rotated_rtmdet_kwargs_from_config(config.model),
+        )
     else:
         raise ValueError(
             f"Unknown model_type: {model_type}. Supported: rotated_faster_rcnn, "
-            "oriented_rcnn, rotated_retinanet, rotated_fcos"
+            "oriented_rcnn, rotated_retinanet, rotated_fcos, rotated_rtmdet"
         )
     
     model.to(device)
@@ -1196,6 +1203,53 @@ def build_optimizer_param_groups(
         }
 
     return param_groups, group_summary
+
+
+def _split_no_decay_param_groups(
+    model: torch.nn.Module,
+    param_groups: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Split each group into decay / no-decay (norm-layer weights and all biases) groups."""
+    norm_types = (torch.nn.modules.batchnorm._NormBase, torch.nn.GroupNorm, torch.nn.LayerNorm)
+    no_decay_ids = set()
+    for module in model.modules():
+        if isinstance(module, norm_types):
+            no_decay_ids.update(id(p) for p in module.parameters(recurse=False))
+    for name, param in model.named_parameters():
+        if name.endswith(".bias"):
+            no_decay_ids.add(id(param))
+    split: List[Dict[str, Any]] = []
+    for group in param_groups:
+        decay = [p for p in group["params"] if id(p) not in no_decay_ids]
+        no_decay = [p for p in group["params"] if id(p) in no_decay_ids]
+        if decay:
+            split.append({**group, "params": decay})
+        if no_decay:
+            split.append({**group, "params": no_decay, "weight_decay": 0.0})
+    return split
+
+
+def create_optimizer(
+    model: torch.nn.Module,
+    param_groups: List[Dict[str, Any]],
+    config: TrainingExperimentConfig,
+) -> optim.Optimizer:
+    """``training.optimizer``: ``sgd`` (momentum) or ``adamw`` (RTMDet recipe)."""
+    name = (getattr(config.training, "optimizer", None) or "sgd").strip().lower()
+    lr = config.training.learning_rate
+    weight_decay = config.training.weight_decay
+    if name == "sgd":
+        return optim.SGD(
+            param_groups,
+            lr=lr,
+            momentum=config.training.momentum,
+            weight_decay=weight_decay,
+        )
+    if name == "adamw":
+        if bool(getattr(config.training, "optimizer_no_decay_norm_bias", True)):
+            param_groups = _split_no_decay_param_groups(model, param_groups)
+        return optim.AdamW(param_groups, lr=lr, betas=(0.9, 0.999), weight_decay=weight_decay)
+    raise ValueError(f"Unknown training.optimizer {name!r}; expected 'sgd' or 'adamw'.")
 
 
 def main():
@@ -2157,12 +2211,7 @@ def main():
             config=config,
             include_frozen_parameters=use_phase_freeze,
         )
-        optimizer = optim.SGD(
-            optimizer_param_groups,
-            lr=config.training.learning_rate,
-            momentum=config.training.momentum,
-            weight_decay=config.training.weight_decay,
-        )
+        optimizer = create_optimizer(model, optimizer_param_groups, config)
         if rank == 0:
             print("\nOptimizer param groups enabled:")
             for group_name in ["backbone", "rpn", "roi", "head", "other"]:
@@ -2176,12 +2225,7 @@ def main():
                     f"params={int(details['num_params']):,}"
                 )
     else:
-        optimizer = optim.SGD(
-            model.parameters(),
-            lr=config.training.learning_rate,
-            momentum=config.training.momentum,
-            weight_decay=config.training.weight_decay,
-        )
+        optimizer = create_optimizer(model, [{"params": list(model.parameters())}], config)
     
     # Create LR scheduler (type from config: multistep/step, reduce_on_plateau, one_cycle, cosine_annealing)
     sched_type = (getattr(config.training, "lr_scheduler_type", None) or "").strip().lower()

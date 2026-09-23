@@ -1,0 +1,81 @@
+{
+  "_base_": [
+    "../_base_/models/rotated_rtmdet_tiny.json",
+    "../_base_/preprocessing.json"
+  ],
+  "dataset": {
+    "format": "dota",
+    "data_root": "/path/to/billetes_dota",
+    "train_tiles_dir": "/path/to/billetes_dota/train",
+    "val_tiles_dir": "/path/to/billetes_dota/val",
+    "overlap": 0,
+    "difficult_strategy": "keep",
+    "filter_empty_gt": false
+  },
+  "data_loader": {
+    "batch_size": 8,
+    "num_workers": 4,
+    "shuffle": true,
+    "pin_memory": false
+  },
+  "checkpoint": {
+    "load_from_checkpoint": null,
+    "load_from_experiment": null,
+    "discover_previous_run": false,
+    "resume_from_checkpoint_epoch": false,
+    "load_optimizer_state": false,
+    "load_scheduler_state": false,
+    "start_epoch": 0,
+    "best_metric": "mAP",
+    "higher_is_better": true
+  },
+  "training": {
+    "num_epochs": 60,
+    "use_amp": false,
+    "gradient_accumulation_steps": 1,
+    "lr_scaling_with_accumulation": "none",
+    "lr_scale_with_world_size": false,
+    "use_lr_param_groups": false,
+    "lr_warmup_steps": 300
+  },
+  "preprocessing": {
+    "resize_mode": "pad",
+    "target_size": [640, 640],
+    "pad_size_divisor": 32,
+    "enable_flip_horizontal": true,
+    "enable_flip_vertical": true,
+    "enable_flip_diagonal": true,
+    "enable_random_rotate": true,
+    "random_rotate_prob": 0.5,
+    "random_rotate_angle_range": 180
+  },
+  "evaluation": {
+    "iou_threshold": 0.5,
+    "final_nms_iou_threshold": 0.3,
+    "compute_map_final": true,
+    "compute_map_every_n_epochs": 5,
+    "extended_gt_metrics": false,
+    "use_exact_rotated_iou": true,
+    "train_val_score_threshold": 0.3
+  },
+  "tensorboard": {
+    "log_debug_anchors_proposals": false,
+    "vis_score_threshold": 0.4
+  },
+  "model": {
+    "final_nms_iou_threshold": 0.3,
+    "max_detections_per_image": 100,
+    "final_nms_use_cpu": false
+  },
+  "production": {
+    "score_threshold": 0.4,
+    "inference_pre_nms_score_threshold": 0.05,
+    "final_nms_iou_threshold": 0.3,
+    "max_detections_per_image": 100,
+    "overlap_pixels": 0,
+    "ignore_margin_pixels": 0,
+    "use_first_image_canvas": false,
+    "stick_to_model_canvas": true,
+    "final_nms_use_cpu": false
+  }
+}

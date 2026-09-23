@@ -6,7 +6,8 @@ from pathlib import Path
 
 import torch
 
-from oriented_det import OrientedRCNN, RotatedFasterRCNN, RotatedRetinaNet, RotatedFCOS
+from oriented_det import OrientedRCNN, RotatedFasterRCNN, RotatedRetinaNet, RotatedFCOS, RotatedRTMDet
+from oriented_det.models.rotated_rtmdet import rotated_rtmdet_kwargs_from_config
 from oriented_det.train.config import (
     TrainingExperimentConfig,
     apply_inference_config_to_model,
@@ -89,6 +90,14 @@ def _infer_retinanet_num_classes_from_state_dict(state_dict: dict) -> int | None
     return cls_channels // num_anchors
 
 
+def _infer_rtmdet_num_classes_from_state_dict(state_dict: dict) -> int | None:
+    """RTMDet head.rtm_cls.0 is [K, C, k, k]; head.rtm_ang.0 marks the rotated head."""
+    cls_weight_key = "head.rtm_cls.0.weight"
+    if cls_weight_key not in state_dict or "head.rtm_ang.0.weight" not in state_dict:
+        return None
+    return int(state_dict[cls_weight_key].shape[0])
+
+
 def _infer_fcos_num_classes_from_state_dict(state_dict: dict) -> int | None:
     """FCOS head.conv_cls is [K, C, 3, 3]; head.conv_bbox is [4, ...] (no anchors)."""
     cls_weight_key = "head.conv_cls.weight"
@@ -144,6 +153,10 @@ def infer_num_classes_from_checkpoint(checkpoint_path: str, model_type: str) -> 
         num_classes = _infer_fcos_num_classes_from_state_dict(state_dict)
         if num_classes is not None:
             return num_classes
+    elif 'rtmdet' in model_type.lower():
+        num_classes = _infer_rtmdet_num_classes_from_state_dict(state_dict)
+        if num_classes is not None:
+            return num_classes
     
     raise ValueError(f"Could not infer num_classes from checkpoint. Checkpoint keys: {list(state_dict.keys())[:10]}")
 
@@ -194,6 +207,8 @@ def load_model_from_checkpoint(checkpoint_path: str, config_path: str, device: s
         checkpoint_foreground = _infer_retinanet_num_classes_from_state_dict(state_dict)
     elif 'fcos' in model_type.lower():
         checkpoint_foreground = _infer_fcos_num_classes_from_state_dict(state_dict)
+    elif 'rtmdet' in model_type.lower():
+        checkpoint_foreground = _infer_rtmdet_num_classes_from_state_dict(state_dict)
 
     if num_classes_config is None:
         if checkpoint_foreground is not None:
@@ -422,9 +437,14 @@ def load_model_from_checkpoint(checkpoint_path: str, config_path: str, device: s
             final_nms_use_cpu=getattr(m, "final_nms_use_cpu", False) if m else False,
             nms_class_agnostic=getattr(m, "nms_class_agnostic", False) if m else False,
         )
+    elif 'rtmdet' in model_type_lower:
+        rtmdet_kwargs = rotated_rtmdet_kwargs_from_config(config.model)
+        # Weights come from the checkpoint; skip the pretrained download.
+        rtmdet_kwargs['pretrained_backbone'] = False
+        model = RotatedRTMDet(num_classes=num_classes, **rtmdet_kwargs)
     else:
         raise ValueError(f"Unknown model type: {model_type}")
-    
+
     # Load checkpoint state dict into model (already stripped "module." above if DDP)
     model.load_state_dict(state_dict)
     device_obj = torch.device(device)

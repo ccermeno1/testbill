@@ -1,0 +1,37 @@
+{
+  "model_type": "rotated_rtmdet",
+  "model": {
+    "rtmdet_variant": "tiny",
+    "pretrained_backbone": true,
+    "rtmdet_pretrained_weights": "coco",
+    "rtmdet_input_bgr": null,
+    "frozen_stages": null,
+    "fpn_strides": [8, 16, 32],
+    "rtmdet_stacked_convs": 2,
+    "rtmdet_share_conv": true,
+    "rtmdet_exp_on_reg": false,
+    "rtmdet_pred_kernel_size": 1,
+    "rtmdet_assigner_topk": 13,
+    "rtmdet_assigner_iou_weight": 3.0,
+    "rtmdet_assigner_soft_center_radius": 3.0,
+    "rtmdet_qfl_beta": 2.0,
+    "rtmdet_nms_pre": 2000,
+    "box_reg_weight": 2.0,
+    "inference_pre_nms_score_threshold": 0.05,
+    "final_nms_iou_threshold": 0.1,
+    "max_detections_per_image": 2000
+  },
+  "training": {
+    "optimizer": "adamw",
+    "optimizer_no_decay_norm_bias": true,
+    "learning_rate": 0.00025,
+    "weight_decay": 0.05,
+    "max_grad_norm": 35.0,
+    "lr_scheduler_type": "cosine_annealing",
+    "lr_scheduler_cosine_eta_min": 1e-6,
+    "lr_warmup_steps": 1000
+  },
+  "loss": {
+    "loss_type": "focal"
+  }
+}
