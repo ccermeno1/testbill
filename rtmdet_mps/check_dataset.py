@@ -53,6 +53,29 @@ def describe(img, boxes, labels, path):
     return out
 
 
+def loader_check(ds, args):
+    """Iterate the real DataLoader with workers, printing progress; no model involved."""
+    import time
+    import torch
+    from torch.utils.data import DataLoader
+    from rtmdet_obb.data import collate
+    if sys.platform == 'darwin' and args.loader_workers > 0:
+        torch.multiprocessing.set_start_method('spawn', force=True)
+        torch.multiprocessing.set_sharing_strategy('file_system')
+    loader = DataLoader(ds, args.batch, shuffle=True, num_workers=args.loader_workers,
+                        collate_fn=collate, drop_last=True, persistent_workers=False)
+    print(f'iterating {args.epochs} epoch(s) x {len(loader)} batches with '
+          f'{args.loader_workers} worker(s), batch {args.batch}', flush=True)
+    t0 = time.time()
+    for ep in range(args.epochs):
+        for bi, batch in enumerate(loader):
+            if (bi + 1) % 50 == 0:
+                print(f'  epoch {ep + 1} batch {bi + 1}/{len(loader)} '
+                      f'({(time.time() - t0) / (bi + 1):.3f} s/batch)', flush=True)
+        print(f'epoch {ep + 1} finished', flush=True)
+    print('loader check finished without crashing', flush=True)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--data', required=True)
@@ -65,12 +88,20 @@ def main():
     p.add_argument('--repeat', type=int, default=2, help='augmented passes per image')
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--quiet', action='store_true', help='only print ids that produce warnings')
+    p.add_argument('--loader-workers', type=int, help='instead of the per-sample scan, iterate a real '
+                   'DataLoader with this many workers (no model, no MPS): isolates crashes in the data pipeline')
+    p.add_argument('--batch', type=int, default=2)
+    p.add_argument('--epochs', type=int, default=2, help='passes over the dataset in --loader-workers mode')
     args = p.parse_args()
 
     np.random.seed(args.seed)
     aug = StrongAug(stage2=args.stage2) if args.strong_aug else None
     ds = YoloObbDataset(args.data, args.split, args.img_size, train=True, split_dir=args.split_dir,
                         extra_dirs=args.extra_train, strong_aug=aug, filter_empty=False)
+
+    if args.loader_workers is not None:
+        loader_check(ds, args)
+        return
     print(f'{len(ds)} samples, img_size {args.img_size}, '
           f'{"strong" if args.strong_aug else "basic"}{" stage2" if args.stage2 else ""} pipeline, '
           f'{args.repeat} pass(es) each', flush=True)

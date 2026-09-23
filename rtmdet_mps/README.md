@@ -200,6 +200,17 @@ order (two minutes):
 3. If it only crashes on `mps`, it is a torch/Metal bug or memory pressure: update torch,
    lower `--batch`, and run with `PYTORCH_ENABLE_MPS_FALLBACK=1`.
 
+If the message is `DataLoader worker (pid ...) is killed by signal: Segmentation fault`, the
+crash is in the data pipeline (OpenCV in a worker), not in the model or MPS — the traceback of
+the main process only shows where the signal arrived. Reproduce it without the model:
+
+```bash
+python check_dataset.py --data "<export>" --split-dir splits_v1 --extra-train augmented     --img-size 512 --strong-aug --loader-workers 2 --batch 2 --epochs 2
+```
+
+If that crashes, it is OpenCV in the workers (use `--workers 0` to keep training meanwhile);
+if it survives two full passes, the crash needs MPS to happen.
+
 If it always dies on the same sample it is the data: run
 
 ```bash

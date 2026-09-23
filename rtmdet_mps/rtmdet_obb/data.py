@@ -18,8 +18,13 @@ import torch
 from torch.utils.data import Dataset
 
 # OpenCV's own thread pool fights the DataLoader workers (and crashes them on macOS);
-# mmrotate sets opencv_num_threads=0 for the same reason.
+# mmrotate sets opencv_num_threads=0 for the same reason. OpenCL must go too: its GPU
+# context does not survive into a worker process on macOS and segfaults there.
 cv2.setNumThreads(0)
+try:
+    cv2.ocl.setUseOpenCL(False)
+except Exception:  # pragma: no cover - older builds without OpenCL support
+    pass
 
 from .boxes import flip_rboxes, poly2rbox, rotate_rboxes
 
