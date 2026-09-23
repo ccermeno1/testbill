@@ -145,6 +145,24 @@ python evaluate.py checkpoints/rtmdet_r_tiny_banknotes_C_strongaug.pth --data da
 python infer.py checkpoints/rtmdet_r_tiny_banknotes_C_strongaug.pth photos/ --out out/ --img-size 800 --score-thr 0.5 --nms-iou 0.3
 ```
 
+## Exporting (ONNX)
+
+`model.forward()` is only convolutions, so it traces and exports cleanly. `predict()` does not:
+the score filter produces a data-dependent number of boxes and the rotated NMS is a sequential
+loop over values, so tracing would freeze the decisions taken for the example image. ONNX's
+standard `NonMaxSuppression` is axis-aligned only, so it cannot stand in either.
+
+The way round it is the usual one in detection: export the forward pass and do the decode and
+the NMS in your application. `onnx_example.py` is exactly that — preprocessing, decode and
+rotated NMS in ~40 lines, verified to reproduce `predict()` to 1e-4 px:
+
+```bash
+python onnx_example.py <image> [checkpoint]
+```
+
+Note the exported graph expects **raw BGR values in 0..255**: the mean/std normalisation is a
+layer inside the model.
+
 ## Trained checkpoints (`checkpoints/`, inference weights only)
 
 Dataset: 502 images / 416×416, 1 class `euro_banknote`, frozen split **`splits_v1/`**
