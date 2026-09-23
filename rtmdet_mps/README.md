@@ -28,9 +28,27 @@ corner-in-box test has a 0.01 px tolerance.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt            # torch>=2.1 torchvision numpy opencv-python pillow pillow-heif
+pip install -r requirements.txt
 python -c "import torch; print(torch.backends.mps.is_available())"
 ```
+
+Only four packages are needed — `torch`, `numpy`, `opencv-python`, `pillow` (plus `pillow-heif`
+if you read HEIC photos). **`torchvision` is not a dependency**: the rotated NMS and IoU live in
+this package. Versions actually exercised:
+
+| | torch | numpy | opencv | pillow | python |
+|---|---|---|---|---|---|
+| Windows, CUDA (training of A/B/C) | 1.9.1+cu111 | 1.23.5 | 4.9.0 | 11.3.0 | 3.9 |
+| macOS arm64, MPS | 2.x | — | — | — | 3.11 |
+
+`requirements.txt` keeps loose bounds on purpose (torch wheels are platform specific). To make an
+installation reproducible, freeze the environment that works for you and commit it next to it:
+
+```bash
+pip freeze > requirements-lock-macos-arm64.txt   # then: pip install -r that file
+```
+
+On macOS install `pillow` even if you do not use HEIC: it is the resize backend there.
 
 `--device auto` picks `cuda` > `mps` > `cpu`. The code avoids everything MPS lacks: no
 float64, no `torch.topk` (k ≤ 16 limit on some builds), the sequential part of the NMS runs

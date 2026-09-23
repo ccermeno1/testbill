@@ -1,6 +1,14 @@
-torch>=2.1
-torchvision>=0.16
-numpy
-opencv-python
-pillow
-pillow-heif  # optional: HEIC photos in infer.py
+# Runtime dependencies of rtmdet_mps. torchvision is NOT needed (the rotated NMS
+# and IoU are implemented in this package).
+#
+# Tested with: torch 1.9.1+cu111 / numpy 1.23.5 / opencv 4.9.0 / pillow 11.3.0 (Windows, CUDA)
+#              torch 2.x / python 3.11 (macOS arm64, MPS)
+# Pin your own working set with:  pip freeze > requirements-lock-<platform>.txt
+
+torch>=2.1            # MPS needs 2.1+; 1.9+ is enough on CUDA/CPU
+numpy>=1.23,<3
+opencv-python>=4.6    # opencv-python-headless works too, and is lighter on servers
+pillow>=9.0           # resize backend on macOS (see RTMDET_RESIZE_BACKEND)
+
+# Optional: only needed to read HEIC photos in infer.py
+pillow-heif>=0.13
