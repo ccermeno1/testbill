@@ -84,6 +84,9 @@ def main():
     p.add_argument('--extra-train', nargs='*', default=[])
     p.add_argument('--img-size', type=int, default=512)
     p.add_argument('--strong-aug', action='store_true')
+    p.add_argument('--mosaic-prob', type=float, default=1.0, help='set to 0 to isolate the mosaic')
+    p.add_argument('--mixup-prob', type=float, default=0.5, help='set to 0 to isolate the mixup')
+    p.add_argument('--no-hsv', action='store_true', help='disable the HSV jitter (isolates cv2.cvtColor)')
     p.add_argument('--stage2', action='store_true', help='check the light pipeline instead')
     p.add_argument('--repeat', type=int, default=2, help='augmented passes per image')
     p.add_argument('--seed', type=int, default=0)
@@ -95,7 +98,8 @@ def main():
     args = p.parse_args()
 
     np.random.seed(args.seed)
-    aug = StrongAug(stage2=args.stage2) if args.strong_aug else None
+    aug = StrongAug(stage2=args.stage2, mosaic_prob=args.mosaic_prob, mixup_prob=args.mixup_prob,
+                    hsv=(0, 0, 0) if args.no_hsv else (5, 30, 30)) if args.strong_aug else None
     ds = YoloObbDataset(args.data, args.split, args.img_size, train=True, split_dir=args.split_dir,
                         extra_dirs=args.extra_train, strong_aug=aug, filter_empty=False)
 

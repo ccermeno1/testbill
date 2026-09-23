@@ -18,6 +18,15 @@ import torch
 
 EPS = 1e-8
 
+# Pairs of boxes evaluated at once. Each pair costs ~1.5 KB of transient tensors, so the
+# default of 2^17 peaks at ~250 MB: fine on a discrete GPU, fatal on unified memory (MPS
+# crashes the process) and wasteful on CPU. Override with the ``chunk_pairs`` argument.
+CHUNK_PAIRS = {'cuda': 1 << 17, 'cpu': 1 << 15, 'mps': 1 << 13}
+
+
+def default_chunk_pairs(device: torch.device) -> int:
+    return CHUNK_PAIRS.get(device.type, 1 << 13)
+
 
 def box2corners(boxes: torch.Tensor) -> torch.Tensor:
     """(..., 5) -> (..., 4, 2) corner coordinates (same order as mmcv)."""
@@ -145,14 +154,16 @@ def _hbb(corners: torch.Tensor) -> torch.Tensor:
 
 @torch.no_grad()
 def box_iou_rotated(boxes1: torch.Tensor, boxes2: torch.Tensor, mode: str = 'iou',
-                    aligned: bool = False, chunk_pairs: int = 1 << 17) -> torch.Tensor:
+                    aligned: bool = False, chunk_pairs: int = None) -> torch.Tensor:
     """Pairwise rotated IoU. ``(M, 5)`` x ``(N, 5)`` -> ``(M, N)`` (or ``(M,)`` if aligned).
 
     ``mode='iof'`` divides by the area of ``boxes1``. Only pairs whose enclosing
     horizontal boxes overlap are evaluated (the rest are exactly 0), in chunks
-    of ``chunk_pairs`` so memory stays bounded.
+    of ``chunk_pairs`` (per-device default, see :data:`CHUNK_PAIRS`) so memory stays bounded.
     """
     assert mode in ('iou', 'iof')
+    if chunk_pairs is None:
+        chunk_pairs = default_chunk_pairs(boxes1.device)
     boxes1 = boxes1.float().clone()
     boxes2 = boxes2.float().clone()
     # degenerate boxes make the corner-in-box test divide by zero (as in mmrotate)

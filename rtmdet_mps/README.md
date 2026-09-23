@@ -197,8 +197,14 @@ order (two minutes):
    re-enables them). If it dies at an epoch boundary rather than mid-epoch, suspect the workers.
 2. `--device cpu` (with `--workers 0`). If it still crashes it is not MPS — look at the data
    (a corrupt JPEG, a HEIC without `pillow-heif`).
-3. If it only crashes on `mps`, it is a torch/Metal bug or memory pressure: update torch,
-   lower `--batch`, and run with `PYTORCH_ENABLE_MPS_FALLBACK=1`.
+3. If it only crashes on `mps`, it is memory pressure or a torch/Metal bug: update torch and
+   lower `--batch`. The rotated IoU evaluates box pairs in chunks whose size is chosen per
+   device (`rtmdet_obb.ops.CHUNK_PAIRS`; ~1.5 KB of transient tensors per pair). Anything that
+   raises the number of ground-truth boxes per image — `--mixup-prob` in particular — raises
+   the number of pairs, so if MPS still dies with mixup on, lower `CHUNK_PAIRS['mps']`.
+
+To find out *which* transform kills the workers, re-run the loader check with the pieces
+switched off one at a time: `--mosaic-prob 0`, `--mixup-prob 0`, `--no-hsv`.
 
 If the message is `DataLoader worker (pid ...) is killed by signal: Segmentation fault`, the
 crash is in the data pipeline (OpenCV in a worker), not in the model or MPS — the traceback of
