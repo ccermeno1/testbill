@@ -49,8 +49,9 @@ def resize_image(img: np.ndarray, width: int, height: int) -> np.ndarray:
         interp = cv2.INTER_AREA if shrinking else cv2.INTER_LINEAR
         return cv2.resize(img, (width, height), interpolation=interp)
     from PIL import Image
+    bilinear = getattr(Image, 'Resampling', Image).BILINEAR  # moved namespace in Pillow 9.1
     # Pillow's BILINEAR already antialiases when shrinking
-    return np.ascontiguousarray(np.asarray(Image.fromarray(img).resize((width, height), Image.BILINEAR)))
+    return np.ascontiguousarray(np.asarray(Image.fromarray(img).resize((width, height), bilinear)))
 
 
 def base_id(stem: str) -> str:
