@@ -9,6 +9,7 @@ flushed, so if the process dies (segfault), the last id printed is the culprit.
         --extra-train augmented --strong-aug --repeat 4
 """
 import argparse
+import faulthandler
 import os.path as osp
 import sys
 import traceback
@@ -74,6 +75,9 @@ def loader_check(ds, args):
                       f'({(time.time() - t0) / (bi + 1):.3f} s/batch)', flush=True)
         print(f'epoch {ep + 1} finished', flush=True)
     print('loader check finished without crashing', flush=True)
+
+
+faulthandler.enable()  # print the Python frame that was running if we get a SIGSEGV
 
 
 def main():

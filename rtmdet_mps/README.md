@@ -206,6 +206,21 @@ order (two minutes):
 To find out *which* transform kills the workers, re-run the loader check with the pieces
 switched off one at a time: `--mosaic-prob 0`, `--mixup-prob 0`, `--no-hsv`.
 
+`train.py` and `check_dataset.py` enable `faulthandler`, so a segmentation fault prints the
+Python frame that was executing (in every process, workers included). That line is the fastest
+way to tell an OpenCV call from a torch one; paste it together with the first 40 lines of the
+macOS crash report (`ls -t ~/Library/Logs/DiagnosticReports/*.ips | head -1 | xargs head -40`),
+which names the faulting library.
+
+To bisect the pipeline without the model, run the loader check in-process and switch the
+transforms off one at a time:
+
+```bash
+for args in "--mixup-prob 0" "--mosaic-prob 0" "--no-hsv" ""; do
+  python check_dataset.py --data "<export>" --split-dir splits_v1 --extra-train augmented       --img-size 512 --strong-aug --loader-workers 0 --batch 2 --epochs 1 $args
+done
+```
+
 If the message is `DataLoader worker (pid ...) is killed by signal: Segmentation fault`, the
 crash is in the data pipeline (OpenCV in a worker), not in the model or MPS — the traceback of
 the main process only shows where the signal arrived. Reproduce it without the model:

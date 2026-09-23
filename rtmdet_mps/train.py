@@ -7,6 +7,7 @@ Example (Mac, from the official DOTA checkpoint, frozen split v1)::
         --work-dir work_dirs/rtmdet_tiny_banknotes --epochs 36 --batch 8 --img-size 640
 """
 import argparse
+import faulthandler
 import json
 import os
 import os.path as osp
@@ -19,6 +20,9 @@ sys.path.insert(0, osp.dirname(osp.abspath(__file__)))
 from rtmdet_obb import RTMDetR, load_pretrained  # noqa: E402
 from rtmdet_obb.data import StrongAug, YoloObbDataset, collate  # noqa: E402
 from rtmdet_obb.engine import pick_device, train  # noqa: E402
+
+
+faulthandler.enable()  # print the Python frame that was running if we get a SIGSEGV
 
 
 def main():
