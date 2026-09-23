@@ -200,8 +200,9 @@ duplicados/casi duplicados con nuestros datasets (pHash/dHash ≤ 8; 20 coincid�
 `euro_banknote`, `hand` descartada. Resultado: `annotations/train_plus_extra.json` = 355 + 304 = 659 imgs /
 1918 cajas (y `train_plus_aug_extra.json` con las copias offline además).
 
-- **Manifiesto de la selección** (todas las fotos con su estado y motivo, versionado en git):
-  `data_manifests/eurobanknotes_extra_selection.{md,csv,json}` (`scripts/extra_manifest.py`).
+- **Manifiesto de la selección** (todas las fotos con su estado y motivo) y las **anotaciones COCO ya
+  generadas** (`data_manifests/annotations/*.json`, incluido `train_plus_extra.json`) están versionados:
+  ver `data_manifests/README.md`. Las imágenes no, se regeneran con los scripts.
 - Selección limpia en formato YOLOv8-OBB para subir a Roboflow: `export/eurobanknotes_extra_yolov8obb/`
   (`scripts/export_yolo_obb.py`).
 - Config del run: `configs/ppyoloe_r_crn_s_banknotes_extra.yml` (train 659, augmentación online, sin copias
