@@ -89,8 +89,9 @@ Augmentation:
   (`--flip-prob` 0.5) → mixup (`--mixup-prob` 0.5). The last `--stage2-epochs` epochs switch
   to a light pipeline (resize 0.9–1.1 + rotation + flip), as mmdet's `PipelineSwitchHook`.
   As in mmdet, the mosaic and the mixup take their extra samples from caches of recent ones
-  (`CachedMosaic` 40 / `CachedMixUp` 20 entries per worker), so each sample decodes one image,
-  not eight. Each worker holds ~50 MB of cache; lower `--workers` on a small machine.
+  (`--mosaic-cache` 40 / `--mixup-cache` 20 entries per worker), so each sample decodes one
+  image, not eight. Each worker holds ~50 MB of cache; lower the caches or `--workers` on a
+  small machine.
 
 Other options: `--accumulate N` (gradient accumulation, effective batch = batch·N, verified
 equivalent to a real batch), `--resume work_dirs/.../latest.pth`, `--val-interval`,
@@ -189,9 +190,11 @@ training. All numbers are area AP, NMS 0.3.
 `Segmentation fault` after a few iterations is almost always one of these; isolate it in this
 order (two minutes):
 
-1. `--workers 0`. If the crash goes away it was the DataLoader workers. The code already calls
-   `cv2.setNumThreads(0)` and forces the `spawn` start method on macOS, which covers the usual
-   OpenCV/Core-Graphics-in-a-forked-worker crash; keep `--workers 2` at most on a laptop.
+1. `--workers 0`. Slower but it removes multiprocessing entirely, so it is the reliable way to
+   keep training while debugging. On macOS the code already sets `cv2.setNumThreads(0)`, the
+   `spawn` start method, the `file_system` sharing strategy, and turns persistent workers off
+   (they are reused across epochs, and that reuse is a common crash point — `--persistent-workers`
+   re-enables them). If it dies at an epoch boundary rather than mid-epoch, suspect the workers.
 2. `--device cpu` (with `--workers 0`). If it still crashes it is not MPS — look at the data
    (a corrupt JPEG, a HEIC without `pillow-heif`).
 3. If it only crashes on `mps`, it is a torch/Metal bug or memory pressure: update torch,

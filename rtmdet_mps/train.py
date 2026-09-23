@@ -39,6 +39,12 @@ def main():
     p.add_argument('--weight-decay', type=float, default=0.05)
     p.add_argument('--warmup-iters', type=int, default=200)
     p.add_argument('--workers', type=int, default=4)
+    p.add_argument('--persistent-workers', dest='persistent_workers', action='store_true', default=None,
+                   help='keep DataLoader workers alive between epochs (default: on, off on macOS)')
+    p.add_argument('--no-persistent-workers', dest='persistent_workers', action='store_false',
+                   help='respawn the workers every epoch; try this if training dies at an epoch boundary')
+    p.add_argument('--mosaic-cache', type=int, default=40, help='samples cached per worker for the mosaic')
+    p.add_argument('--mixup-cache', type=int, default=20, help='samples cached per worker for the mixup')
     p.add_argument('--device', default='auto', help='auto | cuda | mps | cpu')
     p.add_argument('--val-interval', type=int, default=1)
     p.add_argument('--no-ema', action='store_true')
@@ -59,15 +65,20 @@ def main():
 
     torch.manual_seed(args.seed)
     if sys.platform == 'darwin' and args.workers > 0:
-        # fork + Core Graphics / Metal in a worker segfaults; spawn is the safe context
+        # fork + Core Graphics / Metal in a worker segfaults; spawn is the safe context,
+        # and the file_system sharing strategy avoids the fd-passing crashes on macOS
         torch.multiprocessing.set_start_method('spawn', force=True)
+        torch.multiprocessing.set_sharing_strategy('file_system')
     device = pick_device(args.device)
     lr = args.lr if args.lr else 0.00025 * args.batch * args.accumulate / 8
     print(f'device {device}, lr {lr:.2e}, batch {args.batch} x {args.accumulate}, img {args.img_size}')
 
+    if args.persistent_workers is None:  # macOS workers crash on reuse across epochs
+        args.persistent_workers = sys.platform != 'darwin'
     aug_kw = dict(mosaic_prob=args.mosaic_prob, mixup_prob=args.mixup_prob, resize_range=args.resize_range,
                   stage2_resize_range=args.stage2_resize_range, flip_prob=args.flip_prob,
-                  rotate_prob=0.0 if args.no_rotate else 0.5)
+                  rotate_prob=0.0 if args.no_rotate else 0.5,
+                  mosaic_max_cached=args.mosaic_cache, mixup_max_cached=args.mixup_cache)
     train_ds = YoloObbDataset(args.data, 'train', args.img_size, train=True, split_dir=args.split_dir,
                               rotate_prob=0.0 if args.no_rotate else 0.5, extra_dirs=args.extra_train,
                               strong_aug=StrongAug(**aug_kw) if args.strong_aug else None)
@@ -79,13 +90,14 @@ def main():
     val_ds = YoloObbDataset(args.data, 'valid', args.img_size, train=False, split_dir=args.split_dir)
     print(f'train {len(train_ds)} images, val {len(val_ds)} images')
     pin = device.type == 'cuda'
+    persistent = args.workers > 0 and args.persistent_workers
     train_loader = DataLoader(train_ds, args.batch, shuffle=True, num_workers=args.workers, collate_fn=collate,
-                              drop_last=True, pin_memory=pin, persistent_workers=args.workers > 0)
+                              drop_last=True, pin_memory=pin, persistent_workers=persistent)
     val_loader = DataLoader(val_ds, max(1, args.batch // 2), shuffle=False, num_workers=0, collate_fn=collate,
                             pin_memory=pin)
     if args.strong_aug:
         stage2_loader = DataLoader(stage2_ds, args.batch, shuffle=True, num_workers=args.workers, collate_fn=collate,
-                                   drop_last=True, pin_memory=pin, persistent_workers=args.workers > 0)
+                                   drop_last=True, pin_memory=pin, persistent_workers=persistent)
 
     model = RTMDetR(num_classes=args.classes, size=args.size)
     if args.init and not args.resume:
