@@ -60,6 +60,14 @@ Images are loaded in BGR (OpenCV) and normalised inside the model with the DOTA 
 statistics. Preprocessing = resize keeping the aspect ratio so the long side equals
 `--img-size`, then pad to a square with grey 114.
 
+Resizing goes through `rtmdet_obb.data.resize_image`, which **antialiases when it shrinks**
+(`cv2.INTER_AREA`, or Pillow's BILINEAR, which filters by itself) — plain bilinear only samples
+a 2x2 neighbourhood, and downscaling a 4000 px photo to 800 that way costs 0.04 mAP@.5:.95 and
+1.5 points of recall on the external set. The backend is Pillow on macOS and OpenCV elsewhere,
+because `cv2.resize` segfaults on macOS/ARM inside OpenCV's kleidicv NEON kernel
+(`kleidicv_resize_generic_stripe_u8`); force one with `RTMDET_RESIZE_BACKEND=cv2|pil`. The two
+agree to ~0.005 mAP.
+
 ## Train
 
 ```bash
@@ -155,10 +163,10 @@ training. All numbers are area AP, NMS 0.3.
 | A | 1024 | 0.923 | 0.812 | 0.620 | 0.516 |
 | B | 1024 | 0.957 | 0.925 | 0.811 | 0.653 |
 | C @72 (pre-light) | 800 | 0.995 | 0.975 | 0.913 | **0.736** |
-| **C** | **800** | 0.990 | 0.974 | 0.910 | **0.732** |
-| C | 640 | 0.981 | 0.962 | 0.894 | 0.715 |
-| C | 512 | 0.971 | 0.947 | 0.861 | 0.693 |
-| C | 1024 | 0.986 | 0.966 | 0.865 | 0.714 |
+| **C** | **800** | **1.000** | 0.992 | 0.957 | **0.773** |
+| C | 640 | 1.000 | 0.993 | 0.933 | 0.763 |
+| C | 1024 | 1.000 | 0.987 | 0.893 | 0.741 |
+| C, plain bilinear downscale (old) | 800 | 0.990 | 0.974 | 0.910 | 0.732 |
 
 ## What we learned
 

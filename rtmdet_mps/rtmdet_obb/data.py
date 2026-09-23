@@ -10,6 +10,7 @@ checkpoint expects.
 import glob
 import os
 import os.path as osp
+import sys
 from typing import Dict, List, Optional, Sequence
 
 import cv2
@@ -29,6 +30,27 @@ except Exception:  # pragma: no cover - older builds without OpenCL support
 from .boxes import flip_rboxes, poly2rbox, rotate_rboxes
 
 IMG_EXTS = ('.jpg', '.jpeg', '.png', '.bmp')
+
+# ``cv2.resize`` segfaults on macOS/ARM inside OpenCV's kleidicv NEON backend
+# (kleidicv_resize_generic_stripe_u8), so bilinear resizing goes through Pillow there.
+# Override with RTMDET_RESIZE_BACKEND=cv2|pil.
+RESIZE_BACKEND = os.environ.get('RTMDET_RESIZE_BACKEND', 'pil' if sys.platform == 'darwin' else 'cv2')
+
+
+def resize_image(img: np.ndarray, width: int, height: int) -> np.ndarray:
+    """Resize to ``(width, height)``, channel-order agnostic (images stay BGR).
+
+    Downscaling uses an area/antialiased filter: plain bilinear aliases badly when a 4000 px
+    photo is reduced to 800 (it only samples a 2x2 neighbourhood), which costs real accuracy.
+    """
+    width, height = max(1, int(width)), max(1, int(height))
+    shrinking = width < img.shape[1] or height < img.shape[0]
+    if RESIZE_BACKEND == 'cv2':
+        interp = cv2.INTER_AREA if shrinking else cv2.INTER_LINEAR
+        return cv2.resize(img, (width, height), interpolation=interp)
+    from PIL import Image
+    # Pillow's BILINEAR already antialiases when shrinking
+    return np.ascontiguousarray(np.asarray(Image.fromarray(img).resize((width, height), Image.BILINEAR)))
 
 
 def base_id(stem: str) -> str:
@@ -175,7 +197,7 @@ class YoloObbDataset(Dataset):
         h0, w0 = img.shape[:2]
         scale = self.img_size / max(h0, w0)
         if scale != 1.0:
-            img = cv2.resize(img, (int(round(w0 * scale)), int(round(h0 * scale))), interpolation=cv2.INTER_LINEAR)
+            img = resize_image(img, round(w0 * scale), round(h0 * scale))
             boxes[:, :4] *= scale
         h, w = img.shape[:2]
 
@@ -210,7 +232,7 @@ class YoloObbDataset(Dataset):
         h0, w0 = img.shape[:2]
         scale = self.img_size / max(h0, w0)
         if scale != 1.0:
-            img = cv2.resize(img, (int(round(w0 * scale)), int(round(h0 * scale))), interpolation=cv2.INTER_LINEAR)
+            img = resize_image(img, round(w0 * scale), round(h0 * scale))
             boxes[:, :4] *= scale
         return img, boxes, labels, (h0, w0), scale
 
@@ -305,7 +327,7 @@ class YoloObbDataset(Dataset):
         f = np.random.uniform(lo, hi)
         if f != 1.0:
             h, w = img.shape[:2]
-            img = cv2.resize(img, (max(1, int(round(w * f))), max(1, int(round(h * f)))), interpolation=cv2.INTER_LINEAR)
+            img = resize_image(img, round(w * f), round(h * f))
             boxes[:, :4] *= f
         h, w = img.shape[:2]
         if np.random.rand() < a.rotate_prob:
@@ -409,7 +431,7 @@ def letterbox_image(img: np.ndarray, img_size: int):
     h0, w0 = img.shape[:2]
     scale = img_size / max(h0, w0)
     if scale != 1.0:
-        img = cv2.resize(img, (int(round(w0 * scale)), int(round(h0 * scale))), interpolation=cv2.INTER_LINEAR)
+        img = resize_image(img, round(w0 * scale), round(h0 * scale))
     h, w = img.shape[:2]
     canvas = np.full((img_size, img_size, 3), 114, dtype=np.uint8)
     canvas[:h, :w] = img
