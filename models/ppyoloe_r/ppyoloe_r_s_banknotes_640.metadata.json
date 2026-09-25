@@ -1,0 +1,52 @@
+{
+  "model": "PP-YOLOE-R-s",
+  "checkpoint": "ppyoloe_r_s_banknotes_torch.pt",
+  "classes": [
+    "euro_banknote"
+  ],
+  "input": {
+    "name": "images_rgb_0_255",
+    "dtype": "float32",
+    "shape": [
+      1,
+      3,
+      640,
+      640
+    ],
+    "range": [
+      0,
+      255
+    ],
+    "layout": "NCHW",
+    "color": "RGB",
+    "resize": "keep_ratio_to_long_side",
+    "resize_interpolation": "INTER_AREA al reducir, INTER_LINEAR al ampliar",
+    "padding": {
+      "value": 0,
+      "anchor": "top_left",
+      "to_multiple_of": 32
+    },
+    "normalization_inside_graph": true,
+    "mean_0_255": [
+      123.675,
+      116.28,
+      103.53
+    ],
+    "std_0_255": [
+      58.395,
+      57.12,
+      57.375
+    ]
+  },
+  "outputs": {
+    "scores": "(B, C, L) probabilidad por clase, sigmoid ya aplicada",
+    "boxes": "(B, L, 5) cajas rotadas (cx, cy, w, h, angulo_rad) en pixeles de la entrada"
+  },
+  "client_postprocess": [
+    "umbral de score (0.05 para metricas, 0.5 para produccion)",
+    "NMS rotado por clase (IoU 0.1 en la convencion de mmrotate; 0.5 va mejor si los objetos se solapan)",
+    "dividir las coordenadas por la escala del resize para volver a la imagen original",
+    "convertir (cx, cy, w, h, angulo) a poligono de 4 esquinas"
+  ],
+  "angle_convention": "radianes en [0, pi/2), sentido horario con el eje y hacia abajo"
+}

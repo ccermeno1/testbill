@@ -25,7 +25,10 @@ src/ppyoloer_mps/
     engine.py       dispositivo, EMA, bucles de train/eval
     evaluation.py   mAP50/75/50-95, P/R/F1
     checkpoint.py   conversión .pdparams -> .pt, guardado y carga
-  train.py  evaluate.py  infer.py  convert_paddle.py
+  train.py  evaluate.py  infer.py
+  convert_paddle.py                     .pdparams de PaddleDetection -> .pt
+  export_onnx.py  onnx_example.py       export a ONNX y pre/post-proceso del cliente
+  data_prep/                            preparacion de datasets (sin Paddle)
 tests/                                  tests de runtime (pytest)
 ```
 
@@ -79,8 +82,13 @@ data/banknotes_obb/
 
 ## Checkpoints
 
-`models/ppyoloe_r/ppyoloe_r_s_banknotes_extra.pt` es el modelo recomendado (el `extra` de la rama
-de Paddle), ya convertido. Para convertir otro checkpoint de PaddleDetection:
+| fichero | origen |
+|---|---|
+| `ppyoloe_r_s_banknotes_torch.pt` | **entrenado con este repo** (60 epocas, 95.78 / 81.19 / 69.53) |
+| `ppyoloe_r_s_banknotes_extra.pt` | el modelo `extra` entrenado con Paddle, convertido |
+| `ppyoloe_r_s_dota.pt` | checkpoint oficial de DOTA, punto de partida para entrenar |
+
+Para convertir otro checkpoint de PaddleDetection:
 
 ```bash
 uv run python src/ppyoloer_mps/convert_paddle.py \
@@ -92,37 +100,86 @@ le pasa un `.pdparams`; también acepta un `.npz` exportado en otra máquina.
 
 ## Paridad con Paddle
 
-Comprobado en CPU con el mismo checkpoint y las mismas imágenes:
+### Inferencia
 
-| comprobación | resultado |
+Mismo checkpoint y mismas imagenes, en CPU:
+
+| comprobacion | resultado |
 |---|---|
 | carga del state_dict | 461 tensores, 0 faltantes, 0 sobrantes |
-| mapas del cuello | error máx. 6e-5 (escala ~12) |
-| scores de la cabeza | error máx. 3.8e-6 |
-| cajas decodificadas | error máx. 3e-3 px sobre ~480 px |
-| pérdida de entrenamiento (cls/iou/dfl) | diferencia relativa < 8e-6 |
+| mapas del cuello | error max. 6e-5 (escala ~12) |
+| scores de la cabeza | error max. 3.8e-6 |
+| cajas decodificadas | error max. 3e-3 px sobre ~480 px |
+| perdida de entrenamiento (cls/iou/dfl) | diferencia relativa < 8e-6, tambien con lotes de mosaico |
+| 20 pasos de SGD sobre el mismo lote | trayectorias identicas (2.4799 -> 0.6123 vs 0.6234) |
 
-Y las métricas extremo a extremo coinciden con las de Paddle hasta el segundo decimal:
+### Entrenamiento desde cero
 
-| dataset | mAP50 | mAP75 | mAP50-95 | P@.5 | R@.5 | F1@.5 |
-|---|---|---|---|---|---|---|
-| valid | 95.10 | 80.94 | 69.53 | 0.969 | 0.874 | 0.919 |
-| test | 100.00 | 91.53 | 77.61 | 1.000 | 0.984 | 0.992 |
-| billetesprueba | 98.65 | 84.17 | 66.50 | 0.935 | 0.971 | 0.953 |
+60 epocas desde el checkpoint de DOTA, misma receta y misma metrica, evaluado en valid:
 
-### Detalles del port
+| | port PyTorch | PaddleDetection |
+|---|---|---|
+| mAP50 | **95.78** | 95.10 |
+| mAP75 | **81.19** | 80.94 |
+| mAP50-95 | 69.53 | 69.53 |
+| P / R / F1 @.5 | 0.969 / 0.874 / 0.919 | 0.969 / 0.874 / 0.919 |
 
-- Los submódulos se llaman igual que en Paddle, así que los pesos mapean 1:1: solo cambian
-  `bn._mean`/`bn._variance` por `running_mean`/`running_var`. No hay tensores 2D, luego no hay
-  ninguna matriz que transponer.
-- `swish` de Paddle == `SiLU`; `hardsigmoid` de Paddle (slope 1/6, offset 0.5) == `F.hardsigmoid`.
-- El `Resize` de inferencia usa `INTER_AREA`, como la versión final de la rama de Paddle: al reducir
-  fotos grandes evita el *aliasing* de la interpolación cúbica.
-- `F.binary_cross_entropy` de PyTorch no admite un `weight` con gradiente, pero el de Paddle sí lo
-  propaga y la VariFocal calcula el peso desde la propia predicción: por eso la BCE está escrita a
-  mano en `losses.py` (verificado contra Paddle).
-- La IoU rotada exacta está en PyTorch puro (`boxes.rotated_iou`), así que no hace falta compilar
-  las ops custom de PaddleDetection. El NMS rotado la usa directamente.
+Llegar hasta aqui exigio seis correcciones de fidelidad respecto a ppdet, todas con test de
+regresion. Se documentan porque son justo las que no se ven comparando modulos por separado:
+
+| # | diferencia | sintoma si no se corrige |
+|---|---|---|
+| 1 | `RRotate` usa `auto_bound`: encoge la imagen en vez de recortar esquinas | objetos cortados con su caja entera como objetivo |
+| 2 | `Poly2RBox` descarta cajas con lado menor < 2 px | ProbIoU hace `log(0)` y la perdida se va a **NaN** |
+| 3 | en `RandomDistort` el parametro `prob` es la probabilidad de **saltar** la operacion, y usa PIL `ImageEnhance` | imagenes lavadas (media 127 vs 107, desviacion 54 vs 74) |
+| 4 | las rotaciones rellenan con negro, no con gris 114 | mismas estadisticas de imagen desviadas |
+| 5 | `ModelEMA` usa `ema_decay_type='threshold'`, no el ramp exponencial | decay 0.34 en vez de 0.99: el EMA copia el modelo en vez de promediarlo |
+| 6 | **`RResize` recorta los vertices del poligono al lienzo** | se entrena con la extension no visible del objeto: **mAP75 hundido** (10 vs 40) |
+
+La numero 6 era la principal. Se localizo midiendo el pipeline de Paddle etapa por etapa
+(mosaico 0.2348 -> +rotaciones 0.1717 -> +RResize 0.1202 de area mediana por imagen).
+
+### Umbrales, alineados con mmrotate
+
+Los valores por defecto son los del `test_cfg` oficial de mmrotate (`rotated_retinanet`), para
+poder comparar con otros detectores rotados en igualdad de condiciones:
+
+| parametro | valor | donde |
+|---|---|---|
+| `score_thr` (antes del NMS) | 0.05 | `--score-threshold` |
+| `nms_iou` | 0.1 | `--nms-iou` |
+| `nms_pre` / `max_per_img` | 2000 | `ops.batched_postprocess` |
+| umbral para P/R/F1 y produccion | 0.5 | `--conf` |
+| seleccion del mejor checkpoint | `0.9*mAP50-95 + 0.1*mAP50` | `--save-best` |
+
+Con billetes apilados conviene subir el NMS a 0.5: medido sobre este dataset, el 17 % de las
+cajas de valid solapan con un vecino por encima de IoU 0.1, y pasar de 0.1 a 0.5 sube el mAP50
+de 81.7 a 90.6 sin reentrenar.
+
+## Export a ONNX
+
+```bash
+uv pip install -e ".[export]"
+uv run python src/ppyoloer_mps/export_onnx.py models/ppyoloe_r/ppyoloe_r_s_banknotes_torch.pt     --out models/ppyoloe_r/ppyoloe_r_s_banknotes_640.onnx --img-size 640
+```
+
+El grafo acepta **RGB float32 en 0..255** ya redimensionado y rellenado (la normalizacion va
+dentro) y devuelve `scores` (B, C, L) con sigmoid aplicada y `boxes` (B, L, 5) ya decodificadas
+en pixeles de la entrada. Al cliente solo le quedan tres pasos: umbral, NMS rotado y deshacer la
+escala. Junto al `.onnx` se escribe un `.metadata.json` con todo el contrato.
+
+`onnx_example.py` implementa esos tres pasos en numpy y los contrasta con el modelo PyTorch:
+
+```bash
+uv run python src/ppyoloer_mps/onnx_example.py foto.jpg     --onnx models/ppyoloe_r/ppyoloe_r_s_banknotes_640.onnx     --checkpoint models/ppyoloe_r/ppyoloe_r_s_banknotes_torch.pt
+# ONNX: 2 detecciones (conf >= 0.5, NMS IoU 0.1)
+# PyTorch: 2 detecciones
+#   diferencia maxima en las cajas: 0.0002 px
+#   diferencia maxima en los scores: 0.000000
+```
+
+Cuidado con la convencion de esquinas al reimplementar `rbox2poly` fuera de Python: el signo del
+termino del angulo da cajas plausibles pero mal orientadas. Hay un test que lo fija.
 
 ## Rendimiento y dispositivos
 

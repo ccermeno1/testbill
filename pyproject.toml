@@ -13,6 +13,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8.0", "shapely>=2.0"]
+export = ["onnx>=1.16", "onnxruntime>=1.18"]
 data = ["shapely>=2.0", "imagehash>=4.3"]   # scripts de src/ppyoloer_mps/data_prep
 convert = ["paddlepaddle>=3.0.0"]   # solo para convertir .pdparams; no hace falta para entrenar
 
@@ -25,7 +26,8 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "src/ppyoloer_mps"]
+markers = ["slow: tests que exportan a ONNX y tardan mas"]
 
 [tool.ruff]
 line-length = 110
