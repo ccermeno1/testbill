@@ -102,7 +102,7 @@ def summarize(det_results, annotations, num_classes, thresholds: Sequence[float]
     r = eval_rbbox_map(operational, annotations, num_classes, 0.5, mode)
     precision = float(np.mean([r[f'precision{c}'] for c in range(num_classes)]))
     recall = float(np.mean([r[f'recall{c}'] for c in range(num_classes)]))
-    f1 = 2 * precision * recall / max(precision + recall, np.finfo(np.float32).eps)
+    f1 = float(2 * precision * recall / max(precision + recall, float(np.finfo(np.float32).eps)))
     res['precision@0.50'] = precision
     res['recall@0.50'] = recall
     res['f1@0.50'] = f1

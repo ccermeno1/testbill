@@ -1,6 +1,6 @@
 """Strip a training checkpoint down to the inference weights (EMA ``state_dict`` + metadata).
 
-    python export_checkpoint.py ../../models/rtmdet/experiments/run/epoch_100.pth ../../models/rtmdet/checkpoints/rtmdet_r_tiny_banknotes.pth
+    python src/yolox_mps/export_checkpoint.py models/yolox_obb/experiments/run/epoch_80.pth models/yolox_obb/checkpoints/yolox_s_obb_banknotes.pth
 """
 import argparse
 import torch

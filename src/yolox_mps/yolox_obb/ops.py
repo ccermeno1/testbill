@@ -1,11 +1,12 @@
 """Rotated-box geometry in pure PyTorch (works on CPU, CUDA and MPS).
 
-Replaces the compiled ``mmcv.ops`` kernels used by RTMDet-R:
+Replaces the compiled kernels of YOLOX_OBB (``yolox/ops``: ``convex_sort``,
+``box_iou_rotated``, ``nms_rotated``):
 
 * :func:`diff_iou_rotated_2d` - differentiable IoU of aligned box pairs (for the
-  ``RotatedIoULoss``). Port of ``mmcv/ops/diff_iou_rotated.py`` where the CUDA
+  ``PolyIoULoss``). Port of ``mmcv/ops/diff_iou_rotated.py`` where the CUDA
   ``sort_vertices`` kernel is replaced by an angular ``argsort``.
-* :func:`box_iou_rotated` - pairwise (M x N) IoU / IoF, no gradient (assigner, mAP).
+* :func:`box_iou_rotated` - pairwise (M x N) IoU / IoF, no gradient (SimOTA, mAP).
 * :func:`nms_rotated` / :func:`batched_nms_rotated` - greedy rotated NMS.
 
 Boxes are ``(cx, cy, w, h, angle_rad)``; the angle convention only has to be

@@ -4,7 +4,6 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.hypothesis/
 .ruff_cache/
 *.egg-info/
 build/
@@ -18,34 +17,16 @@ Thumbs.db
 desktop.ini
 
 # --- datos ------------------------------------------------------------------
-# El dataset no entra: son 16 MB de imagenes cuya fuente de verdad es Roboflow
-# (clara-cermeno/annotated-banknotes-2-rwayh), no este repositorio. Se recupera
-# reexportando desde alli.
-#
-# Lo que SI entra es splits/, que es donde vive la particion congelada. Ese es el
-# punto de materializarla: los .txt sobreviven aunque el arbol de datos cambie, y
-# versionarlos es lo que permite repetir una ejecucion.
-data/derived/
-data/synth_*/
-
-# Todo lo derivado se regenera: indice de tamanos, vista para Ultralytics.
-# Datasets locales no versionados.
+# Los datasets son locales: la fuente de verdad es Roboflow.
 data/Annotated\ banknotes\ 2.yolov8-obb/
-data/external_eval_data/
 data/augmented/
 data/dataset/
 data/external_dataset/
 
 # --- artefactos locales ------------------------------------------------------
-models/rtmdet/experiments/
+models/yolox_obb/checkpoints/
+models/yolox_obb/experiments/
 outputs/
 *.pt
 *.pth
 *.onnx
-*.tflite
-
-# Ultralytics deja esto donde le pillas.
-yolo*.pt
-runs/detect/
-
-models/rtmdet/checkpoints/

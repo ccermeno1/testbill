@@ -1,10 +1,10 @@
-"""Train RTMDet-R on a YOLOv8-OBB export (pure PyTorch: CUDA, Apple MPS or CPU).
+"""Train a YOLOX-OBB detector on a YOLOv8-OBB export (pure PyTorch: CUDA, Apple MPS or CPU).
 
-Example (Mac, from the official DOTA checkpoint, frozen split v1)::
+``--model``: ``ddgrcf_s`` (YOLOX_OBB-s, DOTA weights) or the official YOLOX ``yolox_nano`` /
+``yolox_tiny`` / ``yolox_s`` with an oriented head (COCO weights). Example::
 
-    python train.py --data "../../data/Annotated banknotes 2.yolov8-obb" \
-        --init ../../models/rtmdet/checkpoints/rotated_rtmdet_tiny-3x-dota-9d821076.pth \
-        --work-dir ../../models/rtmdet/experiments/rtmdet_tiny_banknotes --epochs 36 --batch 8 --img-size 640
+    python src/yolox_mps/train.py --model ddgrcf_s --work-dir dota_200 \
+        --extra-train augmented --img-size 640 --batch 8 --epochs 200 --stage2-epochs 15 --strong-aug
 """
 import argparse
 import faulthandler
@@ -18,16 +18,16 @@ import torch
 from torch.utils.data import DataLoader
 
 sys.path.insert(0, osp.dirname(osp.abspath(__file__)))
-from rtmdet_obb import RTMDetR, load_pretrained  # noqa: E402
-from rtmdet_obb.data import StrongAug, YoloObbDataset, collate  # noqa: E402
-from rtmdet_obb.engine import pick_device, train  # noqa: E402
+from yolox_obb import MODELS, build_model, load_pretrained  # noqa: E402
+from yolox_obb.data import StrongAug, YoloObbDataset, collate  # noqa: E402
+from yolox_obb.engine import pick_device, train  # noqa: E402
 
 
 faulthandler.enable()
 
 ROOT = Path(__file__).resolve().parents[2]
-CHECKPOINTS = ROOT / 'models' / 'rtmdet' / 'checkpoints'
-EXPERIMENTS = ROOT / 'models' / 'rtmdet' / 'experiments'
+CHECKPOINTS = ROOT / 'models' / 'yolox_obb' / 'checkpoints'
+EXPERIMENTS = ROOT / 'models' / 'yolox_obb' / 'experiments'
 
 
 def _resolve_path(value: str, base: Path) -> str:
@@ -41,17 +41,20 @@ def main():
     p.add_argument('--split-dir', help='legacy split directory; physical train/valid/test folders are preferred')
     p.add_argument('--extra-train', nargs='*', default=[], help='optional extra folders added to train')
     p.add_argument('--classes', type=int, default=1)
-    p.add_argument('--size', default='tiny', choices=['tiny', 's', 'm', 'l'])
-    p.add_argument('--init', default='rotated_rtmdet_tiny-3x-dota-9d821076.pth', help='checkpoint filename or path')
+    p.add_argument('--model', default='ddgrcf_s', choices=list(MODELS))
+    p.add_argument('--init', help='checkpoint filename or path (default: the pretrained weights of --model); '
+                                  '"none" trains from scratch')
     p.add_argument('--resume', help='latest.pth of this repo to resume')
     p.add_argument('--work-dir', default='dota_200', help='experiment name or output path')
     p.add_argument('--img-size', type=int, default=640)
-    p.add_argument('--epochs', type=int, default=36)
+    p.add_argument('--epochs', type=int, default=80)
     p.add_argument('--batch', type=int, default=8)
     p.add_argument('--accumulate', type=int, default=1, help='gradient accumulation steps (effective batch = batch * accumulate)')
-    p.add_argument('--lr', type=float, help='default 0.00025 * effective batch / 8 (mmrotate: 0.004/16 for batch 8)')
-    p.add_argument('--weight-decay', type=float, default=0.05)
-    p.add_argument('--warmup-iters', type=int, default=200)
+    p.add_argument('--lr', type=float, help='default 0.01 / 64 per image of the effective batch (YOLOX basic_lr_per_img)')
+    p.add_argument('--weight-decay', type=float, default=5e-4)
+    p.add_argument('--momentum', type=float, default=0.9)
+    p.add_argument('--warmup-epochs', type=float, default=1)
+    p.add_argument('--min-lr-ratio', type=float, default=0.05)
     p.add_argument('--workers', type=int, default=4)
     p.add_argument('--persistent-workers', dest='persistent_workers', action='store_true', default=None)
     p.add_argument('--no-persistent-workers', dest='persistent_workers', action='store_false')
@@ -66,14 +69,16 @@ def main():
                    help='operating threshold used for validation precision/recall/F1')
     p.add_argument('--no-rotate', action='store_true', help='disable the random rotation augmentation')
     p.add_argument('--strong-aug', action='store_true',
-                   help='RTMDet "aug" pipeline: mosaic + random resize + rotate + crop + HSV + flip + mixup, '
+                   help='mosaic + random resize + rotate + crop + HSV + flip + mixup, '
                         'switching to the light pipeline for the last --stage2-epochs')
     p.add_argument('--mosaic-prob', type=float, default=1.0)
     p.add_argument('--mixup-prob', type=float, default=0.5)
     p.add_argument('--resize-range', type=float, nargs=2, default=[0.5, 1.5])
     p.add_argument('--stage2-resize-range', type=float, nargs=2, default=[0.9, 1.1])
     p.add_argument('--flip-prob', type=float, default=0.5, help='(strong aug only; the basic pipeline uses 0.75)')
-    p.add_argument('--stage2-epochs', type=int, default=10)
+    p.add_argument('--stage2-epochs', type=int, default=15,
+                   help='last epochs without mosaic (YOLOX no_aug_epochs): light augmentation, extra L1 loss, '
+                        'LR at its minimum')
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--tensorboard', action='store_true', help='write TensorBoard events under --work-dir')
     args = p.parse_args()
@@ -82,7 +87,15 @@ def main():
         _resolve_path(path, ROOT / 'data') if not Path(path).exists() else path
         for path in args.extra_train
     ]
-    args.init = _resolve_path(args.init, CHECKPOINTS)
+    if args.init is None:
+        args.init = MODELS[args.model][1]
+    if args.init.lower() != 'none':
+        args.init = _resolve_path(args.init, CHECKPOINTS)
+        if not args.resume and not Path(args.init).exists():
+            p.error(f'--init {args.init} not found (see README for the YOLOX_OBB weights, '
+                    'or pass --init none to train from scratch)')
+    else:
+        args.init = None
     args.work_dir = _resolve_path(args.work_dir, EXPERIMENTS)
 
     torch.manual_seed(args.seed)
@@ -95,7 +108,7 @@ def main():
     import numpy as np
     np.random.seed(args.seed)
     device = pick_device(args.device)
-    lr = args.lr if args.lr else 0.00025 * args.batch * args.accumulate / 8
+    lr = args.lr if args.lr else 0.01 / 64 * args.batch * args.accumulate
     print(f'device {device}, lr {lr:.2e}, batch {args.batch} x {args.accumulate}, img {args.img_size}')
 
     aug_kw = dict(mosaic_prob=args.mosaic_prob, mixup_prob=args.mixup_prob, resize_range=args.resize_range,
@@ -105,11 +118,11 @@ def main():
     train_ds = YoloObbDataset(args.data, 'train', args.img_size, train=True, split_dir=args.split_dir,
                               rotate_prob=0.0 if args.no_rotate else 0.5, extra_dirs=args.extra_train,
                               strong_aug=StrongAug(**aug_kw) if args.strong_aug else None)
-    stage2_loader = stage2_epoch = None
+    stage2_loader = None
+    stage2_epoch = max(0, args.epochs - args.stage2_epochs)
     if args.strong_aug:
         stage2_ds = YoloObbDataset(args.data, 'train', args.img_size, train=True, split_dir=args.split_dir,
                                    extra_dirs=args.extra_train, strong_aug=StrongAug(stage2=True, **aug_kw))
-        stage2_epoch = max(0, args.epochs - args.stage2_epochs)
     val_ds = YoloObbDataset(args.data, 'valid', args.img_size, train=False, split_dir=args.split_dir)
     print(f'train {len(train_ds)} images, val {len(val_ds)} images')
     pin = device.type == 'cuda'
@@ -122,7 +135,7 @@ def main():
         stage2_loader = DataLoader(stage2_ds, args.batch, shuffle=True, num_workers=args.workers, collate_fn=collate,
                                    drop_last=True, pin_memory=pin, persistent_workers=persistent)
 
-    model = RTMDetR(num_classes=args.classes, size=args.size)
+    model = build_model(args.model, args.classes)
     if args.init and not args.resume:
         load_pretrained(model, args.init)
 
@@ -131,15 +144,16 @@ def main():
     # Keep the effective evaluation protocol in the run record. The low score
     # threshold is intentionally fixed for AP; the report threshold is for the
     # operating-point precision/recall/F1 metrics.
-    run_args.update(score_thr=0.05, report_score_thr=args.report_score_thr)
+    run_args.update(score_thr=0.05, report_score_thr=args.report_score_thr, lr=lr)
     with open(osp.join(args.work_dir, 'args.json'), 'w') as f:
         json.dump(run_args, f, indent=2)
 
     train(model, train_loader, val_loader, device, args.work_dir, args.epochs, lr, args.weight_decay,
-          args.warmup_iters, args.val_interval, use_ema=not args.no_ema, grad_clip=args.grad_clip, resume=args.resume,
-           val_kwargs=dict(nms_iou=args.nms_iou, report_score_thr=args.report_score_thr),
-           stage2_loader=stage2_loader, stage2_epoch=stage2_epoch,
-           accumulate=args.accumulate, tensorboard=args.tensorboard)
+          args.momentum, args.warmup_epochs, args.min_lr_ratio, args.val_interval, use_ema=not args.no_ema,
+          grad_clip=args.grad_clip, resume=args.resume,
+          val_kwargs=dict(nms_iou=args.nms_iou, report_score_thr=args.report_score_thr),
+          stage2_loader=stage2_loader, stage2_epoch=stage2_epoch,
+          accumulate=args.accumulate, tensorboard=args.tensorboard)
 
 
 if __name__ == '__main__':

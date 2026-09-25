@@ -8,16 +8,6 @@ import torch
 PI = math.pi
 
 
-def norm_angle(angle: torch.Tensor, version: str = 'le90') -> torch.Tensor:
-    if version == 'le90':
-        return (angle + PI / 2) % PI - PI / 2
-    if version == 'le135':
-        return (angle + PI / 4) % PI - PI / 4
-    if version == 'oc':
-        return angle
-    raise ValueError(version)
-
-
 def regularize_le90(boxes: torch.Tensor) -> torch.Tensor:
     """Unique representation: w >= h and angle in [-pi/2, pi/2) (RotatedBoxes.regularize_boxes)."""
     x, y, w, h, t = boxes.unbind(-1)
@@ -29,16 +19,15 @@ def regularize_le90(boxes: torch.Tensor) -> torch.Tensor:
     return torch.stack([x, y, w_, h_, t], -1)
 
 
-def distance2obb(points: torch.Tensor, distance: torch.Tensor, version: str = 'le90') -> torch.Tensor:
-    """(..., 2) points and (..., 5) = (l, t, r, b, angle) -> (..., 5) boxes (DistanceAnglePointCoder.decode)."""
-    dist, angle = distance.split([4, 1], dim=-1)
-    cos, sin = torch.cos(angle), torch.sin(angle)
-    wh = dist[..., :2] + dist[..., 2:]
-    off = (dist[..., 2:] - dist[..., :2]) / 2  # (dx, dy) in the box frame
-    ox = cos[..., 0] * off[..., 0] - sin[..., 0] * off[..., 1]
-    oy = sin[..., 0] * off[..., 0] + cos[..., 0] * off[..., 1]
-    ctr = points + torch.stack([ox, oy], -1)
-    return torch.cat([ctr, wh, norm_angle(angle, version)], -1)
+def regularize_mintheta(boxes: torch.Tensor) -> torch.Tensor:
+    """YOLOX_OBB target representation (``mintheta_obb``): of the two equivalent
+    ``(w, h, t)`` / ``(h, w, t + pi/2)`` forms keep the one with the smallest ``|t|``,
+    so the angle lies in [-pi/4, pi/4] and w / h follow the box, not the long side."""
+    x, y, w, h, t = boxes.unbind(-1)
+    t1 = (t + PI / 2) % PI - PI / 2
+    t2 = (t + PI) % PI - PI / 2  # t + pi/2 wrapped to [-pi/2, pi/2)
+    keep = t1.abs() < t2.abs()
+    return torch.stack([x, y, torch.where(keep, w, h), torch.where(keep, h, w), torch.where(keep, t1, t2)], -1)
 
 
 def rbox2poly(boxes: torch.Tensor) -> torch.Tensor:
@@ -61,8 +50,8 @@ def poly2rbox(polys: np.ndarray) -> np.ndarray:
     return out
 
 
-def points_in_rboxes(points: torch.Tensor, boxes: torch.Tensor, eps: float = 0.01) -> torch.Tensor:
-    """(m, 2) points x (n, 5) boxes -> (m, n) bool (RotatedBoxes.find_inside_points)."""
+def points_in_rboxes(points: torch.Tensor, boxes: torch.Tensor, eps: float = 0.0) -> torch.Tensor:
+    """(m, 2) points x (n, 5) boxes -> (m, n) bool, strictly inside (OBBDetectX.get_in_boxes_info)."""
     ctr, wh, t = torch.split(boxes[None], [2, 2, 1], dim=-1)  # (1, n, .)
     cos, sin = torch.cos(t[..., 0]), torch.sin(t[..., 0])
     off = points[:, None, :] - ctr  # (m, n, 2)

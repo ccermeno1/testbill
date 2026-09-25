@@ -1,7 +1,7 @@
 """Evaluate a checkpoint on a split of a YOLOv8-OBB export (rotated mAP, area mode).
 
-    python evaluate.py ../../models/rtmdet/experiments/rtmdet_tiny_banknotes/best_epoch_XX.pth --data "../../data/Annotated banknotes 2.yolov8-obb" \
-        --split test --img-size 640 --nms-iou 0.3 0.5
+    python src/yolox_mps/evaluate.py dota_200/best_epoch_XX.pth --data dataset \
+        --split test --img-size 640 --nms-iou 0.1 0.3
 """
 import argparse
 import json
@@ -13,13 +13,13 @@ import torch
 from torch.utils.data import DataLoader
 
 sys.path.insert(0, osp.dirname(osp.abspath(__file__)))
-from rtmdet_obb import RTMDetR, load_state_dict_file  # noqa: E402
-from rtmdet_obb.data import DotaObbDataset, YoloObbDataset, collate  # noqa: E402
-from rtmdet_obb.engine import evaluate, pick_device  # noqa: E402
+from yolox_obb import MODELS, build_model, checkpoint_arch, load_state_dict_file  # noqa: E402
+from yolox_obb.data import DotaObbDataset, YoloObbDataset, collate  # noqa: E402
+from yolox_obb.engine import evaluate, pick_device  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-CHECKPOINTS = ROOT / 'models' / 'rtmdet' / 'checkpoints'
-EXPERIMENTS = ROOT / 'models' / 'rtmdet' / 'experiments'
+CHECKPOINTS = ROOT / 'models' / 'yolox_obb' / 'checkpoints'
+EXPERIMENTS = ROOT / 'models' / 'yolox_obb' / 'experiments'
 
 
 def main():
@@ -31,7 +31,7 @@ def main():
     p.add_argument('--class-names', default='euro_banknote', help='comma separated (DOTA layout only)')
     p.add_argument('--split', default='test', choices=['train', 'valid', 'test'])
     p.add_argument('--classes', type=int, default=1)
-    p.add_argument('--size', default='tiny', choices=['tiny', 's', 'm', 'l'])
+    p.add_argument('--model', choices=list(MODELS), help='default: the architecture stored in the checkpoint')
     p.add_argument('--img-size', type=int, default=640)
     p.add_argument('--batch', type=int, default=4)
     p.add_argument('--workers', type=int, default=2)
@@ -50,6 +50,8 @@ def main():
     if not checkpoint.exists():
         checkpoint = CHECKPOINTS / args.checkpoint
     if not checkpoint.exists():
+        checkpoint = EXPERIMENTS / args.checkpoint
+    if not checkpoint.exists():
         candidates = list(EXPERIMENTS.glob(f'*/{args.checkpoint}'))
         checkpoint = candidates[0] if candidates else checkpoint
     args.checkpoint = str(checkpoint)
@@ -59,7 +61,7 @@ def main():
         from torch.utils.tensorboard import SummaryWriter
         writer = SummaryWriter(args.tensorboard_logdir)
     device = pick_device(args.device)
-    model = RTMDetR(num_classes=args.classes, size=args.size)
+    model = build_model(args.model or checkpoint_arch(args.checkpoint), args.classes)
     model.load_state_dict(load_state_dict_file(args.checkpoint))
     model.to(device).eval()
     if args.dota:

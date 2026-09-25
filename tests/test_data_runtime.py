@@ -5,7 +5,7 @@ torch = pytest.importorskip("torch")
 cv2 = pytest.importorskip("cv2")
 pytest.importorskip("PIL")
 
-from rtmdet_obb.data import (  # noqa: E402
+from yolox_obb.data import (  # noqa: E402
     StrongAug,
     YoloObbDataset,
     letterbox_image,

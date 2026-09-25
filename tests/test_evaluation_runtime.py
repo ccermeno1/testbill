@@ -1,8 +1,10 @@
+import json
+
 import pytest
 
 torch = pytest.importorskip("torch")
 
-from rtmdet_obb.evaluation import summarize  # noqa: E402
+from yolox_obb.evaluation import summarize  # noqa: E402
 
 
 def test_synthetic_summary_perfect_detection():
@@ -27,3 +29,4 @@ def test_synthetic_summary_empty_class_is_finite():
     result = summarize(detections, annotations, 1)
     assert result["mAP@0.50"] == 0.0
     assert all(torch.isfinite(torch.tensor(v)) for v in result.values())
+    json.dumps(result)  # written to log.jsonl during training

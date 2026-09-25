@@ -1,11 +1,11 @@
-"""YOLOv8-OBB dataset (Roboflow export) -> tensors, with the RTMDet-R DOTA augmentations.
+"""YOLOv8-OBB dataset (Roboflow export) -> tensors, with the RTMDet-R style augmentations.
 
 Label line: ``<cls> x1 y1 x2 y2 x3 y3 x4 y4`` normalised to [0, 1].
 
-Train pipeline (mmrotate ``dota_rr.py``): resize keep-ratio to ``img_size`` ->
+Basic train pipeline (mmrotate ``dota_rr.py``): resize keep-ratio to ``img_size`` ->
 random flip (h / v / diagonal, p=0.75) -> random rotation (p=0.5, +-180 deg) ->
-pad to ``img_size`` x ``img_size`` with 114. Images stay BGR (cv2) like the DOTA
-checkpoint expects.
+pad to ``img_size`` x ``img_size`` with 114. Images stay BGR uint8 (cv2), which is
+what the YOLOX-OBB network takes as input (no mean/std normalisation).
 """
 import glob
 import os
@@ -28,11 +28,22 @@ except Exception:  # pragma: no cover
 
 from .boxes import flip_rboxes, poly2rbox, rotate_rboxes
 
-IMG_EXTS = ('.jpg', '.jpeg', '.png', '.bmp')
+IMG_EXTS = ('.jpg', '.jpeg', '.png', '.bmp', '.heic', '.heif')
+
+
+def imread_any(path: str) -> np.ndarray:
+    """cv2.imread plus HEIC/HEIF through pillow-heif (EXIF orientation applied, as cv2 does)."""
+    if path.lower().endswith(('.heic', '.heif')):
+        from PIL import Image, ImageOps
+        import pillow_heif
+        pillow_heif.register_heif_opener()
+        im = ImageOps.exif_transpose(Image.open(path)).convert('RGB')
+        return cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
+    return cv2.imread(path, cv2.IMREAD_COLOR)
 
 
 RESIZE_BACKEND = os.environ.get(
-    'RTMDET_RESIZE_BACKEND', 'pil' if sys.platform == 'darwin' else 'cv2'
+    'YOLOX_RESIZE_BACKEND', 'pil' if sys.platform == 'darwin' else 'cv2'
 )
 
 
@@ -191,7 +202,7 @@ class YoloObbDataset(Dataset):
 
     def load(self, i: int):
         it = self.items[i]
-        img = cv2.imread(it['img'], cv2.IMREAD_COLOR)
+        img = imread_any(it['img'])
         if img is None:
             raise IOError(it['img'])
         h, w = img.shape[:2]
@@ -398,7 +409,7 @@ class DotaObbDataset(YoloObbDataset):
 
     def load(self, i: int):
         it = self.items[i]
-        img = cv2.imread(it['img'], cv2.IMREAD_COLOR)
+        img = imread_any(it['img'])
         if img is None:
             raise IOError(it['img'])
         polys, labels = [], []

@@ -1,7 +1,7 @@
 [project]
-name = "rtmdet-banknotes"
+name = "yolox-obb-banknotes"
 version = "0.1.0"
-description = "Pure-PyTorch RTMDet-R oriented banknote detector"
+description = "Pure-PyTorch YOLOX-OBB-s oriented banknote detector"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "numpy==2.4.6",

@@ -1,10 +1,10 @@
-"""Run a trained RTMDet-R on a folder of images (or one image).
+"""Run a trained YOLOX-OBB on a folder of images (or one image).
 
 Writes one visualisation per image and ``predictions.json`` with, per image, the
 detected oriented boxes ``[cx, cy, w, h, angle_rad]`` (original pixel coords), the
-4-corner polygon and the score - same format as ``tools/infer.py`` of the mmrotate project.
+4-corner polygon and the score.
 
-    python infer.py work_dirs/rtmdet_tiny_banknotes/best_epoch_XX.pth photos/ --out work_dirs/infer --score-thr 0.5
+    python src/yolox_mps/infer.py dota_200/best_epoch_XX.pth photos/ --out infer --score-thr 0.5
 """
 import argparse
 import glob
@@ -19,25 +19,14 @@ import numpy as np
 import torch
 
 sys.path.insert(0, osp.dirname(osp.abspath(__file__)))
-from rtmdet_obb import RTMDetR, load_state_dict_file  # noqa: E402
-from rtmdet_obb.boxes import rbox2poly  # noqa: E402
-from rtmdet_obb.data import IMG_EXTS, letterbox_image  # noqa: E402
-from rtmdet_obb.engine import pick_device  # noqa: E402
+from yolox_obb import MODELS, build_model, checkpoint_arch, load_state_dict_file  # noqa: E402
+from yolox_obb.boxes import rbox2poly  # noqa: E402
+from yolox_obb.data import IMG_EXTS, imread_any, letterbox_image  # noqa: E402
+from yolox_obb.engine import pick_device  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-CHECKPOINTS = ROOT / 'models' / 'rtmdet' / 'checkpoints'
-EXPERIMENTS = ROOT / 'models' / 'rtmdet' / 'experiments'
-
-
-def imread_any(path):
-    """cv2.imread plus HEIC/HEIF through pillow-heif when available (EXIF orientation applied)."""
-    if path.lower().endswith(('.heic', '.heif')):
-        from PIL import Image, ImageOps
-        import pillow_heif
-        pillow_heif.register_heif_opener()
-        im = ImageOps.exif_transpose(Image.open(path)).convert('RGB')
-        return cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
-    return cv2.imread(path, cv2.IMREAD_COLOR)
+CHECKPOINTS = ROOT / 'models' / 'yolox_obb' / 'checkpoints'
+EXPERIMENTS = ROOT / 'models' / 'yolox_obb' / 'experiments'
 
 
 def draw(img, boxes, scores, labels, class_names, thickness=2, font_scale=0.6, color=(0, 255, 0)):
@@ -52,7 +41,7 @@ def draw(img, boxes, scores, labels, class_names, thickness=2, font_scale=0.6, c
 
 def load_gt(img_path, gt_dir, class_names, w, h):
     """Ground truth for one image: YOLO-OBB (``<cls> x1..y4`` normalised) or DOTA (pixels + class name)."""
-    from rtmdet_obb.boxes import poly2rbox
+    from yolox_obb.boxes import poly2rbox
     stem = osp.splitext(osp.basename(img_path))[0]
     path = osp.join(gt_dir, stem + '.txt')
     polys, labels = [], []
@@ -82,13 +71,15 @@ def main():
     p.add_argument('--score-thr', type=float, default=0.3)
     p.add_argument('--nms-iou', type=float, default=0.5)
     p.add_argument('--classes', default='euro_banknote', help='comma separated class names')
-    p.add_argument('--size', default='tiny', choices=['tiny', 's', 'm', 'l'])
+    p.add_argument('--model', choices=list(MODELS), help='default: the architecture stored in the checkpoint')
     p.add_argument('--device', default='auto')
     p.add_argument('--gt', help='folder with ground-truth .txt per image (YOLO-OBB labels/ or DOTA annfiles/); drawn in red')
     args = p.parse_args()
     checkpoint = Path(args.checkpoint)
     if not checkpoint.exists():
         checkpoint = CHECKPOINTS / args.checkpoint
+    if not checkpoint.exists():
+        checkpoint = EXPERIMENTS / args.checkpoint
     if not checkpoint.exists():
         candidates = list(EXPERIMENTS.glob(f'*/{args.checkpoint}'))
         checkpoint = candidates[0] if candidates else checkpoint
@@ -100,12 +91,12 @@ def main():
 
     class_names = args.classes.split(',')
     device = pick_device(args.device)
-    model = RTMDetR(num_classes=len(class_names), size=args.size)
+    model = build_model(args.model or checkpoint_arch(args.checkpoint), len(class_names))
     model.load_state_dict(load_state_dict_file(args.checkpoint))
     model.to(device).eval()
 
     if osp.isdir(args.images):
-        files = sorted(f for f in glob.glob(osp.join(args.images, '*')) if f.lower().endswith(IMG_EXTS + ('.heic', '.heif')))
+        files = sorted(f for f in glob.glob(osp.join(args.images, '*')) if f.lower().endswith(IMG_EXTS))
     else:
         files = [args.images]
     os.makedirs(args.out, exist_ok=True)
