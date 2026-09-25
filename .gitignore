@@ -1,0 +1,22 @@
+# entorno
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.claude/
+
+# datasets y exports de Roboflow (se regeneran con src/ppyoloer_mps/data_prep)
+data/
+!data/.gitkeep
+export/
+*.yolov8-obb/
+augmented/
+
+# salidas de entrenamiento: se versionan solo los pesos finales
+runs/
+models/**/experiments/
+
+# temporales
+.DS_Store
+Thumbs.db
