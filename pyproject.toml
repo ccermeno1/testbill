@@ -1,0 +1,32 @@
+[project]
+name = "ppyoloer-mps"
+version = "0.1.0"
+description = "PP-YOLOE-R para deteccion orientada de billetes de euro, en PyTorch puro (CPU / CUDA / MPS)"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.2",
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
+    "pillow>=10.0",
+    "pillow-heif>=0.16",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0", "shapely>=2.0"]
+data = ["shapely>=2.0", "imagehash>=4.3"]   # scripts de src/ppyoloer_mps/data_prep
+convert = ["paddlepaddle>=3.0.0"]   # solo para convertir .pdparams; no hace falta para entrenar
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"

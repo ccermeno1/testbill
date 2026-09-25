@@ -1,66 +1,0 @@
-INFORMACI‡N: no se pudo encontrar ning£n archivo para los patrones dados.
-Warning: import ppdet from source directory without installing, run 'python setup.py install' to install ppdet firstly
-======================= Modified FLAGS detected =======================
-FLAGS(name='FLAGS_enable_pir_in_executor', current_value=True, default_value=False)
-FLAGS(name='FLAGS_win_cuda_bin_dir', current_value='C:\\Users\\Clara\\OneDrive\\Escritorio\\paddletest\\.venv\\lib\\site-packages\\paddle\\..\\nvidia', default_value='')
-=======================================================================
-Warning: Unable to use numba in PP-Tracking, please install numba, for example(python3.7): `pip install numba==0.56.4`
-Warning: Unable to use numba in PP-Tracking, please install numba, for example(python3.7): `pip install numba==0.56.4`
-loading annotations into memory...
-Done (t=0.01s)
-creating index...
-index created!
-[09/21 09:40:35] ppdet.data.source.coco INFO: Load [355 samples valid, 0 samples invalid] in file dataset/banknotes_obb\annotations/train.json.
-W0921 09:40:35.401381  4576 gpu_resources.cc:119] Please NOTE: device: 0, GPU Compute Capability: 7.5, Driver API Version: 11.2, Runtime API Version: 11.8
-W0921 09:40:35.402886  4576 gpu_resources.cc:164] device: 0, cuDNN Version: 8.9.
-W0921 09:40:35.402886  4576 gpu_resources.cc:196] WARNING: device: 0. The installed Paddle is compiled with CUDA 11.8, but CUDA runtime version in your machine is 11.2, which may cause serious incompatible bug. Please recompile or reinstall Paddle with compatible CUDA version.
-[09/21 09:40:38] ppdet.utils.download INFO: Downloading ppyoloe_r_crn_s_3x_dota.pdparams from https://paddledet.bj.bcebos.com/models/ppyoloe_r_crn_s_3x_dota.pdparams
-  0%|          | 0/32336 [00:00<?, ?KB/s]  0%|          | 32/32336 [00:00<03:50, 140.15KB/s]  0%|          | 83/32336 [00:00<02:03, 260.59KB/s]  0%|          | 114/32336 [00:00<02:03, 261.66KB/s]  1%|          | 195/32336 [00:00<01:19, 405.41KB/s]  1%|          | 239/32336 [00:00<01:21, 393.46KB/s]  1%|1         | 403/32336 [00:00<00:45, 704.54KB/s]  1%|1         | 476/32336 [00:00<00:46, 680.76KB/s]  3%|2         | 835/32336 [00:01<00:22, 1398.52KB/s]  3%|3         | 979/32336 [00:01<00:23, 1332.61KB/s]  5%|5         | 1699/32336 [00:01<00:11, 2764.45KB/s]  6%|6         | 1980/32336 [00:01<00:11, 2598.95KB/s] 11%|#         | 3427/32336 [00:01<00:05, 5469.97KB/s] 12%|#2        | 3985/32336 [00:01<00:05, 5134.45KB/s] 21%|##1       | 6867/32336 [00:01<00:02, 10969.96KB/s] 25%|##4       | 8010/32336 [00:01<00:02, 10132.17KB/s] 34%|###3      | 10915/32336 [00:02<00:01, 14774.84KB/s] 46%|####5     | 14787/32336 [00:02<00:01, 16206.61KB/s] 64%|######3   | 20563/32336 [00:02<00:00, 18686.81KB/s] 81%|########1 | 26204/32336 [00:02<00:00, 25858.21KB/s] 90%|######### | 29154/32336 [00:02<00:00, 22496.51KB/s]100%|##########| 32336/32336 [00:02<00:00, 11300.97KB/s]
-[09/21 09:40:43] ppdet.utils.checkpoint INFO: The shape [15] in pretrained weight yolo_head.pred_cls.0.bias is unmatched with the shape [1] in model yolo_head.pred_cls.0.bias. And the weight yolo_head.pred_cls.0.bias will not be loaded
-[09/21 09:40:43] ppdet.utils.checkpoint INFO: The shape [15, 384, 3, 3] in pretrained weight yolo_head.pred_cls.0.weight is unmatched with the shape [1, 384, 3, 3] in model yolo_head.pred_cls.0.weight. And the weight yolo_head.pred_cls.0.weight will not be loaded
-[09/21 09:40:43] ppdet.utils.checkpoint INFO: The shape [15] in pretrained weight yolo_head.pred_cls.1.bias is unmatched with the shape [1] in model yolo_head.pred_cls.1.bias. And the weight yolo_head.pred_cls.1.bias will not be loaded
-[09/21 09:40:43] ppdet.utils.checkpoint INFO: The shape [15, 192, 3, 3] in pretrained weight yolo_head.pred_cls.1.weight is unmatched with the shape [1, 192, 3, 3] in model yolo_head.pred_cls.1.weight. And the weight yolo_head.pred_cls.1.weight will not be loaded
-[09/21 09:40:43] ppdet.utils.checkpoint INFO: The shape [15] in pretrained weight yolo_head.pred_cls.2.bias is unmatched with the shape [1] in model yolo_head.pred_cls.2.bias. And the weight yolo_head.pred_cls.2.bias will not be loaded
-[09/21 09:40:43] ppdet.utils.checkpoint INFO: The shape [15, 96, 3, 3] in pretrained weight yolo_head.pred_cls.2.weight is unmatched with the shape [1, 96, 3, 3] in model yolo_head.pred_cls.2.weight. And the weight yolo_head.pred_cls.2.weight will not be loaded
-[09/21 09:40:43] ppdet.utils.checkpoint INFO: Finish loading model weights: C:\Users\Clara/.cache/paddle/weights\ppyoloe_r_crn_s_3x_dota.pdparams
-[09/21 09:40:50] ppdet.engine.callbacks INFO: Epoch: [0] [ 0/88] learning_rate: 0.000000 loss: 2.619491 loss_cls: 1.677408 loss_iou: 0.307331 loss_dfl: 3.475142 eta: 0:17:58 batch_cost: 6.1306 data_cost: 0.0140 ips: 0.6525 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1606 MB
-[09/21 09:40:53] ppdet.engine.callbacks INFO: Epoch: [0] [10/88] learning_rate: 0.000200 loss: 2.248909 loss_cls: 1.202382 loss_iou: 0.327063 loss_dfl: 3.416081 eta: 0:02:22 batch_cost: 0.3325 data_cost: 0.0023 ips: 12.0311 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1751 MB
-[09/21 09:40:57] ppdet.engine.callbacks INFO: Epoch: [0] [20/88] learning_rate: 0.000400 loss: 1.899191 loss_cls: 1.019943 loss_iou: 0.252486 loss_dfl: 3.294195 eta: 0:01:35 batch_cost: 0.3396 data_cost: 0.0023 ips: 11.7785 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1751 MB
-[09/21 09:41:01] ppdet.engine.callbacks INFO: Epoch: [0] [30/88] learning_rate: 0.000600 loss: 1.656074 loss_cls: 1.029736 loss_iou: 0.202324 loss_dfl: 2.969557 eta: 0:01:16 batch_cost: 0.3327 data_cost: 0.0023 ips: 12.0228 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1751 MB
-[09/21 09:41:05] ppdet.engine.callbacks INFO: Epoch: [0] [40/88] learning_rate: 0.000800 loss: 1.708586 loss_cls: 1.015978 loss_iou: 0.203138 loss_dfl: 3.183599 eta: 0:01:05 batch_cost: 0.3615 data_cost: 0.0025 ips: 11.0653 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1751 MB
-[09/21 09:41:09] ppdet.engine.callbacks INFO: Epoch: [0] [50/88] learning_rate: 0.001000 loss: 1.649863 loss_cls: 0.933299 loss_iou: 0.215015 loss_dfl: 2.350625 eta: 0:00:57 batch_cost: 0.3539 data_cost: 0.0028 ips: 11.3037 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1789 MB
-[09/21 09:41:13] ppdet.engine.callbacks INFO: Epoch: [0] [60/88] learning_rate: 0.001200 loss: 1.667086 loss_cls: 1.032821 loss_iou: 0.191554 loss_dfl: 2.569513 eta: 0:00:51 batch_cost: 0.3507 data_cost: 0.0027 ips: 11.4063 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1789 MB
-[09/21 09:41:16] ppdet.engine.callbacks INFO: Epoch: [0] [70/88] learning_rate: 0.001400 loss: 1.626562 loss_cls: 1.051818 loss_iou: 0.174189 loss_dfl: 3.162638 eta: 0:00:45 batch_cost: 0.3612 data_cost: 0.0021 ips: 11.0739 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1827 MB
-[09/21 09:41:20] ppdet.engine.callbacks INFO: Epoch: [0] [80/88] learning_rate: 0.001600 loss: 1.606665 loss_cls: 0.972713 loss_iou: 0.188319 loss_dfl: 3.091784 eta: 0:00:40 batch_cost: 0.3550 data_cost: 0.0023 ips: 11.2683 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1827 MB
-[09/21 09:41:24] ppdet.utils.checkpoint INFO: Save checkpoint: output_smoke
-loading annotations into memory...
-Done (t=0.00s)
-creating index...
-index created!
-[09/21 09:41:24] ppdet.data.source.coco INFO: Load [100 samples valid, 0 samples invalid] in file dataset/banknotes_obb\annotations/valid.json.
-loading annotations into memory...
-Done (t=0.00s)
-creating index...
-index created!
-[09/21 09:41:24] ppdet.engine.callbacks INFO: Eval iter: 0
-[09/21 09:41:28] ppdet.metrics.metrics INFO: Accumulating evaluatation results...
-[09/21 09:41:28] ppdet.metrics.metrics INFO: mAP(0.50, 11point) = 45.72%
-[09/21 09:41:28] ppdet.engine.callbacks INFO: Total sample number: 100, average FPS: 21.80658008754338
-[09/21 09:41:29] ppdet.engine INFO: Best test bbox ap is 0.457.
-[09/21 09:41:29] ppdet.utils.checkpoint INFO: Save checkpoint: output_smoke
-[09/21 09:41:30] ppdet.engine.callbacks INFO: Epoch: [1] [ 0/88] learning_rate: 0.001760 loss: 1.536075 loss_cls: 0.931775 loss_iou: 0.192562 loss_dfl: 2.987645 eta: 0:00:36 batch_cost: 0.3628 data_cost: 0.0029 ips: 11.0256 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1827 MB
-[09/21 09:41:34] ppdet.engine.callbacks INFO: Epoch: [1] [10/88] learning_rate: 0.001960 loss: 1.602078 loss_cls: 0.993487 loss_iou: 0.189129 loss_dfl: 2.352976 eta: 0:00:32 batch_cost: 0.3798 data_cost: 0.0024 ips: 10.5321 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1827 MB
-[09/21 09:41:40] ppdet.engine.callbacks INFO: Epoch: [1] [20/88] learning_rate: 0.002160 loss: 1.674046 loss_cls: 1.084267 loss_iou: 0.180811 loss_dfl: 2.701573 eta: 0:00:28 batch_cost: 0.4811 data_cost: 0.0032 ips: 8.3141 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1827 MB
-[09/21 09:41:44] ppdet.engine.callbacks INFO: Epoch: [1] [30/88] learning_rate: 0.002360 loss: 1.727881 loss_cls: 1.173879 loss_iou: 0.195795 loss_dfl: 3.087329 eta: 0:00:23 batch_cost: 0.3674 data_cost: 0.0024 ips: 10.8864 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1827 MB
-[09/21 09:41:48] ppdet.engine.callbacks INFO: Epoch: [1] [40/88] learning_rate: 0.002560 loss: 1.680935 loss_cls: 1.008578 loss_iou: 0.216917 loss_dfl: 3.213225 eta: 0:00:19 batch_cost: 0.3727 data_cost: 0.0020 ips: 10.7339 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1858 MB
-[09/21 09:41:52] ppdet.engine.callbacks INFO: Epoch: [1] [50/88] learning_rate: 0.002760 loss: 1.642449 loss_cls: 1.064167 loss_iou: 0.178690 loss_dfl: 2.420936 eta: 0:00:15 batch_cost: 0.3541 data_cost: 0.0023 ips: 11.2969 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1858 MB
-[09/21 09:41:56] ppdet.engine.callbacks INFO: Epoch: [1] [60/88] learning_rate: 0.002960 loss: 1.496243 loss_cls: 0.901714 loss_iou: 0.186597 loss_dfl: 2.739326 eta: 0:00:11 batch_cost: 0.3656 data_cost: 0.0020 ips: 10.9414 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1858 MB
-[09/21 09:42:00] ppdet.engine.callbacks INFO: Epoch: [1] [70/88] learning_rate: 0.003160 loss: 1.607232 loss_cls: 0.951269 loss_iou: 0.177246 loss_dfl: 2.411902 eta: 0:00:07 batch_cost: 0.3577 data_cost: 0.0015 ips: 11.1827 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1858 MB
-[09/21 09:42:04] ppdet.engine.callbacks INFO: Epoch: [1] [80/88] learning_rate: 0.003360 loss: 1.690469 loss_cls: 1.056940 loss_iou: 0.181372 loss_dfl: 2.822064 eta: 0:00:03 batch_cost: 0.3702 data_cost: 0.0015 ips: 10.8053 images/s, max_mem_reserved: 1935 MB, max_mem_allocated: 1858 MB
-[09/21 09:42:08] ppdet.utils.checkpoint INFO: Save checkpoint: output_smoke
-[09/21 09:42:08] ppdet.engine.callbacks INFO: Eval iter: 0
-[09/21 09:42:12] ppdet.metrics.metrics INFO: Accumulating evaluatation results...
-[09/21 09:42:12] ppdet.metrics.metrics INFO: mAP(0.50, 11point) = 55.38%
-[09/21 09:42:12] ppdet.engine.callbacks INFO: Total sample number: 100, average FPS: 24.682930601325943
-[09/21 09:42:12] ppdet.engine INFO: Best test bbox ap is 0.554.
-[09/21 09:42:12] ppdet.utils.checkpoint INFO: Save checkpoint: output_smoke
