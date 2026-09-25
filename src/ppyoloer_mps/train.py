@@ -70,8 +70,12 @@ def main() -> None:
     ap.add_argument("--no-ema", action="store_true")
     ap.add_argument("--workers", type=int, default=0, help="en macOS usa 0")
     ap.add_argument("--val-interval", type=int, default=5)
+    ap.add_argument("--save-best", default="fitness", choices=["fitness", "mAP50", "mAP75", "mAP50-95"],
+                    help="metrica de valid con la que se elige best_model.pt; "
+                         "'fitness' = 0.9*mAP50-95 + 0.1*mAP50 (convencion de Ultralytics)")
     ap.add_argument("--snapshot-interval", type=int, default=5)
-    ap.add_argument("--nms-iou", type=float, default=0.5)
+    ap.add_argument("--nms-iou", type=float, default=0.1,
+                    help="IoU del NMS rotado en validacion (0.1 = convencion mmrotate/RTMDet)")
     ap.add_argument("--conf", type=float, default=0.5)
     ap.add_argument("--device", default="auto")
     ap.add_argument("--seed", type=int, default=0)
@@ -174,7 +178,7 @@ def main() -> None:
         )
         log(f"epoca {epoch} media: " + " ".join(f"{k} {v:.4f}" for k, v in stats.items()))
 
-        eval_model = ema.ema if ema is not None else model
+        eval_model = ema.apply() if ema is not None else model
         is_last = epoch == args.epochs - 1
         if args.val_interval and ((epoch + 1) % args.val_interval == 0 or is_last):
             eval_model.to(device)
@@ -182,30 +186,34 @@ def main() -> None:
                 eval_model, val_loader, device, name=f"valid(ep{epoch})", conf=args.conf,
                 nms_threshold=args.nms_iou, logger=log,
             )
-            history.append({"epoch": epoch, **{k: res[k] for k in ("mAP50", "mAP75", "mAP50-95")}})
-            if res["mAP50"] > best:
-                best = res["mAP50"]
+            # fitness de Ultralytics, el mismo criterio que usa el repo de RTMDet
+            res["fitness"] = 0.9 * res["mAP50-95"] + 0.1 * res["mAP50"]
+            history.append({"epoch": epoch, **{k: res[k] for k in ("mAP50", "mAP75", "mAP50-95", "fitness")}})
+            fitness = res[args.save_best]
+            if fitness > best:
+                best = fitness
                 save_checkpoint(
                     os.path.join(args.work_dir, "best_model.pt"), eval_model,
-                    {**meta_base, "epoch": epoch, "metrics": {k: res[k] for k in ("mAP50", "mAP75", "mAP50-95")}},
+                    {**meta_base, "epoch": epoch, "save_best": args.save_best,
+                     "metrics": {k: res[k] for k in ("mAP50", "mAP75", "mAP50-95", "fitness")}},
                 )
-                log(f"nuevo mejor mAP50 = {100 * best:.2f} % -> best_model.pt")
+                log(f"nuevo mejor {args.save_best} = {100 * best:.2f} % -> best_model.pt")
 
         if args.snapshot_interval and ((epoch + 1) % args.snapshot_interval == 0 or is_last):
             payload = {
                 "model": model.state_dict(),
-                "ema": ema.ema.state_dict() if ema is not None else None,
+                "ema": ema.apply().state_dict() if ema is not None else None,
                 "optimizer": optimizer.state_dict(),
                 "scheduler": scheduler.state_dict(),
                 "meta": {**meta_base, "epoch": epoch, "best_metric": best},
             }
             torch.save(payload, os.path.join(args.work_dir, "last.pt"))
 
-    final = ema.ema if ema is not None else model
+    final = ema.apply() if ema is not None else model
     save_checkpoint(os.path.join(args.work_dir, "model_final.pt"), final, {**meta_base, "epoch": args.epochs - 1})
     with open(os.path.join(args.work_dir, "history.json"), "w", encoding="utf-8") as f:
         json.dump(history, f, indent=1)
-    log(f"entrenamiento terminado. mejor mAP50 = {100 * best:.2f} % | pesos en {args.work_dir}")
+    log(f"entrenamiento terminado. mejor {args.save_best} = {100 * best:.2f} % | pesos en {args.work_dir}")
     log_file.close()
 
 

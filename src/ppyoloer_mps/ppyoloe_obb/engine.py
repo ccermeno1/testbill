@@ -29,26 +29,58 @@ def resolve_device(name: str = "auto") -> torch.device:
 
 
 class ModelEMA:
-    """Media movil exponencial de los pesos (PP-YOLOE-R usa decay 0.9998)."""
+    """Media movil exponencial de los pesos. Port de ppdet/optimizer/ema.py.
 
-    def __init__(self, model: torch.nn.Module, decay: float = 0.9998):
-        self.ema = copy.deepcopy(model).eval()
-        for p in self.ema.parameters():
-            p.requires_grad_(False)
+    Reproduce el comportamiento por defecto de PaddleDetection (`ema_decay_type='threshold'`):
+    el promedio arranca en CEROS, el decay crece como `min(decay, (1+step)/(10+step))` y al
+    leerlo se aplica correccion de sesgo `/(1 - decay**step)`.
+
+    El detalle importa: con el ramp 'exponential' (`decay*(1-exp(-step/2000))`) el decay en el
+    paso 800 vale 0.34 en vez de 0.99, es decir el EMA copia al modelo en vez de promediarlo, y
+    se pierde casi toda la mejora de localizacion que aporta el promediado.
+    """
+
+    def __init__(self, model: torch.nn.Module, decay: float = 0.9998, decay_type: str = "threshold"):
         self.decay = decay
-        self.updates = 0
+        self.decay_type = decay_type
+        self.step = 0
+        self._decay = 0.0
+        self.shadow = {k: torch.zeros_like(v, dtype=torch.float32) for k, v in model.state_dict().items()}
+        self.module = copy.deepcopy(model).eval()
+        for p in self.module.parameters():
+            p.requires_grad_(False)
+
+    def _next_decay(self) -> float:
+        if self.decay_type == "threshold":
+            return min(self.decay, (1 + self.step) / (10 + self.step))
+        if self.decay_type == "exponential":
+            return self.decay * (1 - math.exp(-(self.step + 1) / 2000))
+        return self.decay
 
     @torch.no_grad()
     def update(self, model: torch.nn.Module) -> None:
-        self.updates += 1
-        # calentamiento: al principio sigue de cerca al modelo
-        d = self.decay * (1 - math.exp(-self.updates / 2000))
+        d = self._next_decay()
+        self._decay = d
         msd = model.state_dict()
-        for k, v in self.ema.state_dict().items():
-            if v.dtype.is_floating_point:
-                v.mul_(d).add_(msd[k].detach().to(v.device), alpha=1 - d)
-            else:
-                v.copy_(msd[k])
+        for k, v in self.shadow.items():
+            v.mul_(d).add_(msd[k].detach().float(), alpha=1 - d)
+        self.step += 1
+
+    @torch.no_grad()
+    def apply(self) -> torch.nn.Module:
+        """Modelo con los pesos EMA ya corregidos, listo para evaluar o guardar."""
+        if self.step == 0:
+            return self.module
+        target = self.module.state_dict()
+        correction = 1.0 - self._decay ** self.step if self.decay_type != "exponential" else 1.0
+        for k, v in self.shadow.items():
+            value = v / correction if correction != 1.0 else v
+            target[k].copy_(value.to(target[k].dtype))
+        return self.module
+
+    @property
+    def ema(self) -> torch.nn.Module:
+        return self.apply()
 
 
 @dataclass
@@ -116,8 +148,8 @@ def run_inference(
     model: torch.nn.Module,
     loader: DataLoader,
     device: torch.device,
-    score_threshold: float = 0.01,
-    nms_threshold: float = 0.5,
+    score_threshold: float = 0.05,
+    nms_threshold: float = 0.1,
     to_original: bool = True,
 ):
     """Devuelve (predicciones, ground truth) en coordenadas de la imagen original."""
@@ -162,8 +194,8 @@ def evaluate_model(
     device: torch.device,
     name: str = "eval",
     conf: float = 0.5,
-    score_threshold: float = 0.01,
-    nms_threshold: float = 0.5,
+    score_threshold: float = 0.05,
+    nms_threshold: float = 0.1,
     logger=print,
     print_header: bool = True,
 ) -> dict:

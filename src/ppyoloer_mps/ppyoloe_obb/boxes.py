@@ -8,6 +8,7 @@ Convenciones (las mismas que PP-YOLOE-R en PaddleDetection):
 from __future__ import annotations
 
 import math
+import os
 
 import torch
 
@@ -23,8 +24,10 @@ __all__ = [
     "pairwise_rotated_iou",
 ]
 
-# pares (a x b) procesados de una vez en rotated_iou; acota la memoria de los temporales
-MAX_PAIRS = 100_000
+# Pares (a x b) procesados de una vez en rotated_iou. Acota la memoria de los temporales,
+# que son ~pares x 24 x 24 floats; bajarlo reduce el pico de VRAM sin cambiar el resultado.
+# Ajustable con la variable de entorno PPYOLOER_MAX_PAIRS.
+MAX_PAIRS = int(os.environ.get("PPYOLOER_MAX_PAIRS", 40_000))
 
 
 def box2corners(boxes: torch.Tensor) -> torch.Tensor:
@@ -118,7 +121,9 @@ def probiou(pred: torch.Tensor, target: torch.Tensor, eps: float = 1e-3) -> torc
     t1 = 0.25 * ((a1 + a2) * (y1 - y2).pow(2) + (b1 + b2) * (x1 - x2).pow(2)) + 0.5 * (
         (c1 + c2) * (x2 - x1) * (y1 - y2)
     )
-    t2 = (a1 + a2) * (b1 + b2) - (c1 + c2).pow(2)
+    # t2 debe ser > 0 para cajas validas; se acota por si alguna caja es degenerada, que
+    # de otro modo daria log(0) -> -inf y NaN al propagar
+    t2 = ((a1 + a2) * (b1 + b2) - (c1 + c2).pow(2)).clamp(min=eps)
     t3_ = (a1 * b1 - c1 * c1) * (a2 * b2 - c2 * c2)
     t3 = 0.5 * torch.log(t2 / (4 * torch.sqrt(torch.relu(t3_)) + eps))
 

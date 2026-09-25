@@ -116,16 +116,19 @@ class AugmentConfig:
     mosaic_translate: float = 0.05
     affine_scale: float = 0.2      # fase sin mosaico
     affine_translate: float = 0.05
-    hsv_h: float = 5.0 / 180.0     # tono, fraccion de vuelta (5 grados)
-    hsv_s: tuple[float, float] = (0.4, 1.6)
-    hsv_v: tuple[float, float] = (0.6, 1.4)
-    contrast: tuple[float, float] = (0.8, 1.2)
+    # [low, high, prob], con la semantica de ppdet: `prob` es la probabilidad de SALTAR
+    hue: tuple[float, float, float] = (-5.0, 5.0, 0.5)
+    saturation: tuple[float, float, float] = (0.4, 1.6, 0.5)
+    contrast: tuple[float, float, float] = (0.8, 1.2, 0.3)
+    brightness: tuple[float, float, float] = (0.6, 1.4, 0.5)
     flip_prob: float = 0.5
     rot90_angles: tuple[int, ...] = (0, 90, 180, -90)
     extra_rot_angles: tuple[int, ...] = (30, 60)
     extra_rot_prob: float = 0.5
     min_visible: float = 0.1
     fill_value: int = 114
+    min_edge: float = 2.0   # descarta cajas con lado menor < 2 px, como Poly2RBox de ppdet
+    rotate_fill_value: int = 0   # ppdet rellena las rotaciones con negro (RandomRRotate fill_value=0)
 
 
 def _poly_area(poly: np.ndarray) -> np.ndarray:
@@ -151,6 +154,20 @@ def _clip_visible(polys: np.ndarray, w: int, h: int, min_visible: float) -> np.n
     return keep
 
 
+def _min_edge_mask(polys: np.ndarray, min_edge: float) -> np.ndarray:
+    """Mascara de poligonos cuyo lado menor (del rectangulo rotado) llega a `min_edge`.
+
+    Equivale al filtro `Poly2RBox(filter_threshold=2, filter_mode='edge')` de ppdet. Sin el,
+    una caja degenerada (w o h ~ 0) hace que ProbIoU produzca NaN.
+    """
+    if len(polys) == 0:
+        return np.zeros(0, dtype=bool)
+    pts = polys.reshape(-1, 4, 2)
+    w = np.linalg.norm(pts[:, 1] - pts[:, 0], axis=-1)
+    h = np.linalg.norm(pts[:, 2] - pts[:, 1], axis=-1)
+    return np.minimum(w, h) >= min_edge
+
+
 def _affine_polys(polys: np.ndarray, m: np.ndarray) -> np.ndarray:
     if len(polys) == 0:
         return polys.reshape(0, 8)
@@ -164,26 +181,57 @@ def _scale_translate_matrix(cx, cy, s, tx, ty) -> np.ndarray:
     return np.array([[s, 0, tx - s * cx], [0, s, ty - s * cy]], dtype=np.float64)
 
 
-def _hsv_jitter(img: np.ndarray, cfg: AugmentConfig, rng: random.Random) -> np.ndarray:
-    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype(np.float32)
-    if rng.random() < 0.5:
-        hsv[..., 0] = (hsv[..., 0] + rng.uniform(-cfg.hsv_h, cfg.hsv_h) * 180.0) % 180.0
-    if rng.random() < 0.5:
-        hsv[..., 1] *= rng.uniform(*cfg.hsv_s)
-    if rng.random() < 0.5:
-        hsv[..., 2] *= rng.uniform(*cfg.hsv_v)
-    hsv[..., 1:] = np.clip(hsv[..., 1:], 0, 255)
-    out = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
-    if rng.random() < 0.3:
-        f = rng.uniform(*cfg.contrast)
-        out = np.clip((out.astype(np.float32) - 128.0) * f + 128.0, 0, 255).astype(np.uint8)
-    return out
+def _random_distort(img: np.ndarray, cfg: "AugmentConfig", rng: random.Random) -> np.ndarray:
+    """Jitter de color. Port literal de `RandomDistort(random_apply=False)` de ppdet
+    (ppdet/data/transform/operators.py), que usa PIL ImageEnhance.
+
+    Ojo con la semantica de ppdet: cada operacion se SALTA con probabilidad `prob`
+    (`if uniform() < prob: return img`), asi que `prob` es la probabilidad de NO aplicarla.
+    El orden es brightness -> [contrast] -> saturation -> hue -> [contrast], donde el
+    contraste va antes o despues segun una moneda.
+    """
+    from PIL import Image, ImageEnhance
+
+    def enhance(pil_img, setting, factory):
+        low, high, prob = setting
+        if rng.uniform(0.0, 1.0) < prob:
+            return pil_img
+        return factory(pil_img).enhance(rng.uniform(low, high))
+
+    def apply_hue(pil_img):
+        low, high, prob = cfg.hue
+        if rng.uniform(0.0, 1.0) < prob:
+            return pil_img
+        delta = rng.uniform(low, high)
+        hsv = np.array(pil_img.convert("HSV"))
+        # el canal H de PIL es uint8 (0-255) y desborda ciclicamente, como en ppdet
+        hsv[:, :, 0] = hsv[:, :, 0] + np.uint8(int(delta) % 256)
+        return Image.fromarray(hsv, mode="HSV").convert("RGB")
+
+    pil = Image.fromarray(img.astype(np.uint8))
+    pil = enhance(pil, cfg.brightness, ImageEnhance.Brightness)
+    mode = rng.randint(0, 1)
+    if mode:
+        pil = enhance(pil, cfg.contrast, ImageEnhance.Contrast)
+    pil = enhance(pil, cfg.saturation, ImageEnhance.Color)
+    pil = apply_hue(pil)
+    if not mode:
+        pil = enhance(pil, cfg.contrast, ImageEnhance.Contrast)
+    return np.asarray(pil).astype(np.uint8)
 
 
 def _rotate(img: np.ndarray, polys: np.ndarray, angle: float, fill: int):
-    """Rota manteniendo el lienzo (se recorta lo que sale); los poligonos se transforman."""
+    """Rota con `auto_bound`: reduce la imagen lo justo para que el contenido rotado quepa
+    entero en el lienzo original, sin recortar nada. Replica `RRotate(auto_bound=True)` de
+    ppdet/data/transform/rotated_operators.py (mismo centro y mismo signo del angulo)."""
     h, w = img.shape[:2]
-    m = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
+    center = ((w - 1) * 0.5, (h - 1) * 0.5)
+    m = cv2.getRotationMatrix2D(center, -angle, 1.0)
+    cos, sin = abs(m[0, 0]), abs(m[0, 1])
+    new_w = int(round(h * sin + w * cos))
+    new_h = int(round(h * cos + w * sin))
+    ratio = min(w / new_w, h / new_h)
+    m = cv2.getRotationMatrix2D(center, -angle, ratio)
     out = cv2.warpAffine(img, m, (w, h), flags=cv2.INTER_LINEAR, borderValue=(fill,) * 3)
     return out, _affine_polys(polys, m)
 
@@ -311,7 +359,7 @@ class ObbDataset(Dataset):
             canvas, m, (size, size), flags=cv2.INTER_LINEAR, borderValue=(self.cfg.fill_value,) * 3
         )
         polys = _affine_polys(polys, m)
-        keep = _clip_visible(polys, size, size, self.cfg.min_visible)
+        keep = _clip_visible(polys, size, size, self.cfg.min_visible) & _min_edge_mask(polys, self.cfg.min_edge)
         return out, polys[keep], labels[keep]
 
     def _random_affine(self, img, polys, rng: random.Random):
@@ -352,7 +400,7 @@ class ObbDataset(Dataset):
             img, polys, labels = self._load(idx)
             img, polys = self._random_affine(img, polys, rng)
 
-        img = _hsv_jitter(img, self.cfg, rng)
+        img = _random_distort(img, self.cfg, rng)
 
         if rng.random() < self.cfg.flip_prob:
             img = img[:, ::-1].copy()
@@ -361,9 +409,9 @@ class ObbDataset(Dataset):
 
         angle = rng.choice(self.cfg.rot90_angles)
         if angle:
-            img, polys = _rotate(img, polys, angle, self.cfg.fill_value)
+            img, polys = _rotate(img, polys, angle, self.cfg.rotate_fill_value)
         if rng.random() < self.cfg.extra_rot_prob:
-            img, polys = _rotate(img, polys, rng.choice(self.cfg.extra_rot_angles), self.cfg.fill_value)
+            img, polys = _rotate(img, polys, rng.choice(self.cfg.extra_rot_angles), self.cfg.rotate_fill_value)
 
         if len(polys):
             keep = _clip_visible(polys, img.shape[1], img.shape[0], self.cfg.min_visible)
@@ -374,6 +422,15 @@ class ObbDataset(Dataset):
             polys = polys.copy()
             polys[:, 0::2] *= sx
             polys[:, 1::2] *= sy
+            # RResize de ppdet no solo escala: RECORTA los vertices al lienzo
+            # (ppdet/data/transform/rotated_operators.py, RResize.apply_pts). Sin este
+            # recorte se entrena al modelo a predecir la parte del objeto que no se ve,
+            # lo que infla sistematicamente las cajas y hunde el mAP75.
+            h_res, w_res = resized.shape[:2]
+            polys[:, 0::2] = np.clip(polys[:, 0::2], 0, w_res)
+            polys[:, 1::2] = np.clip(polys[:, 1::2], 0, h_res)
+            keep = _min_edge_mask(polys, self.cfg.min_edge)
+            polys, labels = polys[keep], labels[keep]
 
         return {
             "image": torch.from_numpy(normalize_chw(resized)),

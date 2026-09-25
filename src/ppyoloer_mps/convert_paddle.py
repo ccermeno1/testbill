@@ -41,7 +41,10 @@ def main() -> None:
     state = convert_paddle_state_dict(read_paddle(args.src))
     model = build_ppyoloe_r(num_classes=args.num_classes, size=args.size)
     missing, unexpected = model.load_state_dict(state, strict=False)
-    missing = [k for k in missing if not k.endswith("num_batches_tracked")]
+    # angle_proj_conv es una proyeccion DFL fija que el modelo inicializa solo; algunos
+    # checkpoints oficiales (p. ej. el de DOTA) no la guardan.
+    ignorable = ("num_batches_tracked", "angle_proj_conv.weight")
+    missing = [k for k in missing if not k.endswith(ignorable)]
     if missing or unexpected:
         raise SystemExit(f"el checkpoint no encaja con el modelo.\n  faltan: {missing[:8]}\n  sobran: {unexpected[:8]}")
     meta = {

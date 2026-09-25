@@ -76,6 +76,84 @@ def test_rotated_iou_matches_reference():
     assert np.abs(got - ref).max() < 1e-4
 
 
+def test_probiou_finite_for_degenerate_boxes():
+    """Una caja degenerada (lado ~0) no debe producir NaN: hundia el entrenamiento."""
+    boxes = torch.tensor(
+        [
+            [10.0, 10.0, 0.0, 8.0, 0.0],      # ancho nulo
+            [10.0, 10.0, 20.0, 1e-6, 0.3],    # alto casi nulo
+            [0.0, 0.0, 0.0, 0.0, 0.0],        # totalmente degenerada
+        ]
+    )
+    target = torch.tensor([[10.0, 10.0, 20.0, 8.0, 0.0]] * 3)
+    loss = probiou(boxes, target)
+    assert torch.isfinite(loss).all(), loss
+
+
+def test_dataset_filters_degenerate_boxes(tmp_path):
+    """El dataset debe descartar cajas con lado menor < 2 px, como Poly2RBox de ppdet."""
+    import cv2
+
+    img_dir = tmp_path / "images"
+    ann_dir = tmp_path / "annotations"
+    img_dir.mkdir(parents=True)
+    ann_dir.mkdir(parents=True)
+    cv2.imwrite(str(img_dir / "a.jpg"), np.zeros((128, 128, 3), np.uint8))
+    thin = [10.0, 10.0, 90.0, 10.0, 90.0, 10.5, 10.0, 10.5]   # 0.5 px de alto
+    ok = [10.0, 40.0, 90.0, 40.0, 90.0, 80.0, 10.0, 80.0]
+    coco = {
+        "images": [{"id": 0, "file_name": "a.jpg", "width": 128, "height": 128}],
+        "annotations": [
+            {"id": 1, "image_id": 0, "category_id": 1, "segmentation": [thin], "bbox": [10, 10, 80, 1], "area": 40},
+            {"id": 2, "image_id": 0, "category_id": 1, "segmentation": [ok], "bbox": [10, 40, 80, 40], "area": 3200},
+        ],
+        "categories": [{"id": 1, "name": "obj"}],
+    }
+    with open(ann_dir / "train.json", "w", encoding="utf-8") as f:
+        json.dump(coco, f)
+    ds = ObbDataset(str(ann_dir / "train.json"), str(img_dir), img_size=128, train=True, mosaic_epochs=0)
+    ds.set_epoch(0)
+    for _ in range(10):
+        polys = ds[0]["polys"]
+        if polys.numel():
+            rb = poly2rbox(polys)
+            assert float(torch.minimum(rb[:, 2], rb[:, 3]).min()) >= 2.0
+
+
+def test_dataset_clips_polygons_to_canvas(tmp_path):
+    """Los vertices deben recortarse al lienzo, como hace RResize de ppdet.
+
+    Sin este recorte se entrena al modelo con la extension completa de objetos que solo se
+    ven en parte, lo que infla las cajas predichas y hunde el mAP75.
+    """
+    import cv2
+
+    img_dir = tmp_path / "images"
+    ann_dir = tmp_path / "annotations"
+    img_dir.mkdir(parents=True)
+    ann_dir.mkdir(parents=True)
+    cv2.imwrite(str(img_dir / "a.jpg"), np.zeros((128, 128, 3), np.uint8))
+    # caja que se sale por la derecha y por abajo
+    poly = [60.0, 60.0, 200.0, 60.0, 200.0, 190.0, 60.0, 190.0]
+    coco = {
+        "images": [{"id": 0, "file_name": "a.jpg", "width": 128, "height": 128}],
+        "annotations": [{"id": 1, "image_id": 0, "category_id": 1, "segmentation": [poly],
+                         "bbox": [60, 60, 140, 130], "area": 18200}],
+        "categories": [{"id": 1, "name": "obj"}],
+    }
+    with open(ann_dir / "train.json", "w", encoding="utf-8") as f:
+        json.dump(coco, f)
+    ds = ObbDataset(str(ann_dir / "train.json"), str(img_dir), img_size=128, train=True, mosaic_epochs=0)
+    ds.set_epoch(0)
+    for _ in range(10):
+        item = ds[0]
+        if item["polys"].numel():
+            h, w = item["image"].shape[1:]
+            assert float(item["polys"][:, 0::2].min()) >= -1e-3
+            assert float(item["polys"][:, 1::2].max()) <= h + 1e-3
+            assert float(item["polys"][:, 0::2].max()) <= w + 1e-3
+
+
 def test_probiou_zero_for_identical_boxes():
     box = torch.tensor([[10.0, 10.0, 20.0, 8.0, 0.4]])
     assert float(probiou(box, box)) < 0.05

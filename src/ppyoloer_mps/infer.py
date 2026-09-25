@@ -58,7 +58,7 @@ def main() -> None:
     ap.add_argument("--out-dir", default="runs/pred")
     ap.add_argument("--img-size", type=int, default=640)
     ap.add_argument("--conf", type=float, default=0.5)
-    ap.add_argument("--nms-iou", type=float, default=0.5)
+    ap.add_argument("--nms-iou", type=float, default=0.1)
     ap.add_argument("--device", default="auto")
     ap.add_argument("--vis", action="store_true")
     args = ap.parse_args()

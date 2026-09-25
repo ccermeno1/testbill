@@ -50,8 +50,9 @@ def load_checkpoint(model: torch.nn.Module, path: str, strict: bool = True) -> d
     payload = torch.load(path, map_location="cpu", weights_only=False)
     state = payload["model"] if isinstance(payload, dict) and "model" in payload else payload
     missing, unexpected = model.load_state_dict(state, strict=False)
-    # num_batches_tracked no viene de Paddle: es aceptable que falte
-    missing = [k for k in missing if not k.endswith("num_batches_tracked")]
+    # num_batches_tracked no viene de Paddle y angle_proj_conv es una constante que el
+    # modelo reconstruye en _init_weights: es aceptable que falten
+    missing = [k for k in missing if not k.endswith(("num_batches_tracked", "angle_proj_conv.weight"))]
     if strict and (missing or unexpected):
         raise RuntimeError(f"pesos incompatibles.\n  faltan: {missing[:8]}\n  sobran: {unexpected[:8]}")
     return payload.get("meta", {}) if isinstance(payload, dict) else {}

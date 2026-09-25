@@ -52,10 +52,10 @@ def rotated_nms(rboxes: torch.Tensor, scores: torch.Tensor, iou_threshold: float
 def batched_postprocess(
     scores: torch.Tensor,
     rboxes: torch.Tensor,
-    score_threshold: float = 0.1,
-    nms_threshold: float = 0.5,
-    nms_top_k: int = 2000,
-    keep_top_k: int = -1,
+    score_threshold: float = 0.05,
+    nms_threshold: float = 0.1,
+    nms_top_k: int = 2000,      # candidatos antes del NMS (nms_pre)
+    keep_top_k: int = 2000,     # detecciones conservadas despues del NMS (max_per_img)
     scale_factor: torch.Tensor | None = None,
 ) -> list[Detections]:
     """Aplica umbral de score + NMS rotado por clase e imagen.
