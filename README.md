@@ -36,7 +36,8 @@ tests/                                  tests de runtime (pytest)
 
 ```bash
 uv venv .venv --python 3.11
-uv pip install -e ".[test]"
+uv sync --extra test --extra export      # instala desde uv.lock
+# o, sin lock:  uv pip install -e ".[test,export]"
 # PyTorch según plataforma:
 #   macOS (MPS) y CPU:  el wheel por defecto ya vale
 #   CUDA:               uv pip install --index-url https://download.pytorch.org/whl/cu126 torch
@@ -152,9 +153,17 @@ poder comparar con otros detectores rotados en igualdad de condiciones:
 | umbral para P/R/F1 y produccion | 0.5 | `--conf` |
 | seleccion del mejor checkpoint | `0.9*mAP50-95 + 0.1*mAP50` | `--save-best` |
 
-Con billetes apilados conviene subir el NMS a 0.5: medido sobre este dataset, el 17 % de las
-cajas de valid solapan con un vecino por encima de IoU 0.1, y pasar de 0.1 a 0.5 sube el mAP50
-de 81.7 a 90.6 sin reentrenar.
+Con billetes apilados conviene subir el NMS a 0.5: el 17 % de las cajas de valid solapan con un
+vecino por encima de IoU 0.1. Medido sobre el modelo entrenado con este repo:
+
+| dataset | score 0.05 / NMS 0.1 (mmrotate) | score 0.01 / NMS 0.5 |
+|---|---|---|
+| valid | 90.54 / 80.99 / 67.76 | **95.78 / 81.19 / 69.53** |
+| test | 100.00 / 87.48 / 77.46 | **100.00 / 89.42 / 78.12** |
+| billetesprueba (externo) | 98.34 / 86.02 / 68.64 | **98.69 / 86.00 / 68.78** |
+
+(mAP50 / mAP75 / mAP50-95.) Los valores por defecto son los de mmrotate para poder comparar con
+otros detectores; para desplegar, `--nms-iou 0.5`.
 
 ## Export a ONNX
 
