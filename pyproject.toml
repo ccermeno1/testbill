@@ -1,74 +1,32 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
-name = "testbank"
+name = "rtmdet-banknotes"
 version = "0.1.0"
-description = "Localizacion de billetes por deteccion OBB de una etapa"
-requires-python = ">=3.11"
-license = { text = "Proprietary" }
+description = "Pure-PyTorch RTMDet-R oriented banknote detector"
+requires-python = ">=3.11,<3.12"
 dependencies = [
-    "numpy>=1.26",
-    "shapely>=2.0",
-    "pydantic>=2.6",
-    "pyyaml>=6.0",
-    "pillow>=10.2",
-    "opencv-python-headless>=4.9",
+    "numpy==2.4.6",
+    "opencv-python-headless==5.0.0.93",
+    "pillow==12.3.0",
+    "pillow-heif==1.7.0",
+    "torch==2.14.0",
 ]
 
-# Sin AGPL/GPL en el conjunto base. Ver README, seccion Licencias.
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "hypothesis>=6.98", "ruff>=0.3"]
-torch = ["torch>=2.2"]
-# AGPL-3.0. Solo referencia de rendimiento, production_ready=False.
-# Aislado tras el adaptador; ningun otro modulo puede importarlo (test_isolation.py).
-ultralytics = ["ultralytics>=8.3"]
-
-# RTMDet-R. Apache-2.0 y apto para produccion, pero exige un entorno APARTE y
-# una cadena de versiones MUY estrecha. Nadie la declara: son `assert` dentro del
-# __init__.py de cada paquete, que solo saltan al importar.
-#
-#   mmrotate 1.0.0rc1  ->  mmdet >=3.0.0rc6, <3.2.0
-#   mmdet 3.1.0        ->  mmcv  >=2.0.0rc4, <2.1.0
-#   mmcv 2.0.x         ->  solo existe en el indice de torch 2.0
-#
-# Cada eslabon empuja al siguiente. El resultado es torch 2.0.0 -- marzo de 2023.
-# El indice de torch 2.1 solo trae mmcv 2.1.0 y 2.2.0, las dos por encima del
-# tope de mmdet, asi que 2.1 NO sirve aunque MMCV instale.
-#
-# `numpy<2` va clavado: torch 2.0 es anterior a NumPy 2 y no lo restringe, y
-# mmcv/mmengine piden `numpy` sin tope. El resolutor lo sube y `torch.from_numpy`
-# empieza a fallar con "Numpy is not available", sin que nada lo avise.
-#
-# `mmrotate` NO esta publicado en PyPI en su linea 1.x: en PyPI solo hay 0.3.4,
-# que va con mmcv-full 1.x y mmdet <3. Hay que instalarlo desde la rama dev-1.x.
-#
-# Receta verificada de punta a punta (ver README, "Entorno para RTMDet-R").
-rtmdet = [
-    "torch==2.0.0",
-    "torchvision==0.15.1",
-    "numpy==1.26.4",
-    "mmcv==2.0.1",
-    "mmdet==3.1.0",
-    "mmrotate @ git+https://github.com/open-mmlab/mmrotate@dev-1.x",
+export = [
+    "onnx==1.23.0",
+    "onnxscript==0.7.2",
+    "onnxruntime==1.30.0",
 ]
-
-[project.scripts]
-testbank = "testbank.cli:main"
-
-# `mmrotate` se instala desde una rama de git, y hatchling exige permiso
-# explicito para referencias directas. Es deliberado: la linea 1.x de mmrotate
-# no esta publicada en PyPI (ver el comentario del grupo `rtmdet`).
-[tool.hatch.metadata]
-allow-direct-references = true
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/testbank"]
+monitoring = [
+    "setuptools==80.9.0",
+    "tensorboard==2.20.0",
+]
+test = [
+    "pytest==8.4.2",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-filterwarnings = ["error::testbank.geometry.quad.QuadShapeWarning"]
 
 [tool.ruff]
 line-length = 100

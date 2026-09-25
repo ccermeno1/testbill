@@ -25,22 +25,20 @@ desktop.ini
 # Lo que SI entra es splits/, que es donde vive la particion congelada. Ese es el
 # punto de materializarla: los .txt sobreviven aunque el arbol de datos cambie, y
 # versionarlos es lo que permite repetir una ejecucion.
-data/*
-!data/.gitkeep
-
-# Todo lo derivado se regenera: indice de tamanos, vista para Ultralytics.
 data/derived/
-
-# Los datos sinteticos los rehace tools/make_synthetic.py con semilla fija.
 data/synth_*/
 
-# --- ejecuciones ------------------------------------------------------------
-# Los pesos y las imagenes fuera; el REGISTRO dentro. run.json, metrics.json y
-# config.yaml son pequenos y son el historial de experimentos: versionarlos es
-# lo que hace que `compare` tenga memoria mas alla de esta maquina.
-runs/**/weights/
-runs/**/viz/
-runs/_inspection/
+# Todo lo derivado se regenera: indice de tamanos, vista para Ultralytics.
+# Datasets locales no versionados.
+data/Annotated\ banknotes\ 2.yolov8-obb/
+data/external_eval_data/
+data/augmented/
+data/dataset/
+data/external_dataset/
+
+# --- artefactos locales ------------------------------------------------------
+models/rtmdet/experiments/
+outputs/
 *.pt
 *.pth
 *.onnx
@@ -49,3 +47,5 @@ runs/_inspection/
 # Ultralytics deja esto donde le pillas.
 yolo*.pt
 runs/detect/
+
+models/rtmdet/checkpoints/
