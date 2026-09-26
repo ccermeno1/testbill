@@ -1,0 +1,12 @@
+# entorno y cachés
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+eval_cache/
+
+# modelos y datasets: no se versionan (pesan); cada carpeta lleva un README con qué poner
+models/*
+!models/README.md
+external_dataset/*
+!external_dataset/README.md
