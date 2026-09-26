@@ -1,4 +1,4 @@
-# --- entorno y caches -------------------------------------------------------
+# --- environment and caches ------------------------------------------------
 .venv/
 .venv-*/
 __pycache__/
@@ -9,21 +9,21 @@ __pycache__/
 build/
 dist/
 
-# --- editor y sistema operativo ---------------------------------------------
+# --- editor and operating system --------------------------------------------
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# --- datos ------------------------------------------------------------------
-# Los datasets son locales: la fuente de verdad es Roboflow.
+# --- data -------------------------------------------------------------------
+# Datasets are local: Roboflow is the source of truth.
 data/Annotated\ banknotes\ 2.yolov8-obb/
 data/augmented/
 data/dataset/
 data/external_dataset/
 
-# --- artefactos locales ------------------------------------------------------
+# --- local artefacts --------------------------------------------------------
 models/yolox_obb/checkpoints/
 models/yolox_obb/experiments/
 outputs/
